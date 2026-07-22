@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { callFunction } from "../lib/supabase";
-import { ParsedFoodItem, ResolvedFoodItem, CalculatedItem, MealTotals } from "../lib/types";
+import {
+  ParsedFoodItem,
+  ResolvedFoodItem,
+  CalculatedItem,
+  MealTotals,
+  ClarificationItem,
+  PortionClarificationResult,
+} from "../lib/types";
 import ConfidenceBadge from "../components/ConfidenceBadge";
 import { scaleMacros } from "../lib/meal";
 
@@ -12,7 +19,7 @@ export default function LogMeal() {
   const [mealType, setMealType] = useState<"breakfast" | "lunch" | "dinner" | "snack">("breakfast");
   const [aiParseRequestId, setAiParseRequestId] = useState<string | null>(null);
   const [items, setItems] = useState<CalculatedItem[]>([]);
-  const [needsAttention, setNeedsAttention] = useState<{ raw_phrase: string; reason: string }[]>([]);
+  const [needsAttention, setNeedsAttention] = useState<ClarificationItem[]>([]);
   const [totals, setTotals] = useState<MealTotals | null>(null);
   const [mealConfidence, setMealConfidence] = useState<"high" | "medium" | "low" | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,14 +72,16 @@ export default function LogMeal() {
       // Step 2 — resolve-foods (Food Resolution Engine, ADR-003)
       const resolved = await callFunction<{
         resolved_items: ResolvedFoodItem[];
-        clarification_required: { raw_phrase: string; reason: string }[];
+        clarification_required: ClarificationItem[];
       }>("resolve-foods", { items: parsed.items });
-      setNeedsAttention(resolved.clarification_required);
+
+      const allClarifications: ClarificationItem[] = [...resolved.clarification_required];
 
       if (resolved.resolved_items.length === 0) {
         setItems([]);
         setTotals(null);
         setMealConfidence(null);
+        setNeedsAttention(allClarifications);
         setStep("reviewing");
         return;
       }
@@ -80,13 +89,26 @@ export default function LogMeal() {
       // Step 3 — calculate-meal (pure Nutrition Engine)
       const calculated = await callFunction<{
         items: CalculatedItem[];
+        clarification_required: PortionClarificationResult[];
         meal_totals: MealTotals;
         meal_confidence: "high" | "medium" | "low";
       }>("calculate-meal", { resolved_items: resolved.resolved_items });
 
+      for (const c of calculated.clarification_required ?? []) {
+        allClarifications.push({
+          raw_phrase: c.raw_phrase,
+          reason: "portion_clarification",
+          code: c.code,
+          message: c.message,
+          suggested_unit: c.suggested_unit,
+          suggested_qty: c.suggested_qty,
+        });
+      }
+
       setItems(calculated.items);
       setTotals(calculated.meal_totals);
       setMealConfidence(calculated.meal_confidence);
+      setNeedsAttention(allClarifications);
       setStep("reviewing");
     } catch (err: any) {
       setError(err.message ?? "Something went wrong parsing that meal.");
@@ -178,14 +200,41 @@ export default function LogMeal() {
           {needsAttention.length > 0 && (
             <div className="rounded-lg border border-confidence-low/30 bg-red-50 px-4 py-3 text-sm text-confidence-low dark:bg-red-950/30 dark:text-red-300">
               <p className="font-medium">These need a closer look:</p>
-              <ul className="mt-1 list-inside list-disc">
-                {needsAttention.map((n, i) => (
-                  <li key={i}>
-                    "{n.raw_phrase}" — {n.reason === "ambiguous" ? "unclear portion or type" : "no food match found"}
-                  </li>
-                ))}
+              <ul className="mt-1 list-inside list-disc space-y-1">
+                {needsAttention.map((n, i) => {
+                  if (n.reason === "food_form_ambiguous") {
+                    return (
+                      <li key={i}>
+                        <span className="font-medium">"{n.raw_phrase}"</span> — multiple food forms with very different calorie densities. Search for the specific form you ate:
+                        <ul className="mt-1 ml-4 list-none space-y-0.5">
+                          {n.options.map((opt, j) => (
+                            <li key={j} className="text-xs">
+                              {opt.name} — {opt.calories_100g} kcal/100g
+                              {opt.serving_size_g ? ` · ${opt.serving_size_g}g serving` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  }
+                  if (n.reason === "portion_clarification") {
+                    return (
+                      <li key={i}>
+                        <span className="font-medium">"{n.raw_phrase}"</span> — {n.message}
+                        {n.suggested_unit && (
+                          <span className="ml-1 underline">Re-enter with the correct unit.</span>
+                        )}
+                      </li>
+                    );
+                  }
+                  return (
+                    <li key={i}>
+                      <span className="font-medium">"{n.raw_phrase}"</span> — {n.reason === "ambiguous" ? "unclear portion or type" : "no food match found"}
+                    </li>
+                  );
+                })}
               </ul>
-                <p className="mt-1 text-xs text-confidence-low/80 dark:text-red-300/80">
+              <p className="mt-1 text-xs text-confidence-low/80 dark:text-red-300/80">
                 Manual search/edit for these isn't wired into this screen yet — see search-food and
                 create-custom-food.
               </p>

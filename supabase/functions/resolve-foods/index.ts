@@ -14,7 +14,27 @@ import {
   MatchConfidence,
   PortionConfidence,
 } from "../_shared/types.ts";
-import { searchFatSecret, upsertFatSecretFood } from "../_shared/fatsecret.ts";
+import { searchFatSecret, upsertFatSecretFood, FatSecretFood } from "../_shared/fatsecret.ts";
+
+// When top candidates' calorie densities span more than this ratio, the food
+// name is ambiguous (e.g. "oatmeal" could be cooked ≈ 71 kcal/100 g or dry
+// ≈ 380 kcal/100 g). Surface the options instead of silently picking first.
+const FOOD_FORM_RATIO_THRESHOLD = 3.0;
+
+interface FoodFormOption {
+  food_id: string;
+  name: string;
+  calories_100g: number;
+  serving_size_g: number | null;
+}
+
+type ClarificationItem =
+  | { raw_phrase: string; reason: "ambiguous" | "no_food_match" }
+  | { raw_phrase: string; reason: "food_form_ambiguous"; options: FoodFormOption[] };
+
+type ResolveOneResult =
+  | { kind: "match"; foodId: string | null; matchConfidence: MatchConfidence }
+  | { kind: "ambiguous"; options: FoodFormOption[] };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight();
@@ -35,7 +55,7 @@ Deno.serve(async (req) => {
 
     const service = getServiceClient();
     const resolved: ResolvedFoodItem[] = [];
-    const clarificationRequired: Array<{ raw_phrase: string; reason: string }> = [];
+    const clarificationRequired: ClarificationItem[] = [];
 
     for (const item of items) {
       // FR-004: ambiguous items never proceed to lookup — they need a
@@ -46,7 +66,16 @@ Deno.serve(async (req) => {
       }
 
       const query = await applySynonym(service, item.normalized_name);
-      const match = await resolveOne(service, userId, query, item.raw_phrase);
+      const matchResult = await resolveOne(service, userId, query, item.raw_phrase);
+
+      if (matchResult.kind === "ambiguous") {
+        clarificationRequired.push({
+          raw_phrase: item.raw_phrase,
+          reason: "food_form_ambiguous",
+          options: matchResult.options,
+        });
+        continue;
+      }
 
       const portionConfidence: PortionConfidence =
         item.quantity != null && item.unit != null ? "exact"
@@ -56,12 +85,12 @@ Deno.serve(async (req) => {
       resolved.push({
         raw_phrase: item.raw_phrase,
         normalized_query: query,
-        food_id: match.foodId,
+        food_id: matchResult.foodId,
         quantity: item.quantity,
         unit: item.unit,
-        match_confidence: match.matchConfidence,
+        match_confidence: matchResult.matchConfidence,
         portion_confidence: portionConfidence,
-        item_confidence: computeItemConfidence(match.matchConfidence, portionConfidence),
+        item_confidence: computeItemConfidence(matchResult.matchConfidence, portionConfidence),
       });
     }
 
@@ -99,7 +128,7 @@ async function resolveOne(
   userId: string,
   query: string,
   rawPhrase: string,
-): Promise<{ foodId: string | null; matchConfidence: MatchConfidence }> {
+): Promise<ResolveOneResult> {
   // Tier 1 — user's own custom foods (FR-010).
   const { data: ownFood } = await service
     .from("foods")
@@ -108,7 +137,7 @@ async function resolveOne(
     .eq("normalized_name", query)
     .eq("status", "active")
     .maybeSingle();
-  if (ownFood) return { foodId: ownFood.id, matchConfidence: "exact" };
+  if (ownFood) return { kind: "match", foodId: ownFood.id, matchConfidence: "exact" };
 
   // Tier 2 — this user's cache.
   const { data: userCache } = await service
@@ -117,7 +146,7 @@ async function resolveOne(
     .eq("user_id", userId)
     .eq("normalized_query", query)
     .maybeSingle();
-  if (userCache) return { foodId: userCache.matched_food_id, matchConfidence: userCache.confidence };
+  if (userCache) return { kind: "match", foodId: userCache.matched_food_id, matchConfidence: userCache.confidence };
 
   // Tier 3 — global cache, shared across users.
   const { data: globalCache } = await service
@@ -125,7 +154,7 @@ async function resolveOne(
     .select("matched_food_id, confidence")
     .eq("normalized_query", query)
     .maybeSingle();
-  if (globalCache) return { foodId: globalCache.matched_food_id, matchConfidence: globalCache.confidence };
+  if (globalCache) return { kind: "match", foodId: globalCache.matched_food_id, matchConfidence: globalCache.confidence };
 
   // Fuzzy match against canonical foods before paying for an external call —
   // ADR-005: trigram similarity >= 0.75, OR levenshtein <= 2 for short strings.
@@ -135,36 +164,67 @@ async function resolveOne(
   });
   if (fuzzyMatches && fuzzyMatches.length > 0) {
     // A fuzzy hit is never treated as exact (FR-075 AC2).
-    return { foodId: fuzzyMatches[0].food_id, matchConfidence: "partial" };
+    return { kind: "match", foodId: fuzzyMatches[0].food_id, matchConfidence: "partial" };
   }
 
-  // Tier 4/5 — USDA FoodData Central / Open Food Facts.
-  const externalMatch = await tryExternalLookup(service, query, rawPhrase);
-  if (externalMatch) return externalMatch;
-
-  return { foodId: null, matchConfidence: "none" };
+  // Tier 4/5 — external lookup with food-form ambiguity detection.
+  return await tryExternalLookup(service, query, rawPhrase);
 }
 
 async function tryExternalLookup(
   service: any,
   query: string,
   rawPhrase: string,
-): Promise<{ foodId: string; matchConfidence: MatchConfidence } | null> {
+): Promise<ResolveOneResult> {
   // Use raw_phrase — it carries context ("low-fat milk", "hard-boiled egg") that
   // normalized_name loses, giving FatSecret a better chance at the right food.
   const searchTerm = rawPhrase.length > 0 ? rawPhrase : query;
   const candidates = await searchFatSecret(searchTerm, 5);
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return { kind: "match", foodId: null, matchConfidence: "none" };
 
-  // Prefer exact name matches; otherwise take the first result.
+  // Food-form ambiguity check: if the top-3 non-zero results span more than
+  // FOOD_FORM_RATIO_THRESHOLD in kcal/100g, they likely represent materially
+  // different preparations (e.g. dry oats vs cooked oatmeal). Silently picking
+  // the first would log the wrong food. Surface options instead.
+  const top = candidates.slice(0, 3).filter((c) => c.calories100g > 0);
+  if (top.length >= 2) {
+    const calValues = top.map((c) => c.calories100g);
+    const maxCal = Math.max(...calValues);
+    const minCal = Math.min(...calValues);
+    if (maxCal / minCal > FOOD_FORM_RATIO_THRESHOLD) {
+      // Upsert all candidates so they have local IDs the client can reference.
+      const options = (
+        await Promise.all(
+          top.map(async (c: FatSecretFood) => {
+            const foodId = await upsertFatSecretFood(service, c);
+            if (!foodId) return null;
+            return {
+              food_id: foodId,
+              name: c.name,
+              calories_100g: c.calories100g,
+              serving_size_g: c.servingSizeG ?? null,
+            } satisfies FoodFormOption;
+          }),
+        )
+      ).filter((o): o is FoodFormOption => o !== null);
+
+      if (options.length >= 2) {
+        return { kind: "ambiguous", options };
+      }
+      // If upserts failed and we ended up with < 2 options, fall through to
+      // picking the best single result below.
+    }
+  }
+
+  // Not ambiguous — prefer exact name match, otherwise take first result.
   const best =
     candidates.find((f) => f.name.toLowerCase() === searchTerm.toLowerCase()) ??
     candidates[0];
 
   const foodId = await upsertFatSecretFood(service, best);
-  if (!foodId) return null;
+  if (!foodId) return { kind: "match", foodId: null, matchConfidence: "none" };
 
-  return { foodId, matchConfidence: "exact" };
+  return { kind: "match", foodId, matchConfidence: "exact" };
 }
 
 function mergeDuplicates(items: ResolvedFoodItem[]): ResolvedFoodItem[] {

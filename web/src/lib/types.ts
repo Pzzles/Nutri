@@ -54,3 +54,27 @@ export interface FoodSearchResult {
   match_type: "exact" | "fuzzy";
   similarity?: number;
 }
+
+// Options returned when resolve-foods detects food-form ambiguity.
+export interface FoodFormOption {
+  food_id: string;
+  name: string;
+  calories_100g: number;
+  serving_size_g: number | null;
+}
+
+// Structured clarification returned by calculate-meal for portion problems.
+export interface PortionClarificationResult {
+  raw_phrase: string;
+  code: "UNSUPPORTED_PORTION_UNIT" | "EXTREME_PORTION" | "LIKELY_UNIT_ERROR";
+  raw_unit: string | null;
+  message: string;
+  suggested_unit?: string;
+  suggested_qty?: number;
+}
+
+// Union of all clarification shapes the UI must handle.
+export type ClarificationItem =
+  | { raw_phrase: string; reason: "ambiguous" | "no_food_match" }
+  | { raw_phrase: string; reason: "food_form_ambiguous"; options: FoodFormOption[] }
+  | { raw_phrase: string; reason: "portion_clarification"; code: string; message: string; suggested_unit?: string; suggested_qty?: number };
