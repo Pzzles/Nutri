@@ -814,6 +814,125 @@ export type Database = {
           },
         ]
       }
+      daily_log_status: {
+        Row: {
+          created_at: string
+          id: string
+          logged_date: string
+          marked_complete_at: string | null
+          reopened_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          logged_date: string
+          marked_complete_at?: string | null
+          reopened_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          logged_date?: string
+          marked_complete_at?: string | null
+          reopened_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_log_status_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goal_phases: {
+        Row: {
+          created_at: string
+          ended_at: string | null
+          ended_reason: string | null
+          id: string
+          mode: string
+          started_at: string
+          starting_weight_kg: number
+          starting_weight_source: string
+          status: string
+          superseded_by: string | null
+          target_calories: number | null
+          target_carbs_g: number | null
+          target_change_kg_per_week: number | null
+          target_fat_g: number | null
+          target_protein_g: number | null
+          target_weight_kg: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          ended_at?: string | null
+          ended_reason?: string | null
+          id?: string
+          mode: string
+          started_at?: string
+          starting_weight_kg: number
+          starting_weight_source: string
+          status?: string
+          superseded_by?: string | null
+          target_calories?: number | null
+          target_carbs_g?: number | null
+          target_change_kg_per_week?: number | null
+          target_fat_g?: number | null
+          target_protein_g?: number | null
+          target_weight_kg?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          ended_at?: string | null
+          ended_reason?: string | null
+          id?: string
+          mode?: string
+          started_at?: string
+          starting_weight_kg?: number
+          starting_weight_source?: string
+          status?: string
+          superseded_by?: string | null
+          target_calories?: number | null
+          target_carbs_g?: number | null
+          target_change_kg_per_week?: number | null
+          target_fat_g?: number | null
+          target_protein_g?: number | null
+          target_weight_kg?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goal_phases_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goal_phases_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "goal_phases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       weight_logs: {
         Row: {
           created_at: string
@@ -881,6 +1000,31 @@ export type Database = {
           p_meal_type: string
           p_parsed_json: Json
           p_raw_input: string
+          p_user_id: string
+        }
+        Returns: string
+      }
+      fn_set_daily_log_status: {
+        Args: {
+          p_date: string
+          p_status: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      fn_start_goal_phase: {
+        Args: {
+          p_mode: string
+          p_started_at: string
+          p_starting_weight_kg: number
+          p_starting_weight_source: string
+          p_target_calories?: number | null
+          p_target_carbs_g?: number | null
+          p_target_change_kg_per_week?: number | null
+          p_target_fat_g?: number | null
+          p_target_protein_g?: number | null
+          p_target_weight_kg?: number | null
+          p_transition?: string | null
           p_user_id: string
         }
         Returns: string

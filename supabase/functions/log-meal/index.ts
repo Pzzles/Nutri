@@ -113,7 +113,27 @@ Deno.serve(async (req) => {
     await promoteToCache(service, userId, items);
     await updatePortionHistory(service, userId, items);
 
-    const responsePayload = { meal_id: mealId, meal_confidence: mealConfidence };
+    // Fetch the updated daily_log_status for the logged date. The
+    // trg_reopen_daily_log_on_meal trigger may have changed it to 'partial'
+    // if the day was previously marked complete.
+    const { data: dailyStatus } = await service
+      .from("daily_log_status")
+      .select("status, marked_complete_at, reopened_at, updated_at")
+      .eq("user_id", userId)
+      .eq("logged_date", loggedDate)
+      .maybeSingle();
+
+    const responsePayload = {
+      meal_id: mealId,
+      meal_confidence: mealConfidence,
+      daily_log_status: dailyStatus
+        ? {
+            status: dailyStatus.status,
+            marked_complete_at: dailyStatus.marked_complete_at,
+            reopened_at: dailyStatus.reopened_at,
+          }
+        : { status: "unknown", marked_complete_at: null, reopened_at: null },
+    };
 
     await service.from("idempotency_keys").insert({
       user_id: userId,

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { callFunction } from "../lib/supabase";
+import { DailyLogStatus } from "../lib/goalTypes";
 import {
   ParsedFoodItem,
   ResolvedFoodItem,
@@ -25,6 +26,7 @@ export default function LogMeal() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loggedMealId, setLoggedMealId] = useState<string | null>(null);
+  const [loggedDailyStatus, setLoggedDailyStatus] = useState<DailyLogStatus | null>(null);
   const [portionInputs, setPortionInputs] = useState<Record<number, string>>({});
   // food_ids whose EXTREME_PORTION the user has explicitly confirmed
   const [extremeConfirmedIds, setExtremeConfirmedIds] = useState<string[]>([]);
@@ -188,7 +190,7 @@ export default function LogMeal() {
     setLoading(true);
     setError(null);
     try {
-      const result = await callFunction<{ meal_id: string; meal_confidence: string }>("log-meal", {
+      const result = await callFunction<{ meal_id: string; meal_confidence: string; daily_log_status: DailyLogStatus }>("log-meal", {
         idempotency_key: crypto.randomUUID(),
         meal_type: mealType,
         eaten_at: new Date().toISOString(),
@@ -199,6 +201,7 @@ export default function LogMeal() {
         items,
       });
       setLoggedMealId(result.meal_id);
+      setLoggedDailyStatus(result.daily_log_status ?? null);
       setStep("logged");
     } catch (err: any) {
       setError(err.message ?? "Failed to save meal.");
@@ -215,6 +218,7 @@ export default function LogMeal() {
     setTotals(null);
     setMealConfidence(null);
     setLoggedMealId(null);
+    setLoggedDailyStatus(null);
     setAiParseRequestId(null);
     setPortionInputs({});
     setExtremeConfirmedIds([]);
@@ -442,8 +446,14 @@ export default function LogMeal() {
       {step === "logged" && (
         <div className="mt-6 space-y-4">
           <div className="rounded-lg bg-primary-light px-4 py-3 text-sm text-primary-dark">
-            Meal logged. <span className="text-primary-dark/70">({loggedMealId})</span>
+            Meal logged.{" "}
+            <span className="text-primary-dark/70">({loggedMealId})</span>
           </div>
+          {loggedDailyStatus?.status === "partial" && loggedDailyStatus.reopened_at && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              Today's log was re-opened because you added a meal after marking it complete.
+            </div>
+          )}
           <button onClick={reset} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark">
             Log another meal
           </button>
