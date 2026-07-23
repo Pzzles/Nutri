@@ -1,0 +1,14 @@
+[
+  {
+    "serving_id": "56789",
+    "serving_description": "2 tbsp",
+    "metric_serving_unit": "g",
+    "metric_serving_amount": "32.000",
+    "is_default": "1",
+    "calories": "188",
+    "fat": "16.00",
+    "carbohydrate": "6.06",
+    "protein": "8.00",
+    "fiber": "1.9"
+  }
+]

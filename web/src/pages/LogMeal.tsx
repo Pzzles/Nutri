@@ -26,6 +26,8 @@ export default function LogMeal() {
   const [error, setError] = useState<string | null>(null);
   const [loggedMealId, setLoggedMealId] = useState<string | null>(null);
   const [portionInputs, setPortionInputs] = useState<Record<number, string>>({});
+  // food_ids whose EXTREME_PORTION the user has explicitly confirmed
+  const [extremeConfirmedIds, setExtremeConfirmedIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -57,19 +59,84 @@ export default function LogMeal() {
     });
   }
 
+  function dismissClarification(index: number) {
+    setNeedsAttention((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function confirmExtremePortion(foodId: string) {
+    const confirmed = [...extremeConfirmedIds, foodId];
+    setExtremeConfirmedIds(confirmed);
+    // Dismiss the clarification, then re-run calculate-meal with the confirmed id.
+    setNeedsAttention((prev) =>
+      prev.filter(
+        (n) => !(n.reason === "portion_clarification" && (n as any).food_id === foodId),
+      ),
+    );
+    await rerunCalculation(confirmed);
+  }
+
+  async function rerunCalculation(confirmedIds: string[]) {
+    if (items.length === 0 && needsAttention.filter((n) => n.reason === "portion_clarification").length === 0) return;
+    setLoading(true);
+    setError(null);
+    try {
+      // Gather all resolved items — the ones already calculated plus those that
+      // were blocked as portion clarifications (they're in items from previous resolve step).
+      const calculated = await callFunction<{
+        items: CalculatedItem[];
+        clarification_required: PortionClarificationResult[];
+        meal_totals: MealTotals;
+        meal_confidence: "high" | "medium" | "low";
+      }>("calculate-meal", {
+        resolved_items: items.map((i) => ({
+          raw_phrase: i.raw_phrase,
+          normalized_query: i.normalized_query,
+          food_id: i.food_id,
+          quantity: i.quantity,
+          unit: i.unit,
+          match_confidence: i.match_confidence,
+          portion_confidence: i.portion_confidence,
+          item_confidence: i.item_confidence,
+        })),
+        extreme_confirmed_ids: confirmedIds,
+      });
+
+      const portionClarifications: ClarificationItem[] = (calculated.clarification_required ?? []).map((c) => ({
+        raw_phrase: c.raw_phrase,
+        reason: "portion_clarification" as const,
+        food_id: c.food_id,
+        code: c.code,
+        message: c.message,
+        suggested_unit: c.suggested_unit,
+        suggested_qty: c.suggested_qty,
+      }));
+
+      setItems(calculated.items);
+      setTotals(calculated.meal_totals);
+      setMealConfidence(calculated.meal_confidence);
+      setNeedsAttention((prev) => [
+        ...prev.filter((n) => n.reason !== "portion_clarification"),
+        ...portionClarifications,
+      ]);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to recalculate.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleParseAndResolve(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    setExtremeConfirmedIds([]);
     try {
-      // Step 1 — parse-meal (FR-001-004)
       const parsed = await callFunction<{ ai_parse_request_id: string; items: ParsedFoodItem[] }>(
         "parse-meal",
         { text },
       );
       setAiParseRequestId(parsed.ai_parse_request_id);
 
-      // Step 2 — resolve-foods (Food Resolution Engine, ADR-003)
       const resolved = await callFunction<{
         resolved_items: ResolvedFoodItem[];
         clarification_required: ClarificationItem[];
@@ -86,7 +153,6 @@ export default function LogMeal() {
         return;
       }
 
-      // Step 3 — calculate-meal (pure Nutrition Engine)
       const calculated = await callFunction<{
         items: CalculatedItem[];
         clarification_required: PortionClarificationResult[];
@@ -98,6 +164,7 @@ export default function LogMeal() {
         allClarifications.push({
           raw_phrase: c.raw_phrase,
           reason: "portion_clarification",
+          food_id: c.food_id,
           code: c.code,
           message: c.message,
           suggested_unit: c.suggested_unit,
@@ -150,7 +217,11 @@ export default function LogMeal() {
     setLoggedMealId(null);
     setAiParseRequestId(null);
     setPortionInputs({});
+    setExtremeConfirmedIds([]);
+    setError(null);
   }
+
+  const canConfirm = !loading && items.length > 0 && needsAttention.length === 0;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -200,43 +271,81 @@ export default function LogMeal() {
           {needsAttention.length > 0 && (
             <div className="rounded-lg border border-confidence-low/30 bg-red-50 px-4 py-3 text-sm text-confidence-low dark:bg-red-950/30 dark:text-red-300">
               <p className="font-medium">These need a closer look:</p>
-              <ul className="mt-1 list-inside list-disc space-y-1">
+              <ul className="mt-1 list-inside space-y-2">
                 {needsAttention.map((n, i) => {
                   if (n.reason === "food_form_ambiguous") {
                     return (
-                      <li key={i}>
-                        <span className="font-medium">"{n.raw_phrase}"</span> — multiple food forms with very different calorie densities. Search for the specific form you ate:
-                        <ul className="mt-1 ml-4 list-none space-y-0.5">
-                          {n.options.map((opt, j) => (
-                            <li key={j} className="text-xs">
-                              {opt.name} — {opt.calories_100g} kcal/100g
-                              {opt.serving_size_g ? ` · ${opt.serving_size_g}g serving` : ""}
-                            </li>
-                          ))}
-                        </ul>
+                      <li key={i} className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <span className="font-medium">"{n.raw_phrase}"</span> — multiple food forms with very different calorie densities. Choose the form you ate:
+                          <ul className="mt-1 ml-4 list-none space-y-0.5">
+                            {n.options.map((opt, j) => (
+                              <li key={j} className="text-xs">
+                                {opt.name} — {opt.calories_100g} kcal/100g
+                                {opt.serving_size_g ? ` · ${opt.serving_size_g}g serving` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <button
+                          aria-label={`Remove ${n.raw_phrase} from clarifications`}
+                          onClick={() => dismissClarification(i)}
+                          className="mt-0.5 text-xs text-confidence-low/60 hover:text-confidence-low"
+                        >
+                          Remove
+                        </button>
                       </li>
                     );
                   }
                   if (n.reason === "portion_clarification") {
+                    const isExtreme = n.code === "EXTREME_PORTION";
+                    const isLikelyError = n.code === "LIKELY_UNIT_ERROR";
                     return (
-                      <li key={i}>
-                        <span className="font-medium">"{n.raw_phrase}"</span> — {n.message}
-                        {n.suggested_unit && (
-                          <span className="ml-1 underline">Re-enter with the correct unit.</span>
-                        )}
+                      <li key={i} className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <span className="font-medium">"{n.raw_phrase}"</span> — {n.message}
+                          {isLikelyError && n.suggested_qty && (
+                            <span className="ml-1 text-xs">
+                              (Did you mean {n.suggested_qty} g?)
+                            </span>
+                          )}
+                          {isExtreme && (
+                            <button
+                              onClick={() => confirmExtremePortion((n as any).food_id)}
+                              className="ml-2 rounded bg-amber-500 px-2 py-0.5 text-xs font-medium text-white hover:bg-amber-600"
+                            >
+                              Confirm amount
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          aria-label={`Remove ${n.raw_phrase} from clarifications`}
+                          onClick={() => dismissClarification(i)}
+                          className="mt-0.5 text-xs text-confidence-low/60 hover:text-confidence-low"
+                        >
+                          Remove
+                        </button>
                       </li>
                     );
                   }
                   return (
-                    <li key={i}>
-                      <span className="font-medium">"{n.raw_phrase}"</span> — {n.reason === "ambiguous" ? "unclear portion or type" : "no food match found"}
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="flex-1">
+                        <span className="font-medium">"{n.raw_phrase}"</span> — {n.reason === "ambiguous" ? "unclear portion or type" : "no food match found"}
+                      </span>
+                      <button
+                        aria-label={`Remove ${n.raw_phrase} from clarifications`}
+                        onClick={() => dismissClarification(i)}
+                        className="mt-0.5 text-xs text-confidence-low/60 hover:text-confidence-low"
+                      >
+                        Remove
+                      </button>
                     </li>
                   );
                 })}
               </ul>
-              <p className="mt-1 text-xs text-confidence-low/80 dark:text-red-300/80">
-                Manual search/edit for these isn't wired into this screen yet — see search-food and
-                create-custom-food.
+              <p className="mt-2 text-xs text-confidence-low/80 dark:text-red-300/80">
+                Resolve or remove all items above to enable logging.
               </p>
             </div>
           )}
@@ -316,7 +425,8 @@ export default function LogMeal() {
           <div className="flex gap-2">
             <button
               onClick={handleConfirm}
-              disabled={loading || items.length === 0}
+              disabled={!canConfirm}
+              aria-disabled={!canConfirm}
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
             >
               {loading ? "Saving…" : "Confirm & log"}

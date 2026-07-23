@@ -112,7 +112,7 @@ function round2(n: number) {
 
 // Parse "Per 100g - Calories: 160kcal | Fat: 14.66g | Carbs: 8.53g | Prot: 2.00g"
 // Also handles "Per 1 serving (28g) - Calories: ..."
-function parseDescription(desc: string): Omit<FatSecretFood, "fsId" | "name" | "brand" | "foodType"> | null {
+export function parseDescription(desc: string): Omit<FatSecretFood, "fsId" | "name" | "brand" | "foodType"> | null {
   if (!desc) return null;
   const gMatch = desc.match(/Per (?:[^(]*\()?([\d.]+)\s*g/i);
   const servingG = gMatch ? parseFloat(gMatch[1]) : 100;
@@ -136,7 +136,7 @@ function parseDescription(desc: string): Omit<FatSecretFood, "fsId" | "name" | "
   };
 }
 
-function pickServing(servings: any[]): { serving: any; per100: boolean } | null {
+export function pickServing(servings: any[]): { serving: any; per100: boolean } | null {
   if (servings.length === 0) return null;
   const standardized = servings.find((s) => s.serving_id === "0" && s.metric_serving_unit === "g");
   if (standardized) return { serving: standardized, per100: true };

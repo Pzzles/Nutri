@@ -7,24 +7,13 @@ import { ok, fail, preflight } from "../_shared/envelope.ts";
 import { getUserClient, getServiceClient } from "../_shared/supabaseClient.ts";
 import { computeMealConfidence } from "../_shared/confidence.ts";
 import { ResolvedFoodItem, CalculatedItem } from "../_shared/types.ts";
-import { normaliseUnit } from "../_shared/portionUnits.ts";
+import {
+  resolveWeightGrams,
+  PortionClarification,
+  EXTREME_PORTION_THRESHOLD_G,
+} from "../_shared/portionResolution.ts";
 
 const FORBIDDEN_KEYS = ["calories", "protein_g", "carbs_g", "fat_g", "fibre_g"];
-
-// A portion above this in grams requires user confirmation before logging.
-const EXTREME_PORTION_THRESHOLD_G = 2000;
-
-interface PortionClarification {
-  code: "UNSUPPORTED_PORTION_UNIT" | "EXTREME_PORTION" | "LIKELY_UNIT_ERROR";
-  raw_unit: string | null;
-  message: string;
-  suggested_unit?: string;
-  suggested_qty?: number;
-}
-
-type WeightResolution =
-  | { kind: "ok"; grams: number; source: "explicit" | "history" | "default" }
-  | { kind: "clarification"; clarification: PortionClarification };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight();
@@ -51,6 +40,9 @@ Deno.serve(async (req) => {
         return fail("VALIDATION_ERROR", "every resolved item must have a food_id — unresolved items belong in clarification_required");
       }
     }
+
+    // food_ids whose extreme portions the user has explicitly confirmed
+    const extremeConfirmedIds = new Set<string>(body.extreme_confirmed_ids ?? []);
 
     const service = getServiceClient();
     const foodIds = [...new Set(items.map((i) => i.food_id))];
@@ -86,7 +78,7 @@ Deno.serve(async (req) => {
     const portionMap = new Map<string, PortionRow>((portionsResult.data ?? []).map((p: PortionRow) => [p.food_id, p]));
 
     const calculated: CalculatedItem[] = [];
-    const portionClarifications: Array<{ raw_phrase: string } & PortionClarification> = [];
+    const portionClarifications: Array<{ raw_phrase: string; food_id: string } & PortionClarification> = [];
     const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0 };
 
     for (const item of items) {
@@ -94,10 +86,22 @@ Deno.serve(async (req) => {
       if (!food) return fail("FOOD_NOT_FOUND", `Food ${item.food_id} not found`, 404);
 
       const history = portionMap.get(item.food_id!) ?? null;
-      const resolution = resolveWeightGrams(item, food.serving_size_g, history);
+      const resolution = resolveWeightGrams(
+        {
+          quantity: item.quantity,
+          unit: item.unit,
+          extreme_confirmed: extremeConfirmedIds.has(item.food_id!),
+        },
+        food.serving_size_g,
+        history,
+      );
 
       if (resolution.kind === "clarification") {
-        portionClarifications.push({ raw_phrase: item.raw_phrase, ...resolution.clarification });
+        portionClarifications.push({
+          raw_phrase: item.raw_phrase,
+          food_id: item.food_id!,
+          ...resolution.clarification,
+        });
         continue;
       }
 
@@ -125,8 +129,6 @@ Deno.serve(async (req) => {
       totals.fibre_g += calc.fibre_g ?? 0;
     }
 
-    // FR-020 AC2: meal confidence = strict minimum of item confidences.
-    // Clarification items are excluded — they don't contribute to the meal.
     const mealConfidence = computeMealConfidence(calculated.map((i) => i.item_confidence));
 
     return ok({
@@ -146,122 +148,6 @@ Deno.serve(async (req) => {
     return fail("INTERNAL_ERROR", "Unexpected error calculating meal", 500);
   }
 });
-
-function resolveWeightGrams(
-  item: ResolvedFoodItem,
-  defaultServingG: number | null,
-  history: { usual_g: number; use_count: number } | null,
-): WeightResolution {
-  const qty = item.quantity;
-  const rawUnit = item.unit != null ? item.unit.trim().toLowerCase() : null;
-
-  if (qty != null) {
-    if (rawUnit !== null) {
-      const normUnit = normaliseUnit(rawUnit);
-
-      if (normUnit === null) {
-        // Quantity given with an unrecognised unit — never fall back to serving
-        // multiplication, as that would silently produce nonsense.
-        // (This was the root cause of the 150mg → 41 700g bug.)
-        return {
-          kind: "clarification",
-          clarification: {
-            code: "UNSUPPORTED_PORTION_UNIT",
-            raw_unit: item.unit,
-            message: `"${item.unit}" is not a recognised portion unit. Use g, kg, mg, ml, l, or a count word like "pieces" or "slices".`,
-          },
-        };
-      }
-
-      let grams: number;
-      switch (normUnit.canonical) {
-        case "mg":
-          grams = qty / 1000;
-          // Amounts under 1 g are implausible for a meal food — the user almost
-          // certainly typed "mg" when they meant "g".
-          if (grams < 1.0) {
-            return {
-              kind: "clarification",
-              clarification: {
-                code: "LIKELY_UNIT_ERROR",
-                raw_unit: "mg",
-                message: `Did you mean ${qty} g? ${qty} mg converts to ${grams.toFixed(2)} g — a very small amount for a meal item.`,
-                suggested_unit: "g",
-                suggested_qty: qty,
-              },
-            };
-          }
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-
-        case "g":
-          grams = qty;
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-
-        case "kg":
-          grams = qty * 1000;
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-
-        // ml → g uses a 1:1 density approximation, valid for aqueous foods.
-        // Dense liquids (oil ≈ 0.92, fruit juice ≈ 1.04) deviate by ≤ ~20 %.
-        // A food-specific density lookup should replace this when available.
-        case "ml":
-          grams = qty;
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-
-        case "l":
-          grams = qty * 1000;
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-
-        case "count":
-          if (defaultServingG != null) {
-            grams = qty * defaultServingG;
-            return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-          }
-          // Count unit but no serving size known — fall through to history/default.
-          break;
-      }
-    } else {
-      // No unit given — treat as a serving count when a serving size is available.
-      // Extreme check still applies (e.g. "150 oatmeal" × 278 g = 41 700 g → EXTREME_PORTION).
-      if (defaultServingG != null) {
-        const grams = qty * defaultServingG;
-        const extreme = checkExtreme(grams, null);
-        if (extreme) return extreme;
-        return { kind: "ok", grams, source: "explicit" };
-      }
-      // No unit, no serving size — fall through to history/default.
-    }
-  }
-
-  // No usable (qty, unit) combination — consult the user's logged history
-  // for this food, then fall back to one serving or 100 g.
-  if (history != null) return { kind: "ok", grams: history.usual_g, source: "history" };
-  return { kind: "ok", grams: defaultServingG ?? 100, source: "default" };
-}
-
-function checkExtreme(grams: number, rawUnit: string | null): WeightResolution | null {
-  if (!isFinite(grams) || grams <= 0) {
-    return {
-      kind: "clarification",
-      clarification: {
-        code: "EXTREME_PORTION",
-        raw_unit: rawUnit,
-        message: "The converted portion is zero or infinite — please check the quantity and unit.",
-      },
-    };
-  }
-  if (grams > EXTREME_PORTION_THRESHOLD_G) {
-    return {
-      kind: "clarification",
-      clarification: {
-        code: "EXTREME_PORTION",
-        raw_unit: rawUnit,
-        message: `${Math.round(grams)} g is above the ${EXTREME_PORTION_THRESHOLD_G} g per-item safety threshold. Please confirm or correct the quantity.`,
-      },
-    };
-  }
-  return null;
-}
 
 function round(n: number): number {
   return Math.round(n * 10) / 10;

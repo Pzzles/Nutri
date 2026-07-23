@@ -1,0 +1,20 @@
+{
+  "id": "chatcmpl-ghi789",
+  "object": "chat.completion",
+  "model": "llama-3.1-8b-instant",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I found these foods for you: eggs and oatmeal. The eggs weigh about 120g and the oatmeal 200g."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 210,
+    "completion_tokens": 30,
+    "total_tokens": 240
+  }
+}

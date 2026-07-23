@@ -1,0 +1,25 @@
+[
+  {
+    "serving_id": "0",
+    "serving_description": "100 g",
+    "metric_serving_unit": "g",
+    "metric_serving_amount": "100.000",
+    "is_default": "1",
+    "calories": "61",
+    "fat": "3.27",
+    "carbohydrate": "4.78",
+    "protein": "3.15",
+    "fiber": "0"
+  },
+  {
+    "serving_id": "30291",
+    "serving_description": "1 cup (8 fl oz)",
+    "metric_serving_unit": "ml",
+    "metric_serving_amount": "244.000",
+    "is_default": "0",
+    "calories": "149",
+    "fat": "7.98",
+    "carbohydrate": "11.63",
+    "protein": "7.69"
+  }
+]

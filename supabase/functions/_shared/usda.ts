@@ -15,7 +15,7 @@ export interface UsdaFood {
   fibre: number | null;
 }
 
-function parseNutrients(foodNutrients: any[]): Pick<UsdaFood, "calories" | "protein" | "carbs" | "fat" | "fibre"> {
+export function parseNutrients(foodNutrients: any[]): Pick<UsdaFood, "calories" | "protein" | "carbs" | "fat" | "fibre"> {
   const get = (id: number) => (foodNutrients ?? []).find((n: any) => n.nutrientId === id)?.value ?? 0;
   return {
     calories: get(1008),

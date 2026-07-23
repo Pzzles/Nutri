@@ -1,0 +1,7 @@
+[
+  { "nutrientId": 1008, "nutrientName": "Energy", "value": 61, "unitName": "KCAL" },
+  { "nutrientId": 1003, "nutrientName": "Protein", "value": 3.15, "unitName": "G" },
+  { "nutrientId": 1005, "nutrientName": "Carbohydrate, by difference", "value": 4.78, "unitName": "G" },
+  { "nutrientId": 1004, "nutrientName": "Total lipid (fat)", "value": 3.27, "unitName": "G" },
+  { "nutrientId": 1079, "nutrientName": "Fiber, total dietary", "value": 0.5, "unitName": "G" }
+]

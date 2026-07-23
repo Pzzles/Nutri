@@ -7,6 +7,7 @@
 
 import { ok, fail, preflight } from "../_shared/envelope.ts";
 import { getUserClient, getServiceClient } from "../_shared/supabaseClient.ts";
+import { toLocalDateString } from "../_shared/timezone.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight();
@@ -201,14 +202,3 @@ async function updatePortionHistory(service: any, userId: string, items: any[]) 
   }
 }
 
-function toLocalDateString(date: Date, timezone: string): string {
-  // en-CA locale formats as YYYY-MM-DD, which is exactly the Postgres `date`
-  // literal format we need.
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return formatter.format(date);
-}

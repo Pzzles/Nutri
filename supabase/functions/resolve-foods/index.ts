@@ -15,11 +15,7 @@ import {
   PortionConfidence,
 } from "../_shared/types.ts";
 import { searchFatSecret, upsertFatSecretFood, FatSecretFood } from "../_shared/fatsecret.ts";
-
-// When top candidates' calorie densities span more than this ratio, the food
-// name is ambiguous (e.g. "oatmeal" could be cooked ≈ 71 kcal/100 g or dry
-// ≈ 380 kcal/100 g). Surface the options instead of silently picking first.
-const FOOD_FORM_RATIO_THRESHOLD = 3.0;
+import { detectFoodFormAmbiguity, deduplicateCandidates } from "../_shared/foodFormAmbiguity.ts";
 
 interface FoodFormOption {
   food_id: string;
@@ -58,8 +54,7 @@ Deno.serve(async (req) => {
     const clarificationRequired: ClarificationItem[] = [];
 
     for (const item of items) {
-      // FR-004: ambiguous items never proceed to lookup — they need a
-      // clarifying answer first.
+      // FR-004: ambiguous items never proceed to lookup.
       if (item.ambiguous) {
         clarificationRequired.push({ raw_phrase: item.raw_phrase, reason: "ambiguous" });
         continue;
@@ -97,9 +92,6 @@ Deno.serve(async (req) => {
     const withMatch = resolved.filter((r) => r.food_id !== null);
     const withoutMatch = resolved.filter((r) => r.food_id === null);
 
-    // Duplicate Detector — runs AFTER resolution, on resolved food_id, not raw
-    // text (ADR-003 / FR-005). Catches cases like "coke" + "coca-cola" that
-    // only reveal themselves as duplicates once both resolve to the same food.
     const deduped = mergeDuplicates(withMatch);
 
     for (const unmatched of withoutMatch) {
@@ -129,7 +121,6 @@ async function resolveOne(
   query: string,
   rawPhrase: string,
 ): Promise<ResolveOneResult> {
-  // Tier 1 — user's own custom foods (FR-010).
   const { data: ownFood } = await service
     .from("foods")
     .select("id")
@@ -139,7 +130,6 @@ async function resolveOne(
     .maybeSingle();
   if (ownFood) return { kind: "match", foodId: ownFood.id, matchConfidence: "exact" };
 
-  // Tier 2 — this user's cache.
   const { data: userCache } = await service
     .from("user_food_cache")
     .select("matched_food_id, confidence")
@@ -148,7 +138,6 @@ async function resolveOne(
     .maybeSingle();
   if (userCache) return { kind: "match", foodId: userCache.matched_food_id, matchConfidence: userCache.confidence };
 
-  // Tier 3 — global cache, shared across users.
   const { data: globalCache } = await service
     .from("global_food_cache")
     .select("matched_food_id, confidence")
@@ -156,18 +145,14 @@ async function resolveOne(
     .maybeSingle();
   if (globalCache) return { kind: "match", foodId: globalCache.matched_food_id, matchConfidence: globalCache.confidence };
 
-  // Fuzzy match against canonical foods before paying for an external call —
-  // ADR-005: trigram similarity >= 0.75, OR levenshtein <= 2 for short strings.
   const { data: fuzzyMatches } = await service.rpc("fn_fuzzy_food_search", {
     search_query: query,
     min_similarity: 0.75,
   });
   if (fuzzyMatches && fuzzyMatches.length > 0) {
-    // A fuzzy hit is never treated as exact (FR-075 AC2).
     return { kind: "match", foodId: fuzzyMatches[0].food_id, matchConfidence: "partial" };
   }
 
-  // Tier 4/5 — external lookup with food-form ambiguity detection.
   return await tryExternalLookup(service, query, rawPhrase);
 }
 
@@ -176,47 +161,35 @@ async function tryExternalLookup(
   query: string,
   rawPhrase: string,
 ): Promise<ResolveOneResult> {
-  // Use raw_phrase — it carries context ("low-fat milk", "hard-boiled egg") that
-  // normalized_name loses, giving FatSecret a better chance at the right food.
   const searchTerm = rawPhrase.length > 0 ? rawPhrase : query;
   const candidates = await searchFatSecret(searchTerm, 5);
   if (candidates.length === 0) return { kind: "match", foodId: null, matchConfidence: "none" };
 
-  // Food-form ambiguity check: if the top-3 non-zero results span more than
-  // FOOD_FORM_RATIO_THRESHOLD in kcal/100g, they likely represent materially
-  // different preparations (e.g. dry oats vs cooked oatmeal). Silently picking
-  // the first would log the wrong food. Surface options instead.
-  const top = candidates.slice(0, 3).filter((c) => c.calories100g > 0);
-  if (top.length >= 2) {
-    const calValues = top.map((c) => c.calories100g);
-    const maxCal = Math.max(...calValues);
-    const minCal = Math.min(...calValues);
-    if (maxCal / minCal > FOOD_FORM_RATIO_THRESHOLD) {
-      // Upsert all candidates so they have local IDs the client can reference.
-      const options = (
-        await Promise.all(
-          top.map(async (c: FatSecretFood) => {
-            const foodId = await upsertFatSecretFood(service, c);
-            if (!foodId) return null;
-            return {
-              food_id: foodId,
-              name: c.name,
-              calories_100g: c.calories100g,
-              serving_size_g: c.servingSizeG ?? null,
-            } satisfies FoodFormOption;
-          }),
-        )
-      ).filter((o): o is FoodFormOption => o !== null);
+  // Deduplicate before ambiguity check to avoid false positives from duplicate
+  // data sources, then check whether the top results represent different preparations.
+  const dedupedCandidates = deduplicateCandidates(candidates);
+  if (detectFoodFormAmbiguity(dedupedCandidates)) {
+    const top = dedupedCandidates.slice(0, 3).filter((c) => c.calories100g > 0);
+    const options = (
+      await Promise.all(
+        top.map(async (c: FatSecretFood) => {
+          const foodId = await upsertFatSecretFood(service, c);
+          if (!foodId) return null;
+          return {
+            food_id: foodId,
+            name: c.name,
+            calories_100g: c.calories100g,
+            serving_size_g: c.servingSizeG ?? null,
+          } satisfies FoodFormOption;
+        }),
+      )
+    ).filter((o): o is FoodFormOption => o !== null);
 
-      if (options.length >= 2) {
-        return { kind: "ambiguous", options };
-      }
-      // If upserts failed and we ended up with < 2 options, fall through to
-      // picking the best single result below.
+    if (options.length >= 2) {
+      return { kind: "ambiguous", options };
     }
   }
 
-  // Not ambiguous — prefer exact name match, otherwise take first result.
   const best =
     candidates.find((f) => f.name.toLowerCase() === searchTerm.toLowerCase()) ??
     candidates[0];
@@ -234,7 +207,6 @@ function mergeDuplicates(items: ResolvedFoodItem[]): ResolvedFoodItem[] {
       (m) => m.food_id === item.food_id && unitsCompatible(m.unit, item.unit),
     );
     if (existing) {
-      // FR-005 AC1: same food_id + compatible unit family → summed quantity.
       existing.quantity = (existing.quantity ?? 0) + (item.quantity ?? 0);
       existing.raw_phrase = `${existing.raw_phrase}; ${item.raw_phrase}`;
     } else {

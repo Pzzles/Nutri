@@ -1,105 +1,82 @@
+// Tests for the PRODUCTION normaliseUnit implementation.
+// Imports directly from the shared Edge Function module — no inlined copy.
 import { describe, it, expect } from "vitest";
+import { normaliseUnit } from "@shared/portionUnits";
 
-// Inlined from supabase/functions/_shared/portionUnits.ts for Node/Vitest
-// compatibility (Deno modules can't be imported directly into Node).
-// If this diverges from production, these tests become stale — keep in sync.
-
-type CanonicalUnit = "mg" | "g" | "kg" | "ml" | "l" | "count";
-type UnitCategory = "mass" | "volume" | "count";
-interface NormalisedUnit { canonical: CanonicalUnit; category: UnitCategory; }
-
-const UNIT_MAP: Record<string, NormalisedUnit> = {
-  mg: { canonical: "mg", category: "mass" },
-  milligram: { canonical: "mg", category: "mass" },
-  milligrams: { canonical: "mg", category: "mass" },
-  g: { canonical: "g", category: "mass" },
-  gram: { canonical: "g", category: "mass" },
-  grams: { canonical: "g", category: "mass" },
-  kg: { canonical: "kg", category: "mass" },
-  kilogram: { canonical: "kg", category: "mass" },
-  kilograms: { canonical: "kg", category: "mass" },
-  ml: { canonical: "ml", category: "volume" },
-  millilitre: { canonical: "ml", category: "volume" },
-  millilitres: { canonical: "ml", category: "volume" },
-  milliliter: { canonical: "ml", category: "volume" },
-  milliliters: { canonical: "ml", category: "volume" },
-  l: { canonical: "l", category: "volume" },
-  litre: { canonical: "l", category: "volume" },
-  litres: { canonical: "l", category: "volume" },
-  liter: { canonical: "l", category: "volume" },
-  liters: { canonical: "l", category: "volume" },
-  piece: { canonical: "count", category: "count" },
-  pieces: { canonical: "count", category: "count" },
-  item: { canonical: "count", category: "count" },
-  items: { canonical: "count", category: "count" },
-  slice: { canonical: "count", category: "count" },
-  slices: { canonical: "count", category: "count" },
-  serving: { canonical: "count", category: "count" },
-  servings: { canonical: "count", category: "count" },
-  portion: { canonical: "count", category: "count" },
-  portions: { canonical: "count", category: "count" },
-};
-
-function normaliseUnit(raw: string | null | undefined): NormalisedUnit | null {
-  if (raw == null || raw.trim() === "") return null;
-  return UNIT_MAP[raw.trim().toLowerCase()] ?? null;
-}
-
-describe("normaliseUnit — null / empty", () => {
+describe("normaliseUnit — null / empty / whitespace", () => {
   it("null → null", () => expect(normaliseUnit(null)).toBeNull());
   it("undefined → null", () => expect(normaliseUnit(undefined)).toBeNull());
   it("empty string → null", () => expect(normaliseUnit("")).toBeNull());
-  it("whitespace only → null", () => expect(normaliseUnit("  ")).toBeNull());
+  it("whitespace only → null", () => expect(normaliseUnit("   ")).toBeNull());
 });
 
-describe("normaliseUnit — mass units", () => {
-  it("mg → mg/mass", () => expect(normaliseUnit("mg")).toEqual({ canonical: "mg", category: "mass" }));
-  it("milligram → mg/mass", () => expect(normaliseUnit("milligram")).toEqual({ canonical: "mg", category: "mass" }));
-  it("milligrams → mg/mass", () => expect(normaliseUnit("milligrams")).toEqual({ canonical: "mg", category: "mass" }));
-  it("g → g/mass", () => expect(normaliseUnit("g")).toEqual({ canonical: "g", category: "mass" }));
-  it("gram → g/mass", () => expect(normaliseUnit("gram")).toEqual({ canonical: "g", category: "mass" }));
-  it("grams → g/mass", () => expect(normaliseUnit("grams")).toEqual({ canonical: "g", category: "mass" }));
-  it("kg → kg/mass", () => expect(normaliseUnit("kg")).toEqual({ canonical: "kg", category: "mass" }));
-  it("kilogram → kg/mass", () => expect(normaliseUnit("kilogram")).toEqual({ canonical: "kg", category: "mass" }));
-  it("kilograms → kg/mass", () => expect(normaliseUnit("kilograms")).toEqual({ canonical: "kg", category: "mass" }));
+describe("normaliseUnit — milligrams", () => {
+  it("mg", () => expect(normaliseUnit("mg")).toEqual({ canonical: "mg", category: "mass" }));
+  it("milligram", () => expect(normaliseUnit("milligram")).toEqual({ canonical: "mg", category: "mass" }));
+  it("milligrams", () => expect(normaliseUnit("milligrams")).toEqual({ canonical: "mg", category: "mass" }));
+  it("MG (uppercase)", () => expect(normaliseUnit("MG")).toEqual({ canonical: "mg", category: "mass" }));
+  it("Milligrams (mixed case)", () => expect(normaliseUnit("Milligrams")).toEqual({ canonical: "mg", category: "mass" }));
+  it("  mg  (surrounding whitespace)", () => expect(normaliseUnit("  mg  ")).toEqual({ canonical: "mg", category: "mass" }));
 });
 
-describe("normaliseUnit — volume units", () => {
-  it("ml → ml/volume", () => expect(normaliseUnit("ml")).toEqual({ canonical: "ml", category: "volume" }));
-  it("millilitre → ml/volume", () => expect(normaliseUnit("millilitre")).toEqual({ canonical: "ml", category: "volume" }));
-  it("milliliters (US spelling) → ml/volume", () => expect(normaliseUnit("milliliters")).toEqual({ canonical: "ml", category: "volume" }));
-  it("l → l/volume", () => expect(normaliseUnit("l")).toEqual({ canonical: "l", category: "volume" }));
-  it("litre → l/volume", () => expect(normaliseUnit("litre")).toEqual({ canonical: "l", category: "volume" }));
-  it("liters (US spelling) → l/volume", () => expect(normaliseUnit("liters")).toEqual({ canonical: "l", category: "volume" }));
+describe("normaliseUnit — grams", () => {
+  it("g", () => expect(normaliseUnit("g")).toEqual({ canonical: "g", category: "mass" }));
+  it("gram", () => expect(normaliseUnit("gram")).toEqual({ canonical: "g", category: "mass" }));
+  it("grams", () => expect(normaliseUnit("grams")).toEqual({ canonical: "g", category: "mass" }));
+  it("G (uppercase)", () => expect(normaliseUnit("G")).toEqual({ canonical: "g", category: "mass" }));
+  it("Grams (mixed case)", () => expect(normaliseUnit("Grams")).toEqual({ canonical: "g", category: "mass" }));
+  it("  g  (surrounding whitespace)", () => expect(normaliseUnit("  g  ")).toEqual({ canonical: "g", category: "mass" }));
 });
 
-describe("normaliseUnit — count units", () => {
-  it("piece → count", () => expect(normaliseUnit("piece")?.canonical).toBe("count"));
-  it("pieces → count", () => expect(normaliseUnit("pieces")?.canonical).toBe("count"));
-  it("item → count", () => expect(normaliseUnit("item")?.canonical).toBe("count"));
-  it("items → count", () => expect(normaliseUnit("items")?.canonical).toBe("count"));
-  it("slice → count", () => expect(normaliseUnit("slice")?.canonical).toBe("count"));
-  it("slices → count", () => expect(normaliseUnit("slices")?.canonical).toBe("count"));
-  it("serving → count", () => expect(normaliseUnit("serving")?.canonical).toBe("count"));
-  it("servings → count", () => expect(normaliseUnit("servings")?.canonical).toBe("count"));
-  it("portion → count", () => expect(normaliseUnit("portion")?.canonical).toBe("count"));
-  it("portions → count", () => expect(normaliseUnit("portions")?.canonical).toBe("count"));
+describe("normaliseUnit — kilograms", () => {
+  it("kg", () => expect(normaliseUnit("kg")).toEqual({ canonical: "kg", category: "mass" }));
+  it("kilogram", () => expect(normaliseUnit("kilogram")).toEqual({ canonical: "kg", category: "mass" }));
+  it("kilograms", () => expect(normaliseUnit("kilograms")).toEqual({ canonical: "kg", category: "mass" }));
+  it("KG (uppercase)", () => expect(normaliseUnit("KG")).toEqual({ canonical: "kg", category: "mass" }));
 });
 
-describe("normaliseUnit — unrecognised units return null (no silent fallback)", () => {
-  it("mgg (misspelled) → null", () => expect(normaliseUnit("mgg")).toBeNull());
-  it("oz → null (not in table)", () => expect(normaliseUnit("oz")).toBeNull());
-  it("lb → null (not in table)", () => expect(normaliseUnit("lb")).toBeNull());
-  it("cup → null (not in table)", () => expect(normaliseUnit("cup")).toBeNull());
-  it("tbsp → null (not in table)", () => expect(normaliseUnit("tbsp")).toBeNull());
-  it("tsp → null (not in table)", () => expect(normaliseUnit("tsp")).toBeNull());
-  it("xyz → null", () => expect(normaliseUnit("xyz")).toBeNull());
+describe("normaliseUnit — millilitres (British and US)", () => {
+  it("ml", () => expect(normaliseUnit("ml")).toEqual({ canonical: "ml", category: "volume" }));
+  it("millilitre (British)", () => expect(normaliseUnit("millilitre")).toEqual({ canonical: "ml", category: "volume" }));
+  it("millilitres (British plural)", () => expect(normaliseUnit("millilitres")).toEqual({ canonical: "ml", category: "volume" }));
+  it("milliliter (US)", () => expect(normaliseUnit("milliliter")).toEqual({ canonical: "ml", category: "volume" }));
+  it("milliliters (US plural)", () => expect(normaliseUnit("milliliters")).toEqual({ canonical: "ml", category: "volume" }));
+  it("ML (uppercase)", () => expect(normaliseUnit("ML")).toEqual({ canonical: "ml", category: "volume" }));
 });
 
-describe("normaliseUnit — case and whitespace handling", () => {
-  it("G (uppercase) → g/mass", () => expect(normaliseUnit("G")).toEqual({ canonical: "g", category: "mass" }));
-  it("KG (uppercase) → kg/mass", () => expect(normaliseUnit("KG")).toEqual({ canonical: "kg", category: "mass" }));
-  it("ML (uppercase) → ml/volume", () => expect(normaliseUnit("ML")).toEqual({ canonical: "ml", category: "volume" }));
-  it("  g  (surrounding spaces) → g/mass", () => expect(normaliseUnit("  g  ")).toEqual({ canonical: "g", category: "mass" }));
-  it("Grams (mixed case) → g/mass", () => expect(normaliseUnit("Grams")).toEqual({ canonical: "g", category: "mass" }));
+describe("normaliseUnit — litres (British and US)", () => {
+  it("l", () => expect(normaliseUnit("l")).toEqual({ canonical: "l", category: "volume" }));
+  it("litre (British)", () => expect(normaliseUnit("litre")).toEqual({ canonical: "l", category: "volume" }));
+  it("litres (British plural)", () => expect(normaliseUnit("litres")).toEqual({ canonical: "l", category: "volume" }));
+  it("liter (US)", () => expect(normaliseUnit("liter")).toEqual({ canonical: "l", category: "volume" }));
+  it("liters (US plural)", () => expect(normaliseUnit("liters")).toEqual({ canonical: "l", category: "volume" }));
+  it("L (uppercase)", () => expect(normaliseUnit("L")).toEqual({ canonical: "l", category: "volume" }));
+});
+
+describe("normaliseUnit — count singulars", () => {
+  it("piece", () => expect(normaliseUnit("piece")?.canonical).toBe("count"));
+  it("item", () => expect(normaliseUnit("item")?.canonical).toBe("count"));
+  it("slice", () => expect(normaliseUnit("slice")?.canonical).toBe("count"));
+  it("serving", () => expect(normaliseUnit("serving")?.canonical).toBe("count"));
+  it("portion", () => expect(normaliseUnit("portion")?.canonical).toBe("count"));
+});
+
+describe("normaliseUnit — count plurals", () => {
+  it("pieces", () => expect(normaliseUnit("pieces")?.canonical).toBe("count"));
+  it("items", () => expect(normaliseUnit("items")?.canonical).toBe("count"));
+  it("slices", () => expect(normaliseUnit("slices")?.canonical).toBe("count"));
+  it("servings", () => expect(normaliseUnit("servings")?.canonical).toBe("count"));
+  it("portions", () => expect(normaliseUnit("portions")?.canonical).toBe("count"));
+});
+
+describe("normaliseUnit — unsupported units return null (never silently become count)", () => {
+  it("mgg (misspelling of mg)", () => expect(normaliseUnit("mgg")).toBeNull());
+  it("gm (reversed letters, not in table)", () => expect(normaliseUnit("gm")).toBeNull());
+  it("oz (imperial ounce)", () => expect(normaliseUnit("oz")).toBeNull());
+  it("lb (imperial pound)", () => expect(normaliseUnit("lb")).toBeNull());
+  it("cup", () => expect(normaliseUnit("cup")).toBeNull());
+  it("tbsp (tablespoon)", () => expect(normaliseUnit("tbsp")).toBeNull());
+  it("tsp (teaspoon)", () => expect(normaliseUnit("tsp")).toBeNull());
+  it("arbitrary string xyz", () => expect(normaliseUnit("xyz")).toBeNull());
+  it("empty-ish unicode space", () => expect(normaliseUnit(" ")).toBeNull());
 });

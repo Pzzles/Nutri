@@ -38,3 +38,5 @@ desktop.ini
 
 # Test output
 web/coverage/
+web/playwright-report/
+web/test-results/

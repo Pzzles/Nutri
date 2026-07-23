@@ -66,7 +66,10 @@ export interface FoodFormOption {
 // Structured clarification returned by calculate-meal for portion problems.
 export interface PortionClarificationResult {
   raw_phrase: string;
-  code: "UNSUPPORTED_PORTION_UNIT" | "EXTREME_PORTION" | "LIKELY_UNIT_ERROR";
+  // food_id is included so the UI can pass it back as extreme_confirmed_ids
+  // when the user confirms an EXTREME_PORTION.
+  food_id: string;
+  code: "UNSUPPORTED_PORTION_UNIT" | "EXTREME_PORTION" | "LIKELY_UNIT_ERROR" | "MISSING_SERVING_SIZE";
   raw_unit: string | null;
   message: string;
   suggested_unit?: string;
@@ -77,4 +80,12 @@ export interface PortionClarificationResult {
 export type ClarificationItem =
   | { raw_phrase: string; reason: "ambiguous" | "no_food_match" }
   | { raw_phrase: string; reason: "food_form_ambiguous"; options: FoodFormOption[] }
-  | { raw_phrase: string; reason: "portion_clarification"; code: string; message: string; suggested_unit?: string; suggested_qty?: number };
+  | {
+      raw_phrase: string;
+      reason: "portion_clarification";
+      food_id: string;
+      code: string;
+      message: string;
+      suggested_unit?: string;
+      suggested_qty?: number;
+    };

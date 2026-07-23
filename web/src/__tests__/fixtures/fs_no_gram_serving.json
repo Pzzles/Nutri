@@ -1,0 +1,13 @@
+[
+  {
+    "serving_id": "99999",
+    "serving_description": "1 oz",
+    "metric_serving_unit": "oz",
+    "metric_serving_amount": "1.000",
+    "is_default": "1",
+    "calories": "50",
+    "fat": "1.00",
+    "carbohydrate": "8.00",
+    "protein": "2.00"
+  }
+]

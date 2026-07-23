@@ -1,137 +1,24 @@
+// Tests for the PRODUCTION resolveWeightGrams and checkExtreme implementations.
+// Imports directly from the shared Edge Function module — no inlined copy.
 import { describe, it, expect } from "vitest";
+import {
+  resolveWeightGrams,
+  checkExtreme,
+  EXTREME_PORTION_THRESHOLD_G,
+} from "@shared/portionResolution";
 
-// Inlined from supabase/functions/_shared/portionUnits.ts and
-// supabase/functions/calculate-meal/index.ts for Node/Vitest compatibility.
-// If either diverges from production, these tests become stale — keep in sync.
+// ── Unit normalisation boundary ────────────────────────────────────────────────
 
-// ── portionUnits.ts ────────────────────────────────────────────────────────
+describe("EXTREME_PORTION_THRESHOLD_G constant", () => {
+  it("is 2000 g", () => expect(EXTREME_PORTION_THRESHOLD_G).toBe(2000));
+});
 
-type CanonicalUnit = "mg" | "g" | "kg" | "ml" | "l" | "count";
-type UnitCategory = "mass" | "volume" | "count";
-interface NormalisedUnit { canonical: CanonicalUnit; category: UnitCategory; }
+// ── mg boundary: LIKELY_UNIT_ERROR threshold ──────────────────────────────────
+// The boundary is at 1 g: amounts < 1 g after conversion trigger LIKELY_UNIT_ERROR.
+// 999 mg = 0.999 g < 1 → error. 1000 mg = 1 g → ok.
 
-const UNIT_MAP: Record<string, NormalisedUnit> = {
-  mg: { canonical: "mg", category: "mass" },
-  milligram: { canonical: "mg", category: "mass" },
-  milligrams: { canonical: "mg", category: "mass" },
-  g: { canonical: "g", category: "mass" },
-  gram: { canonical: "g", category: "mass" },
-  grams: { canonical: "g", category: "mass" },
-  kg: { canonical: "kg", category: "mass" },
-  kilogram: { canonical: "kg", category: "mass" },
-  kilograms: { canonical: "kg", category: "mass" },
-  ml: { canonical: "ml", category: "volume" },
-  millilitre: { canonical: "ml", category: "volume" },
-  millilitres: { canonical: "ml", category: "volume" },
-  milliliter: { canonical: "ml", category: "volume" },
-  milliliters: { canonical: "ml", category: "volume" },
-  l: { canonical: "l", category: "volume" },
-  litre: { canonical: "l", category: "volume" },
-  litres: { canonical: "l", category: "volume" },
-  liter: { canonical: "l", category: "volume" },
-  liters: { canonical: "l", category: "volume" },
-  piece: { canonical: "count", category: "count" },
-  pieces: { canonical: "count", category: "count" },
-  item: { canonical: "count", category: "count" },
-  items: { canonical: "count", category: "count" },
-  slice: { canonical: "count", category: "count" },
-  slices: { canonical: "count", category: "count" },
-  serving: { canonical: "count", category: "count" },
-  servings: { canonical: "count", category: "count" },
-  portion: { canonical: "count", category: "count" },
-  portions: { canonical: "count", category: "count" },
-};
-
-function normaliseUnit(raw: string | null | undefined): NormalisedUnit | null {
-  if (raw == null || raw.trim() === "") return null;
-  return UNIT_MAP[raw.trim().toLowerCase()] ?? null;
-}
-
-// ── calculate-meal.ts (portion resolution logic) ───────────────────────────
-
-const EXTREME_PORTION_THRESHOLD_G = 2000;
-
-interface PortionClarification {
-  code: "UNSUPPORTED_PORTION_UNIT" | "EXTREME_PORTION" | "LIKELY_UNIT_ERROR";
-  raw_unit: string | null;
-  message: string;
-  suggested_unit?: string;
-  suggested_qty?: number;
-}
-
-type WeightResolution =
-  | { kind: "ok"; grams: number; source: "explicit" | "history" | "default" }
-  | { kind: "clarification"; clarification: PortionClarification };
-
-function checkExtreme(grams: number, rawUnit: string | null): WeightResolution | null {
-  if (!isFinite(grams) || grams <= 0) {
-    return { kind: "clarification", clarification: { code: "EXTREME_PORTION", raw_unit: rawUnit, message: "The converted portion is zero or infinite." } };
-  }
-  if (grams > EXTREME_PORTION_THRESHOLD_G) {
-    return { kind: "clarification", clarification: { code: "EXTREME_PORTION", raw_unit: rawUnit, message: `${Math.round(grams)} g exceeds the ${EXTREME_PORTION_THRESHOLD_G} g safety threshold.` } };
-  }
-  return null;
-}
-
-function resolveWeightGrams(
-  item: { quantity: number | null; unit: string | null },
-  defaultServingG: number | null,
-  history: { usual_g: number; use_count: number } | null,
-): WeightResolution {
-  const qty = item.quantity;
-  const rawUnit = item.unit != null ? item.unit.trim().toLowerCase() : null;
-
-  if (qty != null) {
-    if (rawUnit !== null) {
-      const normUnit = normaliseUnit(rawUnit);
-      if (normUnit === null) {
-        return { kind: "clarification", clarification: { code: "UNSUPPORTED_PORTION_UNIT", raw_unit: item.unit, message: `"${item.unit}" is not a recognised portion unit.` } };
-      }
-      let grams: number;
-      switch (normUnit.canonical) {
-        case "mg":
-          grams = qty / 1000;
-          if (grams < 1.0) {
-            return { kind: "clarification", clarification: { code: "LIKELY_UNIT_ERROR", raw_unit: "mg", message: `Did you mean ${qty} g? ${qty} mg is ${grams.toFixed(2)} g.`, suggested_unit: "g", suggested_qty: qty } };
-          }
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-        case "g":
-          grams = qty;
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-        case "kg":
-          grams = qty * 1000;
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-        case "ml":
-          grams = qty;
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-        case "l":
-          grams = qty * 1000;
-          return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-        case "count":
-          if (defaultServingG != null) {
-            grams = qty * defaultServingG;
-            return checkExtreme(grams, item.unit) ?? { kind: "ok", grams, source: "explicit" };
-          }
-          break;
-      }
-    } else {
-      if (defaultServingG != null) {
-        const grams = qty * defaultServingG;
-        const extreme = checkExtreme(grams, null);
-        if (extreme) return extreme;
-        return { kind: "ok", grams, source: "explicit" };
-      }
-    }
-  }
-
-  if (history != null) return { kind: "ok", grams: history.usual_g, source: "history" };
-  return { kind: "ok", grams: defaultServingG ?? 100, source: "default" };
-}
-
-// ── Tests ──────────────────────────────────────────────────────────────────
-
-describe("resolveWeightGrams — mass unit conversions", () => {
-  it("150 mg → LIKELY_UNIT_ERROR (0.15 g < 1 g meal threshold)", () => {
+describe("resolveWeightGrams — mg conversions and boundary", () => {
+  it("150 mg → LIKELY_UNIT_ERROR (0.15 g is implausible)", () => {
     const r = resolveWeightGrams({ quantity: 150, unit: "mg" }, null, null);
     expect(r.kind).toBe("clarification");
     if (r.kind === "clarification") {
@@ -141,53 +28,183 @@ describe("resolveWeightGrams — mass unit conversions", () => {
     }
   });
 
-  it("1500 mg → 1.5 g (valid, no clarification)", () => {
-    const r = resolveWeightGrams({ quantity: 1500, unit: "mg" }, null, null);
+  it("999 mg = 0.999 g < 1 g → LIKELY_UNIT_ERROR", () => {
+    const r = resolveWeightGrams({ quantity: 999, unit: "mg" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("LIKELY_UNIT_ERROR");
+  });
+
+  it("1000 mg = exactly 1 g → ok (boundary: 1 g is the minimum plausible meal amount)", () => {
+    const r = resolveWeightGrams({ quantity: 1000, unit: "mg" }, null, null);
     expect(r.kind).toBe("ok");
     if (r.kind === "ok") {
-      expect(r.grams).toBeCloseTo(1.5, 2);
+      expect(r.grams).toBeCloseTo(1, 5);
       expect(r.source).toBe("explicit");
     }
   });
 
-  it("150 g → 150 g", () => {
-    const r = resolveWeightGrams({ quantity: 150, unit: "g" }, null, null);
+  it("1500 mg → 1.5 g", () => {
+    const r = resolveWeightGrams({ quantity: 1500, unit: "mg" }, null, null);
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") expect(r.grams).toBe(150);
+    if (r.kind === "ok") expect(r.grams).toBeCloseTo(1.5, 5);
   });
 
-  it("1.5 kg → 1500 g", () => {
-    const r = resolveWeightGrams({ quantity: 1.5, unit: "kg" }, null, null);
+  it("2000000 mg = 2000 g → at EXTREME_PORTION boundary (2000 is ok, not extreme)", () => {
+    const r = resolveWeightGrams({ quantity: 2000000, unit: "mg" }, null, null);
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") expect(r.grams).toBeCloseTo(1500, 1);
+    if (r.kind === "ok") expect(r.grams).toBe(2000);
   });
 
-  it("milligrams (plural spelling) recognised", () => {
+  it("2000001 mg > 2000 g → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 2000001, unit: "mg" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
+  });
+
+  it("milligrams (plural spelling) normalised", () => {
     const r = resolveWeightGrams({ quantity: 2000, unit: "milligrams" }, null, null);
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") expect(r.grams).toBeCloseTo(2, 2);
+    if (r.kind === "ok") expect(r.grams).toBeCloseTo(2, 5);
+  });
+
+  it("zero mg → LIKELY_UNIT_ERROR (0 mg = 0 g, which is < 1 g threshold)", () => {
+    // The < 1 g LIKELY_UNIT_ERROR guard runs before checkExtreme.
+    // Zero mg falls into that guard because 0 / 1000 = 0 < 1.
+    const r = resolveWeightGrams({ quantity: 0, unit: "mg" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("LIKELY_UNIT_ERROR");
+  });
+
+  it("negative mg → LIKELY_UNIT_ERROR (negative grams < 1 g threshold)", () => {
+    const r = resolveWeightGrams({ quantity: -100, unit: "mg" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("LIKELY_UNIT_ERROR");
+  });
+
+  it("NaN mg → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: NaN, unit: "mg" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
+  });
+
+  it("Infinity mg → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: Infinity, unit: "mg" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
   });
 });
 
-describe("resolveWeightGrams — volume unit conversions", () => {
-  it("250 ml → 250 g", () => {
-    const r = resolveWeightGrams({ quantity: 250, unit: "ml" }, null, null);
+// ── g conversions ─────────────────────────────────────────────────────────────
+
+describe("resolveWeightGrams — g conversions", () => {
+  it("150 g → 150 g", () => {
+    const r = resolveWeightGrams({ quantity: 150, unit: "g" }, null, null);
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") expect(r.grams).toBe(250);
+    if (r.kind === "ok") { expect(r.grams).toBe(150); expect(r.source).toBe("explicit"); }
   });
 
+  it("exactly 2000 g → ok (at threshold, not above)", () => {
+    const r = resolveWeightGrams({ quantity: 2000, unit: "g" }, null, null);
+    expect(r.kind).toBe("ok");
+  });
+
+  it("2000.1 g → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 2000.1, unit: "g" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
+  });
+
+  it("zero g → EXTREME_PORTION (zero is invalid)", () => {
+    const r = resolveWeightGrams({ quantity: 0, unit: "g" }, null, null);
+    expect(r.kind).toBe("clarification");
+  });
+
+  it("negative g → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: -50, unit: "g" }, null, null);
+    expect(r.kind).toBe("clarification");
+  });
+});
+
+// ── kg conversions ────────────────────────────────────────────────────────────
+
+describe("resolveWeightGrams — kg conversions", () => {
+  it("1.5 kg → 1500 g", () => {
+    const r = resolveWeightGrams({ quantity: 1.5, unit: "kg" }, null, null);
+    expect(r.kind).toBe("ok");
+    if (r.kind === "ok") expect(r.grams).toBeCloseTo(1500, 3);
+  });
+
+  it("exactly 2 kg = 2000 g → ok (at threshold)", () => {
+    const r = resolveWeightGrams({ quantity: 2, unit: "kg" }, null, null);
+    expect(r.kind).toBe("ok");
+  });
+
+  it("2.001 kg = 2001 g → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 2.001, unit: "kg" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
+  });
+});
+
+// ── ml conversions (1 ml ≈ 1 g approximation) ─────────────────────────────────
+
+describe("resolveWeightGrams — ml conversions", () => {
+  it("250 ml → 250 g (1 ml ≈ 1 g approximation for aqueous foods)", () => {
+    const r = resolveWeightGrams({ quantity: 250, unit: "ml" }, null, null);
+    expect(r.kind).toBe("ok");
+    if (r.kind === "ok") { expect(r.grams).toBe(250); expect(r.source).toBe("explicit"); }
+  });
+
+  it("exactly 2000 ml → ok (at threshold)", () => {
+    const r = resolveWeightGrams({ quantity: 2000, unit: "ml" }, null, null);
+    expect(r.kind).toBe("ok");
+  });
+
+  it("2000.1 ml → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 2000.1, unit: "ml" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
+  });
+
+  it("zero ml → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 0, unit: "ml" }, null, null);
+    expect(r.kind).toBe("clarification");
+  });
+
+  it("negative ml → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: -100, unit: "ml" }, null, null);
+    expect(r.kind).toBe("clarification");
+  });
+});
+
+// ── l conversions ─────────────────────────────────────────────────────────────
+
+describe("resolveWeightGrams — l conversions", () => {
   it("2 l → 2000 g", () => {
     const r = resolveWeightGrams({ quantity: 2, unit: "l" }, null, null);
     expect(r.kind).toBe("ok");
     if (r.kind === "ok") expect(r.grams).toBe(2000);
   });
+
+  it("exactly 2 l = 2000 g → ok (at threshold)", () => {
+    const r = resolveWeightGrams({ quantity: 2, unit: "l" }, null, null);
+    expect(r.kind).toBe("ok");
+  });
+
+  it("2.001 l → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 2.001, unit: "l" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
+  });
 });
 
-describe("resolveWeightGrams — count unit with serving size", () => {
+// ── count units ───────────────────────────────────────────────────────────────
+
+describe("resolveWeightGrams — count units with serving size", () => {
   it("2 pieces × 60 g/serving → 120 g", () => {
     const r = resolveWeightGrams({ quantity: 2, unit: "pieces" }, 60, null);
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") expect(r.grams).toBe(120);
+    if (r.kind === "ok") { expect(r.grams).toBe(120); expect(r.source).toBe("explicit"); }
   });
 
   it("3 slices × 40 g/serving → 120 g", () => {
@@ -201,192 +218,222 @@ describe("resolveWeightGrams — count unit with serving size", () => {
     expect(r.kind).toBe("ok");
     if (r.kind === "ok") expect(r.grams).toBe(278);
   });
-});
 
-describe("resolveWeightGrams — unsupported units surface UNSUPPORTED_PORTION_UNIT", () => {
-  it("oz → UNSUPPORTED_PORTION_UNIT (not in table)", () => {
-    const r = resolveWeightGrams({ quantity: 3, unit: "oz" }, 30, null);
-    expect(r.kind).toBe("clarification");
-    if (r.kind === "clarification") {
-      expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
-      expect(r.clarification.raw_unit).toBe("oz");
-    }
+  it("count multiplication exactly at 2000 g → ok", () => {
+    const r = resolveWeightGrams({ quantity: 4, unit: "pieces" }, 500, null);
+    expect(r.kind).toBe("ok");
   });
 
-  it("tbsp → UNSUPPORTED_PORTION_UNIT", () => {
+  it("count multiplication exceeding 2000 g → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 5, unit: "pieces" }, 500, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
+  });
+
+  it("zero count × serving → EXTREME_PORTION (zero is invalid)", () => {
+    const r = resolveWeightGrams({ quantity: 0, unit: "pieces" }, 60, null);
+    expect(r.kind).toBe("clarification");
+  });
+
+  it("negative count → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: -2, unit: "pieces" }, 60, null);
+    expect(r.kind).toBe("clarification");
+  });
+});
+
+describe("resolveWeightGrams — count unit with no serving size → MISSING_SERVING_SIZE", () => {
+  it("2 eggs (pieces) with no serving size → MISSING_SERVING_SIZE, not 100 g fallback", () => {
+    // Product decision: when a count word is given but the food has no
+    // serving_size_g, we cannot do the arithmetic. Silently using 100 g
+    // would produce wrong nutrition values, so we surface a clarification.
+    const r = resolveWeightGrams({ quantity: 2, unit: "pieces" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("MISSING_SERVING_SIZE");
+  });
+
+  it("2 pieces with no serving size, even with history → MISSING_SERVING_SIZE (history not used for count units)", () => {
+    // History is only consulted in the no-unit path.
+    // For count units, serving_size_g is mandatory to convert pieces → grams.
+    const r = resolveWeightGrams({ quantity: 2, unit: "pieces" }, null, { usual_g: 120, use_count: 3 });
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("MISSING_SERVING_SIZE");
+  });
+});
+
+// ── no-unit (unitless) quantities ─────────────────────────────────────────────
+// Product decision: a bare number is treated as a serving multiplier only when
+// the food has a known serving_size_g. With no serving size, history is tried
+// first; failing that, MISSING_SERVING_SIZE is returned.
+
+describe("resolveWeightGrams — no-unit quantities", () => {
+  it("2 [no unit] + serving 278 g → 2 × 278 = 556 g", () => {
+    const r = resolveWeightGrams({ quantity: 2, unit: null }, 278, null);
+    expect(r.kind).toBe("ok");
+    if (r.kind === "ok") { expect(r.grams).toBe(556); expect(r.source).toBe("explicit"); }
+  });
+
+  it("150 [no unit] + serving 278 g → 150 × 278 = 41 700 g → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 150, unit: null }, 278, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
+  });
+
+  it("1 [no unit] + no serving + no history → MISSING_SERVING_SIZE", () => {
+    const r = resolveWeightGrams({ quantity: 1, unit: null }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("MISSING_SERVING_SIZE");
+  });
+
+  it("150 [no unit] + no serving + history 200 g → uses history", () => {
+    const r = resolveWeightGrams({ quantity: 150, unit: null }, null, { usual_g: 200, use_count: 5 });
+    expect(r.kind).toBe("ok");
+    if (r.kind === "ok") { expect(r.grams).toBe(200); expect(r.source).toBe("history"); }
+  });
+});
+
+// ── unsupported units ─────────────────────────────────────────────────────────
+
+describe("resolveWeightGrams — unsupported units → UNSUPPORTED_PORTION_UNIT", () => {
+  it("oz → UNSUPPORTED_PORTION_UNIT", () => {
+    const r = resolveWeightGrams({ quantity: 3, unit: "oz" }, 30, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
+  });
+
+  it("tbsp → UNSUPPORTED_PORTION_UNIT (not multiplied by serving)", () => {
     const r = resolveWeightGrams({ quantity: 2, unit: "tbsp" }, 15, null);
     expect(r.kind).toBe("clarification");
-    if (r.kind === "clarification") {
-      expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
-    }
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
   });
 
   it("cup → UNSUPPORTED_PORTION_UNIT", () => {
     const r = resolveWeightGrams({ quantity: 1, unit: "cup" }, 240, null);
     expect(r.kind).toBe("clarification");
-    if (r.kind === "clarification") {
-      expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
-    }
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
   });
 
-  it("misspelled unit mgg → UNSUPPORTED_PORTION_UNIT (not multiplied by serving size)", () => {
+  it("lb → UNSUPPORTED_PORTION_UNIT", () => {
+    const r = resolveWeightGrams({ quantity: 1, unit: "lb" }, null, null);
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
+  });
+
+  it("mgg (misspelling) with serving → UNSUPPORTED_PORTION_UNIT, not 41 700 g", () => {
     const r = resolveWeightGrams({ quantity: 150, unit: "mgg" }, 278, null);
     expect(r.kind).toBe("clarification");
-    if (r.kind === "clarification") {
-      expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
-    }
-    if (r.kind === "ok") {
-      // If it somehow resolved, it must not be 41 700 g (the original bug value).
-      expect(r.grams).not.toBe(41700);
-    }
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("UNSUPPORTED_PORTION_UNIT");
+    if (r.kind === "ok") expect(r.grams).not.toBe(41700);
   });
 });
 
-describe("resolveWeightGrams — null quantity falls back gracefully", () => {
-  it("null qty → uses history when available", () => {
+// ── null qty fallbacks ────────────────────────────────────────────────────────
+
+describe("resolveWeightGrams — null quantity fallbacks", () => {
+  it("null qty + history → history.usual_g", () => {
     const r = resolveWeightGrams({ quantity: null, unit: null }, 100, { usual_g: 200, use_count: 5 });
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") {
-      expect(r.grams).toBe(200);
-      expect(r.source).toBe("history");
-    }
+    if (r.kind === "ok") { expect(r.grams).toBe(200); expect(r.source).toBe("history"); }
   });
 
-  it("null qty + no history → default serving size", () => {
+  it("null qty + no history + serving 278 g → 278 g default", () => {
     const r = resolveWeightGrams({ quantity: null, unit: null }, 278, null);
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") {
-      expect(r.grams).toBe(278);
-      expect(r.source).toBe("default");
-    }
+    if (r.kind === "ok") { expect(r.grams).toBe(278); expect(r.source).toBe("default"); }
   });
 
   it("null qty + no history + no serving → 100 g fallback", () => {
     const r = resolveWeightGrams({ quantity: null, unit: null }, null, null);
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") {
-      expect(r.grams).toBe(100);
-      expect(r.source).toBe("default");
-    }
+    if (r.kind === "ok") { expect(r.grams).toBe(100); expect(r.source).toBe("default"); }
   });
 });
 
-describe("resolveWeightGrams — extreme portion detection", () => {
-  it("5 kg (5000 g) → EXTREME_PORTION", () => {
-    const r = resolveWeightGrams({ quantity: 5, unit: "kg" }, null, null);
+// ── extreme-portion confirmation path ─────────────────────────────────────────
+
+describe("resolveWeightGrams — EXTREME_PORTION is a confirmation state, not permanent rejection", () => {
+  it("5000 g without confirmation → EXTREME_PORTION", () => {
+    const r = resolveWeightGrams({ quantity: 5000, unit: "g" }, null, null);
     expect(r.kind).toBe("clarification");
     if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
   });
 
-  it("2 eggs × 50 g/serving = 100 g — accepted (under threshold)", () => {
-    const r = resolveWeightGrams({ quantity: 2, unit: "pieces" }, 50, null);
+  it("5000 g with extreme_confirmed: true → ok (user confirmed large amount)", () => {
+    const r = resolveWeightGrams({ quantity: 5000, unit: "g", extreme_confirmed: true }, null, null);
     expect(r.kind).toBe("ok");
-    if (r.kind === "ok") expect(r.grams).toBe(100);
+    if (r.kind === "ok") { expect(r.grams).toBe(5000); expect(r.source).toBe("explicit"); }
   });
 
-  it("unitless serving count that overflows (150 × 278 = 41 700 g) → EXTREME_PORTION", () => {
-    // This is the exact null-unit variant of the original bug.
-    const r = resolveWeightGrams({ quantity: 150, unit: null }, 278, null);
+  it("5 kg with extreme_confirmed → ok", () => {
+    const r = resolveWeightGrams({ quantity: 5, unit: "kg", extreme_confirmed: true }, null, null);
+    expect(r.kind).toBe("ok");
+    if (r.kind === "ok") expect(r.grams).toBe(5000);
+  });
+
+  it("extreme_confirmed does NOT bypass infinite/NaN/zero (those remain invalid)", () => {
+    const r = resolveWeightGrams({ quantity: -100, unit: "g", extreme_confirmed: true }, null, null);
     expect(r.kind).toBe("clarification");
     if (r.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
   });
 });
 
-// ── Integration regression ─────────────────────────────────────────────────
-// These tests prove the exact scenario that caused the original 41 700 g bug.
+// ── checkExtreme standalone ───────────────────────────────────────────────────
 
-describe("Integration regression: 150 mg oatmeal", () => {
-  it("150 mg + serving_size_g=278 is NEVER calculated as 41 700 g", () => {
-    // Exact inputs that triggered the bug:
-    //   qty=150, unit="mg", serving_size_g=278
-    //   Old logic: 150 × 278 = 41 700 g (wrong)
-    //   Fixed logic: 150 mg = 0.15 g → LIKELY_UNIT_ERROR
+describe("checkExtreme", () => {
+  it("100 g → null (not extreme)", () => expect(checkExtreme(100, "g")).toBeNull());
+  it("exactly 2000 g → null (at threshold, not above)", () => expect(checkExtreme(2000, "g")).toBeNull());
+  it("2000.001 g → clarification", () => expect(checkExtreme(2000.001, "g")?.kind).toBe("clarification"));
+  it("0 g → clarification (invalid)", () => expect(checkExtreme(0, "g")?.kind).toBe("clarification"));
+  it("-1 g → clarification (invalid)", () => expect(checkExtreme(-1, "g")?.kind).toBe("clarification"));
+  it("NaN → clarification (invalid)", () => expect(checkExtreme(NaN, "g")?.kind).toBe("clarification"));
+  it("Infinity → clarification (invalid)", () => expect(checkExtreme(Infinity, "g")?.kind).toBe("clarification"));
+  it("5000 g confirmed: true → null (override active)", () => expect(checkExtreme(5000, "g", true)).toBeNull());
+  it("EXTREME_PORTION code is set", () => {
+    const r = checkExtreme(9999, "g");
+    expect(r?.clarification.code).toBe("EXTREME_PORTION");
+  });
+});
+
+// ── Original 41 700 g regression ─────────────────────────────────────────────
+
+describe("Regression: 150 mg oatmeal must never produce 41 700 g", () => {
+  it("150 mg + serving_size_g=278 → LIKELY_UNIT_ERROR, not 41 700 g", () => {
     const r = resolveWeightGrams({ quantity: 150, unit: "mg" }, 278, null);
-    if (r.kind === "ok") {
-      expect(r.grams).not.toBeCloseTo(41700, 0);
-    } else {
-      expect(r.clarification.code).toBe("LIKELY_UNIT_ERROR");
-    }
+    if (r.kind === "ok") expect(r.grams).not.toBeCloseTo(41700, 0);
+    else expect(r.clarification.code).toBe("LIKELY_UNIT_ERROR");
   });
 
-  it("full session: oatmeal excluded, milk and sugar calculated correctly", () => {
+  it("full 3-item session: oatmeal in clarifications, milk and sugar calculated", () => {
     const session = [
-      { raw_phrase: "oatmeal",       quantity: 150, unit: "mg",  cal100: 62.2,  servingG: 278 },
-      { raw_phrase: "full fat milk", quantity: 50,  unit: "g",   cal100: 61.0,  servingG: 100 },
-      { raw_phrase: "sugar",         quantity: 15,  unit: "g",   cal100: 387.0, servingG: 10  },
+      { name: "oatmeal",       quantity: 150, unit: "mg",  cal100: 62.2,  servingG: 278 },
+      { name: "full fat milk", quantity: 50,  unit: "g",   cal100: 61.0,  servingG: 100 },
+      { name: "sugar",         quantity: 15,  unit: "g",   cal100: 387.0, servingG: 10  },
     ];
 
-    const calculated: Array<{ raw_phrase: string; grams: number; calories: number }> = [];
-    const clarifications: Array<{ raw_phrase: string; code: string }> = [];
+    const calculated: Array<{ name: string; grams: number; calories: number }> = [];
+    const clarifications: Array<{ name: string; code: string }> = [];
 
     for (const food of session) {
       const r = resolveWeightGrams({ quantity: food.quantity, unit: food.unit }, food.servingG, null);
       if (r.kind === "clarification") {
-        clarifications.push({ raw_phrase: food.raw_phrase, code: r.clarification.code });
+        clarifications.push({ name: food.name, code: r.clarification.code });
       } else {
-        const cal = Math.round(food.cal100 * (r.grams / 100) * 10) / 10;
-        calculated.push({ raw_phrase: food.raw_phrase, grams: r.grams, calories: cal });
+        calculated.push({ name: food.name, grams: r.grams, calories: Math.round(food.cal100 * (r.grams / 100) * 10) / 10 });
       }
     }
 
-    // Oatmeal must be in clarifications, not calculated items
     expect(clarifications).toHaveLength(1);
-    expect(clarifications[0].raw_phrase).toBe("oatmeal");
+    expect(clarifications[0].name).toBe("oatmeal");
     expect(clarifications[0].code).toBe("LIKELY_UNIT_ERROR");
 
-    // Milk and sugar should be calculated correctly
     expect(calculated).toHaveLength(2);
     expect(calculated.every((c) => c.grams !== 41700)).toBe(true);
 
-    const milk = calculated.find((c) => c.raw_phrase === "full fat milk")!;
+    const milk = calculated.find((c) => c.name === "full fat milk")!;
     expect(milk.grams).toBe(50);
-    expect(milk.calories).toBeCloseTo(30.5, 1); // 50 × 61/100
+    expect(milk.calories).toBeCloseTo(30.5, 1);
 
-    const sugar = calculated.find((c) => c.raw_phrase === "sugar")!;
+    const sugar = calculated.find((c) => c.name === "sugar")!;
     expect(sugar.grams).toBe(15);
-    expect(sugar.calories).toBeCloseTo(58.1, 1); // 15 × 387/100
-  });
-});
-
-// ── Food-form ambiguity detection logic ───────────────────────────────────
-
-describe("Food form ambiguity detection (ratio threshold logic)", () => {
-  const FOOD_FORM_RATIO_THRESHOLD = 3.0;
-
-  function isAmbiguous(candidates: Array<{ calories100g: number }>): boolean {
-    const top = candidates.slice(0, 3).filter((c) => c.calories100g > 0);
-    if (top.length < 2) return false;
-    const max = Math.max(...top.map((c) => c.calories100g));
-    const min = Math.min(...top.map((c) => c.calories100g));
-    return max / min > FOOD_FORM_RATIO_THRESHOLD;
-  }
-
-  it("cooked oatmeal (71) vs dry oats (380) triggers ambiguity — ratio ~5.4", () => {
-    expect(isAmbiguous([
-      { calories100g: 71 },   // cooked
-      { calories100g: 380 },  // dry
-      { calories100g: 374 },  // instant dry
-    ])).toBe(true);
-  });
-
-  it("similar chicken preparations do not trigger ambiguity — ratio ~1.1", () => {
-    expect(isAmbiguous([
-      { calories100g: 165 },
-      { calories100g: 172 },
-      { calories100g: 160 },
-    ])).toBe(false);
-  });
-
-  it("single result never triggers ambiguity", () => {
-    expect(isAmbiguous([{ calories100g: 380 }])).toBe(false);
-  });
-
-  it("zero-calorie entries are excluded before computing ratio", () => {
-    // Broken data with a zero entry should not suppress a real ambiguity.
-    expect(isAmbiguous([
-      { calories100g: 0 },
-      { calories100g: 380 },
-      { calories100g: 71 },
-    ])).toBe(true);
+    expect(sugar.calories).toBeCloseTo(58.1, 1);
   });
 });

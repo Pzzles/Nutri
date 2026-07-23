@@ -1,0 +1,15 @@
+{
+  "status": 1,
+  "status_verbose": "product found",
+  "product": {
+    "product_name": "Organic Whole Milk",
+    "brands": "Organic Valley",
+    "nutriments": {
+      "energy-kcal_100g": 61,
+      "proteins_100g": 3.15,
+      "carbohydrates_100g": 4.78,
+      "fat_100g": 3.27,
+      "fiber_100g": 0
+    }
+  }
+}

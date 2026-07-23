@@ -1,0 +1,20 @@
+{
+  "id": "chatcmpl-def456",
+  "object": "chat.completion",
+  "model": "llama-3.1-8b-instant",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "[{\"raw_phrase\":\"chicken breast\",\"normalized_name\":\"chicken\",\"quantity\":150,\"unit\":\"g\",\"confidence_hint\":\"high\",\"ambiguous\":false,\"calories\":248,\"protein\":46},{\"raw_phrase\":\"brown rice\",\"normalized_name\":\"brown rice\",\"quantity\":100,\"unit\":\"g\",\"confidence_hint\":\"high\",\"ambiguous\":false}]"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 210,
+    "completion_tokens": 80,
+    "total_tokens": 290
+  }
+}

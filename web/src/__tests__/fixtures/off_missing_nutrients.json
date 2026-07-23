@@ -1,0 +1,11 @@
+{
+  "status": 1,
+  "status_verbose": "product found",
+  "product": {
+    "product_name": "Mystery Snack",
+    "brands": "Unknown Brand",
+    "nutriments": {
+      "energy-kcal_100g": 350
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "model": "llama-3.1-8b-instant",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "[{\"raw_phrase\":\"2 eggs\",\"normalized_name\":\"egg\",\"quantity\":2,\"unit\":\"piece\",\"confidence_hint\":\"high\",\"ambiguous\":false},{\"raw_phrase\":\"bowl of oatmeal\",\"normalized_name\":\"oatmeal\",\"quantity\":null,\"unit\":null,\"confidence_hint\":\"low\",\"ambiguous\":true}]"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 210,
+    "completion_tokens": 68,
+    "total_tokens": 278
+  }
+}

@@ -9,6 +9,7 @@
 import { ok, fail, preflight } from "../_shared/envelope.ts";
 import { getUserClient, getServiceClient } from "../_shared/supabaseClient.ts";
 import { ParsedFoodItem } from "../_shared/types.ts";
+import { filterForbiddenKeys, sanitizeGroqItem } from "../_shared/groqParser.ts";
 
 const SYSTEM_PROMPT = `You are a food-extraction assistant for a nutrition tracking app.
 Extract every distinct food item from the user's message.
@@ -18,8 +19,6 @@ Rules:
 - For each item return: raw_phrase, normalized_name (canonical singular food name, lowercase), quantity (number or null), unit (string or null, e.g. "g", "piece", "cup"), confidence_hint ("high"|"medium"|"low"), ambiguous (boolean — true if the size/type/portion is genuinely unclear and a follow-up question is needed).
 - If two items clearly refer to the same food, still list them separately; deduplication happens downstream.
 - Respond with ONLY a JSON array matching this shape. No prose, no markdown code fences, no explanation.`;
-
-const FORBIDDEN_KEYS = ["calories", "protein", "carbs", "fat", "fibre", "fiber", "macros"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight();
@@ -67,11 +66,7 @@ Deno.serve(async (req) => {
 
     // Groq sometimes returns the string "null" instead of JSON null for
     // optional fields. Normalize these to actual null before sending downstream.
-    const sanitized = (items as any[]).map((item) => ({
-      ...item,
-      quantity: item.quantity === "null" || item.quantity === null ? null : Number(item.quantity),
-      unit: item.unit === "null" || item.unit === "" ? null : item.unit,
-    }));
+    const sanitized = (items as any[]).map(sanitizeGroqItem);
 
     return ok({ ai_parse_request_id: logRow?.id ?? null, items: sanitized });
   } catch (err) {
@@ -144,10 +139,7 @@ async function callClaude(text: string): Promise<{
       }
 
       // FR-002 AC4: reject any item smuggling nutrition fields.
-      const clean = (parsed as any[]).filter((item) => {
-        const keys = Object.keys(item ?? {}).map((k) => k.toLowerCase());
-        return !keys.some((k) => FORBIDDEN_KEYS.includes(k));
-      });
+      const clean = filterForbiddenKeys(parsed as any[]);
       if (clean.length !== parsed.length) {
         console.warn("Discarded item(s) with forbidden nutrition fields from AI response");
       }
