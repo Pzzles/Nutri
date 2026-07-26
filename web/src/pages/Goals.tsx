@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { callFunction } from "../lib/supabase";
+import { callFunction, getFunction } from "../lib/supabase";
 import { GoalPhase, GoalPhaseMode, GoalPhaseStatus, PhaseTransition } from "../lib/goalTypes";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ export default function Goals() {
     setLoading(true);
     setError(null);
     try {
-      const result = await callFunction<GetPhasesResponse>("get-goal-phases", {});
+      const result = await getFunction<GetPhasesResponse>("get-goal-phases");
       setActive(result.active_phase);
       setHistory(result.phases.filter((p) => p.status !== "active"));
     } catch (err: any) {

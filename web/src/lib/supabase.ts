@@ -33,3 +33,26 @@ export async function callFunction<T = unknown>(name: string, body: unknown): Pr
   }
   return json.data as T;
 }
+
+// GET variant — passes params as query string, used by read-only endpoints
+// that read url.searchParams (e.g. get-weight-logs, get-daily-log-status).
+export async function getFunction<T = unknown>(
+  name: string,
+  params: Record<string, string> = {},
+): Promise<T> {
+  const { data: session } = await supabase.auth.getSession();
+  const token = session.session?.access_token;
+  if (!token) throw new Error("Not authenticated");
+
+  const qs = new URLSearchParams(params).toString();
+  const resp = await fetch(`${url}/functions/v1/${name}${qs ? `?${qs}` : ""}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const json = await resp.json();
+  if (!json.success) {
+    throw new Error(json.error?.message ?? `${name} failed`);
+  }
+  return json.data as T;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { callFunction } from "../lib/supabase";
+import { callFunction, getFunction } from "../lib/supabase";
 import { WeightLog, GetWeightLogsResponse } from "../lib/weightTypes";
 
 export default function WeightLogPage() {
@@ -21,7 +21,7 @@ export default function WeightLogPage() {
     setLoading(true);
     setError(null);
     try {
-      const result = await callFunction<GetWeightLogsResponse>("get-weight-logs", {});
+      const result = await getFunction<GetWeightLogsResponse>("get-weight-logs");
       setLogs(result.logs);
       setLatestOfficial(result.latest_official);
     } catch (err: any) {
