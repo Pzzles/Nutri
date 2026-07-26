@@ -341,10 +341,10 @@ describe("resolveWeightGrams — null quantity fallbacks", () => {
     if (r.kind === "ok") { expect(r.grams).toBe(278); expect(r.source).toBe("default"); }
   });
 
-  it("null qty + no history + no serving → 100 g fallback", () => {
+  it("null qty + no history + no serving → MISSING_PORTION clarification (100 g constant removed)", () => {
     const r = resolveWeightGrams({ quantity: null, unit: null }, null, null);
-    expect(r.kind).toBe("ok");
-    if (r.kind === "ok") { expect(r.grams).toBe(100); expect(r.source).toBe("default"); }
+    expect(r.kind).toBe("clarification");
+    if (r.kind === "clarification") expect(r.clarification.code).toBe("MISSING_PORTION");
   });
 });
 

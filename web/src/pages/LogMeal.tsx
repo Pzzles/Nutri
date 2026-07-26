@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { callFunction } from "../lib/supabase";
 import { DailyLogStatus } from "../lib/goalTypes";
 import {
@@ -13,6 +13,24 @@ import ConfidenceBadge from "../components/ConfidenceBadge";
 import { scaleMacros } from "../lib/meal";
 
 type Step = "input" | "reviewing" | "confirming" | "logged";
+
+function generateUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 export default function LogMeal() {
   const [step, setStep] = useState<Step>("input");
@@ -30,6 +48,10 @@ export default function LogMeal() {
   const [portionInputs, setPortionInputs] = useState<Record<number, string>>({});
   // food_ids whose EXTREME_PORTION the user has explicitly confirmed
   const [extremeConfirmedIds, setExtremeConfirmedIds] = useState<string[]>([]);
+  // gram overrides typed into the clarification panel inputs
+  const [clarificationGrams, setClarificationGrams] = useState<Record<number, string>>({});
+  // One key per meal draft — generated on mount, reused across retries, reset on start-over.
+  const idempotencyKey = useRef(generateUUID());
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -68,7 +90,6 @@ export default function LogMeal() {
   async function confirmExtremePortion(foodId: string) {
     const confirmed = [...extremeConfirmedIds, foodId];
     setExtremeConfirmedIds(confirmed);
-    // Dismiss the clarification, then re-run calculate-meal with the confirmed id.
     setNeedsAttention((prev) =>
       prev.filter(
         (n) => !(n.reason === "portion_clarification" && (n as any).food_id === foodId),
@@ -77,29 +98,45 @@ export default function LogMeal() {
     await rerunCalculation(confirmed);
   }
 
-  async function rerunCalculation(confirmedIds: string[]) {
-    if (items.length === 0 && needsAttention.filter((n) => n.reason === "portion_clarification").length === 0) return;
+  async function resolveWithGrams(index: number, grams: number) {
+    const n = needsAttention[index];
+    if (n.reason !== "portion_clarification") return;
+    setClarificationGrams((prev) => { const next = { ...prev }; delete next[index]; return next; });
+    await rerunCalculation(extremeConfirmedIds, [{
+      raw_phrase: n.raw_phrase,
+      normalized_query: n.raw_phrase,
+      food_id: n.food_id,
+      quantity: grams,
+      unit: "g",
+      match_confidence: "partial",
+      portion_confidence: "exact",
+      item_confidence: "medium",
+    }]);
+  }
+
+  async function rerunCalculation(confirmedIds: string[], extraResolved: ResolvedFoodItem[] = []) {
+    const hasExisting = items.length > 0 || needsAttention.some((n) => n.reason === "portion_clarification");
+    if (!hasExisting && extraResolved.length === 0) return;
     setLoading(true);
     setError(null);
     try {
-      // Gather all resolved items — the ones already calculated plus those that
-      // were blocked as portion clarifications (they're in items from previous resolve step).
+      const baseResolved = items.map((i) => ({
+        raw_phrase: i.raw_phrase,
+        normalized_query: i.normalized_query,
+        food_id: i.food_id,
+        quantity: i.quantity,
+        unit: i.unit,
+        match_confidence: i.match_confidence,
+        portion_confidence: i.portion_confidence,
+        item_confidence: i.item_confidence,
+      }));
       const calculated = await callFunction<{
         items: CalculatedItem[];
         clarification_required: PortionClarificationResult[];
         meal_totals: MealTotals;
         meal_confidence: "high" | "medium" | "low";
       }>("calculate-meal", {
-        resolved_items: items.map((i) => ({
-          raw_phrase: i.raw_phrase,
-          normalized_query: i.normalized_query,
-          food_id: i.food_id,
-          quantity: i.quantity,
-          unit: i.unit,
-          match_confidence: i.match_confidence,
-          portion_confidence: i.portion_confidence,
-          item_confidence: i.item_confidence,
-        })),
+        resolved_items: [...baseResolved, ...extraResolved],
         extreme_confirmed_ids: confirmedIds,
       });
 
@@ -191,7 +228,7 @@ export default function LogMeal() {
     setError(null);
     try {
       const result = await callFunction<{ meal_id: string; meal_confidence: string; daily_log_status: DailyLogStatus }>("log-meal", {
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: idempotencyKey.current,
         meal_type: mealType,
         eaten_at: new Date().toISOString(),
         source: "draft",
@@ -222,10 +259,13 @@ export default function LogMeal() {
     setAiParseRequestId(null);
     setPortionInputs({});
     setExtremeConfirmedIds([]);
+    setClarificationGrams({});
     setError(null);
+    idempotencyKey.current = generateUUID();
   }
 
-  const canConfirm = !loading && items.length > 0 && needsAttention.length === 0;
+  const hasDefaultPortions = items.some((i) => i.portion_source === "default");
+  const canConfirm = !loading && items.length > 0 && needsAttention.length === 0 && !hasDefaultPortions;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -303,16 +343,13 @@ export default function LogMeal() {
                   }
                   if (n.reason === "portion_clarification") {
                     const isExtreme = n.code === "EXTREME_PORTION";
-                    const isLikelyError = n.code === "LIKELY_UNIT_ERROR";
+                    const gramVal = clarificationGrams[i] ?? "";
+                    const gramNum = parseFloat(gramVal);
+                    const placeholder = n.suggested_qty ? String(Math.round(n.suggested_qty)) : "e.g. 120";
                     return (
                       <li key={i} className="flex items-start gap-2">
                         <div className="flex-1">
                           <span className="font-medium">"{n.raw_phrase}"</span> — {n.message}
-                          {isLikelyError && n.suggested_qty && (
-                            <span className="ml-1 text-xs">
-                              (Did you mean {n.suggested_qty} g?)
-                            </span>
-                          )}
                           {isExtreme && (
                             <button
                               onClick={() => confirmExtremePortion((n as any).food_id)}
@@ -321,6 +358,32 @@ export default function LogMeal() {
                               Confirm amount
                             </button>
                           )}
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="1"
+                              max="5000"
+                              placeholder={placeholder}
+                              value={gramVal}
+                              onChange={(e) =>
+                                setClarificationGrams((prev) => ({ ...prev, [i]: e.target.value }))
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && gramNum > 0) resolveWithGrams(i, gramNum);
+                              }}
+                              className="w-24 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-amber-400 dark:border-amber-700 dark:bg-amber-950/50"
+                            />
+                            <span className="text-xs text-muted">g</span>
+                            <button
+                              type="button"
+                              onClick={() => { if (gramNum > 0) resolveWithGrams(i, gramNum); }}
+                              disabled={!(gramNum > 0) || loading}
+                              className="rounded bg-amber-500 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                            >
+                              Set
+                            </button>
+                          </div>
                         </div>
                         <button
                           aria-label={`Remove ${n.raw_phrase} from clarifications`}
@@ -424,6 +487,12 @@ export default function LogMeal() {
                 {totals.protein_g}g protein · {totals.carbs_g}g carbs · {totals.fat_g}g fat · {totals.fibre_g}g fibre
               </p>
             </div>
+          )}
+
+          {hasDefaultPortions && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Some items have estimated portions (marked "portion?"). Set the actual gram weight before logging.
+            </p>
           )}
 
           <div className="flex gap-2">

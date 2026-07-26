@@ -69,7 +69,7 @@ export interface PortionClarificationResult {
   // food_id is included so the UI can pass it back as extreme_confirmed_ids
   // when the user confirms an EXTREME_PORTION.
   food_id: string;
-  code: "UNSUPPORTED_PORTION_UNIT" | "EXTREME_PORTION" | "LIKELY_UNIT_ERROR" | "MISSING_SERVING_SIZE";
+  code: "UNSUPPORTED_PORTION_UNIT" | "EXTREME_PORTION" | "LIKELY_UNIT_ERROR" | "MISSING_SERVING_SIZE" | "MISSING_PORTION";
   raw_unit: string | null;
   message: string;
   suggested_unit?: string;
