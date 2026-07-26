@@ -1,4 +1,4 @@
-export type GoalPhaseMode = "cut" | "maintenance";
+export type GoalPhaseMode = "cut" | "maintenance" | "bulk";
 export type GoalPhaseStatus = "active" | "completed" | "cancelled" | "superseded";
 export type DailyLogStatusValue = "unknown" | "partial" | "complete";
 

@@ -46,6 +46,7 @@ const STATUS_LABEL: Record<GoalPhaseStatus, string> = {
 const MODE_LABEL: Record<GoalPhaseMode, string> = {
   cut: "Cut",
   maintenance: "Maintenance",
+  bulk: "Bulk",
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -106,6 +107,9 @@ export default function Goals() {
         // User enters a positive loss amount; we negate it on submit.
         if (rate <= 0) return "Loss per week must be greater than 0.";
         if (rate > 2.0) return "Loss per week cannot exceed 2.0 kg/week.";
+      } else if (form.mode === "bulk") {
+        if (rate <= 0) return "Gain per week must be greater than 0.";
+        if (rate > 2.0) return "Gain per week cannot exceed 2.0 kg/week.";
       } else {
         if (rate !== 0) return "A maintenance phase requires a zero or blank rate.";
       }
@@ -154,7 +158,7 @@ export default function Goals() {
       if (form.target_weight_kg) body.target_weight_kg = parseFloat(form.target_weight_kg);
       if (form.target_change_kg_per_week) {
         const rawRate = parseFloat(form.target_change_kg_per_week);
-        // Cut mode: user entered a positive loss amount — send it as negative.
+        // Cut: user enters positive loss amount → send negative. Bulk/maintenance: send as-is.
         body.target_change_kg_per_week = form.mode === "cut" ? -rawRate : rawRate;
       }
       if (form.target_calories) body.target_calories = parseFloat(form.target_calories);
@@ -209,7 +213,7 @@ export default function Goals() {
         {!showNewForm && (
           <button
             type="button"
-            onClick={() => { setShowNewForm(true); setForm(INITIAL_FORM); setFormError(null); setNeedsTransition(false); }}
+            onClick={() => { setShowNewForm(true); setForm({ ...INITIAL_FORM, mode: active?.mode ?? "cut" }); setFormError(null); setNeedsTransition(false); }}
             className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-dark"
           >
             Start new phase
@@ -259,7 +263,7 @@ export default function Goals() {
             <div>
               <label className="block text-xs font-medium text-muted">Mode</label>
               <div className="mt-1 flex gap-2">
-                {(["cut", "maintenance"] as GoalPhaseMode[]).map((m) => (
+                {(["cut", "maintenance", "bulk"] as GoalPhaseMode[]).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -316,10 +320,10 @@ export default function Goals() {
                 placeholder="optional"
               />
               <FormField
-                label={form.mode === "cut" ? "Loss per week (kg)" : "Weekly rate (kg/week)"}
+                label={form.mode === "cut" ? "Loss per week (kg)" : form.mode === "bulk" ? "Gain per week (kg)" : "Weekly rate (kg/week)"}
                 value={form.target_change_kg_per_week}
                 onChange={(v) => setForm((f) => ({ ...f, target_change_kg_per_week: v }))}
-                placeholder={form.mode === "cut" ? "e.g. 0.5" : "0"}
+                placeholder={form.mode === "maintenance" ? "0" : "e.g. 0.5"}
               />
               <FormField
                 label="Target calories (kcal)"
@@ -480,7 +484,7 @@ function ActivePhaseDetail({
           <p><span className="text-muted">Calories: </span><span className="font-medium text-ink">{phase.target_calories} kcal</span></p>
         )}
         {phase.target_change_kg_per_week != null && (
-          <p><span className="text-muted">{phase.mode === "cut" ? "Loss/week: " : "Rate: "}</span><span className="font-medium text-ink">{phase.mode === "cut" ? Math.abs(phase.target_change_kg_per_week!) : phase.target_change_kg_per_week} kg/wk</span></p>
+          <p><span className="text-muted">{phase.mode === "cut" ? "Loss/week: " : phase.mode === "bulk" ? "Gain/week: " : "Rate: "}</span><span className="font-medium text-ink">{Math.abs(phase.target_change_kg_per_week!)} kg/wk</span></p>
         )}
         {phase.target_weight_kg != null && (
           <p><span className="text-muted">Goal weight: </span><span className="font-medium text-ink">{phase.target_weight_kg} kg</span></p>
@@ -571,7 +575,7 @@ function HistoryRow({ phase }: { phase: GoalPhase }) {
           {phase.target_calories != null && <span>{phase.target_calories} kcal</span>}
           {phase.target_weight_kg != null && <span>goal {phase.target_weight_kg} kg</span>}
           {phase.target_change_kg_per_week != null && (
-            <span>{phase.mode === "cut" ? Math.abs(phase.target_change_kg_per_week) : phase.target_change_kg_per_week} kg/wk loss</span>
+            <span>{Math.abs(phase.target_change_kg_per_week)} kg/wk {phase.mode === "bulk" ? "gain" : "loss"}</span>
           )}
         </div>
       )}

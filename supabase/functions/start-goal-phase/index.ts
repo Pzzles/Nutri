@@ -37,8 +37,8 @@ Deno.serve(async (req) => {
     const body: StartPhaseBody = await req.json().catch(() => ({}));
 
     // ── Validate mode ────────────────────────────────────────────────────────
-    if (!body.mode || !["cut", "maintenance"].includes(body.mode)) {
-      return fail("VALIDATION_ERROR", "mode must be 'cut' or 'maintenance'");
+    if (!body.mode || !["cut", "maintenance", "bulk"].includes(body.mode)) {
+      return fail("VALIDATION_ERROR", "mode must be 'cut', 'maintenance', or 'bulk'");
     }
 
     // ── Validate started_at ──────────────────────────────────────────────────
@@ -95,26 +95,23 @@ Deno.serve(async (req) => {
     }
 
     // ── Validate target_change_kg_per_week ───────────────────────────────────
-    // Sign convention: negative = loss, zero = maintenance.
+    // Sign convention: negative = loss (cut), zero = maintenance, positive = gain (bulk).
     if (body.target_change_kg_per_week != null) {
       const rate = Number(body.target_change_kg_per_week);
-      if (isNaN(rate) || rate > 0) {
-        return fail(
-          "VALIDATION_ERROR",
-          "target_change_kg_per_week must be negative (loss) or zero (maintenance). Positive values are not supported in this milestone.",
-        );
+      if (isNaN(rate)) {
+        return fail("VALIDATION_ERROR", "target_change_kg_per_week must be a number.");
       }
-      if (rate < -2.0) {
-        return fail(
-          "VALIDATION_ERROR",
-          "target_change_kg_per_week cannot exceed -2.0 kg/week (technical guardrail against corrupt data).",
-        );
+      if (Math.abs(rate) > 2.0) {
+        return fail("VALIDATION_ERROR", "target_change_kg_per_week cannot exceed 2.0 kg/week in either direction.");
       }
-      if (body.mode === "cut" && rate === 0) {
+      if (body.mode === "cut" && rate >= 0) {
         return fail("VALIDATION_ERROR", "A cut phase requires a negative weekly change rate.");
       }
       if (body.mode === "maintenance" && rate !== 0) {
         return fail("VALIDATION_ERROR", "A maintenance phase requires a zero weekly change rate.");
+      }
+      if (body.mode === "bulk" && rate <= 0) {
+        return fail("VALIDATION_ERROR", "A bulk phase requires a positive weekly change rate.");
       }
     }
 
