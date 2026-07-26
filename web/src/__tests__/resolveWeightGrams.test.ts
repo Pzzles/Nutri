@@ -389,7 +389,8 @@ describe("checkExtreme", () => {
   it("5000 g confirmed: true → null (override active)", () => expect(checkExtreme(5000, "g", true)).toBeNull());
   it("EXTREME_PORTION code is set", () => {
     const r = checkExtreme(9999, "g");
-    expect(r?.clarification.code).toBe("EXTREME_PORTION");
+    expect(r?.kind).toBe("clarification");
+    if (r?.kind === "clarification") expect(r.clarification.code).toBe("EXTREME_PORTION");
   });
 });
 
