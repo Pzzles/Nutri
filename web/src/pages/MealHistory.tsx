@@ -112,7 +112,7 @@ function PencilIcon() {
 
 // ── main page ─────────────────────────────────────────────────────────────────
 
-export default function MealHistory() {
+export default function MealHistory({ embedded = false }: { embedded?: boolean }) {
   const [date, setDate] = useState(todayStr);
   const [data, setData] = useState<GetMealsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -206,7 +206,7 @@ export default function MealHistory() {
   const isToday = date === todayStr();
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div className={embedded ? "px-4 pb-4 pt-2" : "mx-auto max-w-lg px-4 py-6"}>
       {/* Date navigation */}
       <div className="mb-5 flex items-center gap-3">
         <button

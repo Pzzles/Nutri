@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { supabase } from "./lib/supabase";
-import LogMeal from "./pages/LogMeal";
+import Log from "./pages/Log";
+import Progress from "./pages/Progress";
 import Dashboard from "./pages/Dashboard";
+import LogMeal from "./pages/LogMeal";
 import SearchFood from "./pages/SearchFood";
 import AccountLink from "./pages/AccountLink";
 import Goals from "./pages/Goals";
@@ -26,7 +28,6 @@ export default function App() {
       if (!data.session) {
         const { data: anonData } = await supabase.auth.signInAnonymously();
         if (anonData.user) {
-          // Ensure a profile row exists (FK required by meals, ai_parse_requests, etc.)
           await supabase.from("profiles").upsert({ id: anonData.user.id }, { onConflict: "id" });
         }
       }
@@ -44,13 +45,18 @@ export default function App() {
       <div className="min-h-screen">
         <NavBar darkMode={darkMode} onToggleTheme={() => setDarkMode((value) => !value)} />
         <Routes>
+          {/* Primary nav routes */}
           <Route path="/" element={<Dashboard />} />
-          <Route path="/log" element={<LogMeal />} />
+          <Route path="/log" element={<Log />} />
+          <Route path="/progress" element={<Progress />} />
+          <Route path="/account" element={<AccountLink />} />
+
+          {/* Deep-link routes — not in nav, still accessible */}
+          <Route path="/history" element={<MealHistory />} />
           <Route path="/search" element={<SearchFood />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/weight" element={<WeightLogPage />} />
-          <Route path="/history" element={<MealHistory />} />
-          <Route path="/account" element={<AccountLink />} />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
@@ -66,48 +72,10 @@ function NavBar({ darkMode, onToggleTheme }: { darkMode: boolean; onToggleTheme:
     <nav className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
       <span className="font-display text-sm font-semibold text-ink">Nutrition Tracker</span>
       <div className="flex items-center gap-1">
-        <Link
-          to="/"
-          className={`rounded-full px-3 py-1.5 text-sm ${isActive("/") ? "bg-primary text-white" : "text-muted"}`}
-        >
-          Today
-        </Link>
-        <Link
-          to="/log"
-          className={`rounded-full px-3 py-1.5 text-sm ${isActive("/log") ? "bg-primary text-white" : "text-muted"}`}
-        >
-          Log meal
-        </Link>
-        <Link
-          to="/search"
-          className={`rounded-full px-3 py-1.5 text-sm ${isActive("/search") ? "bg-primary text-white" : "text-muted"}`}
-        >
-          Search
-        </Link>
-        <Link
-          to="/weight"
-          className={`rounded-full px-3 py-1.5 text-sm ${isActive("/weight") ? "bg-primary text-white" : "text-muted"}`}
-        >
-          Weight
-        </Link>
-        <Link
-          to="/history"
-          className={`rounded-full px-3 py-1.5 text-sm ${isActive("/history") ? "bg-primary text-white" : "text-muted"}`}
-        >
-          History
-        </Link>
-        <Link
-          to="/goals"
-          className={`rounded-full px-3 py-1.5 text-sm ${isActive("/goals") ? "bg-primary text-white" : "text-muted"}`}
-        >
-          Goals
-        </Link>
-        <Link
-          to="/account"
-          className={`rounded-full px-3 py-1.5 text-sm ${isActive("/account") ? "bg-primary text-white" : "text-muted"}`}
-        >
-          Account
-        </Link>
+        <NavLink to="/" label="Dashboard" active={isActive("/")} />
+        <NavLink to="/log" label="Log" active={isActive("/log")} />
+        <NavLink to="/progress" label="Progress" active={isActive("/progress")} />
+        <NavLink to="/account" label="Account" active={isActive("/account")} />
         <button
           type="button"
           onClick={onToggleTheme}
@@ -128,5 +96,18 @@ function NavBar({ darkMode, onToggleTheme }: { darkMode: boolean; onToggleTheme:
         </button>
       </div>
     </nav>
+  );
+}
+
+function NavLink({ to, label, active }: { to: string; label: string; active: boolean }) {
+  return (
+    <Link
+      to={to}
+      className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
+        active ? "bg-primary text-white" : "text-muted hover:text-ink"
+      }`}
+    >
+      {label}
+    </Link>
   );
 }

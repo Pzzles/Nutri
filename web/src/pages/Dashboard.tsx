@@ -4,6 +4,7 @@ import { callFunction } from "../lib/supabase";
 import { GoalPhase, DailyLogStatus, WeightChange } from "../lib/goalTypes";
 import GoalPhaseCard from "../components/GoalPhaseCard";
 import DailyStatusControl from "../components/DailyStatusControl";
+import MealHistory from "./MealHistory";
 
 interface LatestWeight {
   weight_kg: number;
@@ -26,6 +27,7 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dailyStatus, setDailyStatus] = useState<DailyLogStatus | null>(null);
+  const [mealsOpen, setMealsOpen] = useState(false);
 
   useEffect(() => {
     callFunction<DashboardData>("dashboard-summary", {})
@@ -38,7 +40,7 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
-      <h1 className="font-display text-2xl font-semibold text-ink">Today</h1>
+      <h1 className="font-display text-2xl font-semibold text-ink">Dashboard</h1>
 
       {error && <p className="mt-4 text-sm text-confidence-low">{error}</p>}
       {!data && !error && <p className="mt-4 text-sm text-muted">Loading…</p>}
@@ -71,17 +73,37 @@ export default function Dashboard() {
             <Stat label="Fat" value={`${data.totals.fat_g}g`} />
           </div>
 
+          {/* Meals widget — expandable history panel */}
+          <div className="rounded-lg border border-border bg-surface overflow-hidden">
+            <button
+              onClick={() => setMealsOpen((o) => !o)}
+              className="flex w-full items-center justify-between px-5 py-3 text-left hover:bg-surface-hover transition-colors"
+            >
+              <span className="text-sm font-medium text-ink">Meals</span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted">{data.totals.calories} kcal today</span>
+                <ChevronIcon open={mealsOpen} />
+              </div>
+            </button>
+            {mealsOpen && (
+              <div className="border-t border-border">
+                <MealHistory embedded />
+              </div>
+            )}
+          </div>
+
           {/* Latest weight tile */}
           <Link
-            to="/weight"
+            to="/progress"
             className="flex items-center justify-between rounded-lg border border-border bg-surface px-5 py-3 hover:border-primary transition-colors"
-            aria-label="View weight log"
+            aria-label="View weight & goals"
           >
             <div>
               {data.latest_weight ? (
                 <>
                   <p className="font-display text-xl font-semibold text-ink">
-                    {data.latest_weight.weight_kg} <span className="text-sm font-normal text-muted">kg</span>
+                    {data.latest_weight.weight_kg}{" "}
+                    <span className="text-sm font-normal text-muted">kg</span>
                   </p>
                   <p className="text-xs text-muted">
                     {formatDate(data.latest_weight.logged_date)}
@@ -91,10 +113,10 @@ export default function Dashboard() {
                 <p className="text-sm text-muted">No weight logged yet</p>
               )}
             </div>
-            <span className="text-xs text-primary">Log weight →</span>
+            <span className="text-xs text-primary">Progress →</span>
           </Link>
 
-          {/* Daily log completeness — never inferred from meals */}
+          {/* Daily log completeness */}
           <DailyStatusControl
             date={data.date}
             status={dailyStatus?.status ?? "unknown"}
@@ -102,7 +124,13 @@ export default function Dashboard() {
           />
 
           {!data.goal && !data.active_phase && (
-            <p className="text-sm text-muted">No goal set yet — <Link to="/goals" className="text-primary hover:underline">start a phase</Link> to track progress.</p>
+            <p className="text-sm text-muted">
+              No goal set yet —{" "}
+              <Link to="/progress" className="text-primary hover:underline">
+                start a phase
+              </Link>{" "}
+              to track progress.
+            </p>
           )}
         </div>
       )}
@@ -116,6 +144,21 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="font-display text-lg font-semibold text-ink">{value}</p>
       <p className="text-xs text-muted">{label}</p>
     </div>
+  );
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`h-4 w-4 text-muted transition-transform ${open ? "rotate-180" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
   );
 }
 
