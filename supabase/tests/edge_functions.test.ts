@@ -223,6 +223,139 @@ describe("start-goal-phase", () => {
   });
 });
 
+// ── get-meals / edit-meal-item / delete-meal ──────────────────────────────────
+
+describe("get-meals / edit-meal-item / delete-meal", () => {
+  const TEST_DATE = "2026-07-24";
+  let foodId = "";
+  let mealId = "";
+  let itemId = "";
+
+  beforeAll(async () => {
+    const { data: food } = await svcClient()
+      .from("foods")
+      .insert({
+        name: "Test Chicken Breast",
+        normalized_name: "test chicken breast",
+        source: "user_manual",
+        calories_100g: 165,
+        protein_100g: 31,
+        carbs_100g: 0,
+        fat_100g: 3.6,
+      })
+      .select("id")
+      .single();
+    foodId = food!.id;
+
+    const { data: meal } = await svcClient()
+      .from("meals")
+      .insert({
+        user_id: userId,
+        raw_input: "100g chicken breast",
+        meal_type: "lunch",
+        meal_confidence: "high",
+        eaten_at: `${TEST_DATE}T12:00:00.000Z`,
+        logged_date: TEST_DATE,
+      })
+      .select("id")
+      .single();
+    mealId = meal!.id;
+
+    const { data: item } = await svcClient()
+      .from("meal_items")
+      .insert({
+        meal_id: mealId,
+        food_id: foodId,
+        raw_phrases: ["100g chicken breast"],
+        quantity: 100,
+        unit: "g",
+        weight_g: 100,
+        calories: 165,
+        protein_g: 31,
+        carbs_g: 0,
+        fat_g: 3.6,
+        match_confidence: "exact",
+        portion_confidence: "exact",
+        confidence: "high",
+        nutrition_source: "test",
+      })
+      .select("id")
+      .single();
+    itemId = item!.id;
+  });
+
+  afterAll(async () => {
+    // Ensure the meal (and its items) are gone before deleting the food (FK).
+    if (mealId) await svcClient().from("meals").delete().eq("id", mealId);
+    if (foodId) await svcClient().from("foods").delete().eq("id", foodId);
+  });
+
+  it("get-meals returns the meal with items and totals", async () => {
+    const resp = await getFn("get-meals", { date: TEST_DATE });
+    expect(resp.success).toBe(true);
+    expect(resp.data.date).toBe(TEST_DATE);
+    const meal = resp.data.meals.find((m: any) => m.id === mealId);
+    expect(meal).toBeDefined();
+    expect(meal.meal_type).toBe("lunch");
+    expect(meal.items).toHaveLength(1);
+    expect(meal.items[0].food_name).toBe("Test Chicken Breast");
+    expect(meal.items[0].weight_g).toBe(100);
+    expect(meal.totals.calories).toBeCloseTo(165, 0);
+  });
+
+  it("get-meals rejects a missing date param", async () => {
+    const resp = await getFn("get-meals");
+    expect(resp.success).toBe(false);
+    expect(resp.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("edit-meal-item rescales nutrition proportionally", async () => {
+    const resp = await callFn("edit-meal-item", {
+      meal_id: mealId,
+      item_id: itemId,
+      weight_g: 200,
+    });
+    expect(resp.success).toBe(true);
+    expect(resp.data.weight_g).toBe(200);
+    expect(resp.data.calories).toBeCloseTo(330, 0);
+    expect(resp.data.protein_g).toBeCloseTo(62, 0);
+    expect(resp.data.portion_confidence).toBe("estimated");
+    itemId = resp.data.id; // row was replaced — capture new ID
+  });
+
+  it("edit-meal-item rejects weight_g of 0", async () => {
+    const resp = await callFn("edit-meal-item", {
+      meal_id: mealId,
+      item_id: itemId,
+      weight_g: 0,
+    });
+    expect(resp.success).toBe(false);
+    expect(resp.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("delete-meal removes a single item and leaves the meal", async () => {
+    const resp = await callFn("delete-meal", { meal_id: mealId, item_id: itemId });
+    expect(resp.success).toBe(true);
+    expect(resp.data.deleted).toBe("item");
+
+    const check = await getFn("get-meals", { date: TEST_DATE });
+    const meal = check.data.meals.find((m: any) => m.id === mealId);
+    expect(meal).toBeDefined();
+    expect(meal.items).toHaveLength(0);
+  });
+
+  it("delete-meal removes the entire meal", async () => {
+    const resp = await callFn("delete-meal", { meal_id: mealId });
+    expect(resp.success).toBe(true);
+    expect(resp.data.deleted).toBe("meal");
+    mealId = ""; // mark as already gone so afterAll skip is a no-op
+
+    const check = await getFn("get-meals", { date: TEST_DATE });
+    const gone = check.data.meals.find((m: any) => m.id === resp.data.meal_id);
+    expect(gone).toBeUndefined();
+  });
+});
+
 // ── set-daily-log-status ───────────────────────────────────────────────────────
 
 describe("set-daily-log-status + get-daily-log-status", () => {
