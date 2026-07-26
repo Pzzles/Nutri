@@ -8,7 +8,8 @@ export type ClarificationCode =
   | "UNSUPPORTED_PORTION_UNIT"
   | "EXTREME_PORTION"
   | "LIKELY_UNIT_ERROR"
-  | "MISSING_SERVING_SIZE";
+  | "MISSING_SERVING_SIZE"
+  | "MISSING_PORTION";
 
 export interface PortionClarification {
   code: ClarificationCode;
@@ -39,8 +40,16 @@ export function resolveWeightGrams(
   defaultServingG: number | null,
   history: { usual_g: number; use_count: number } | null,
 ): WeightResolution {
-  const qty = item.quantity;
+  let qty = item.quantity;
   const rawUnit = item.unit != null ? item.unit.trim().toLowerCase() : null;
+
+  // Implied singular: "slice of toast" or "piece of chicken" with no explicit
+  // number means 1 of that unit. Apply before any further logic so the count
+  // branch below can handle it normally.
+  if (qty === null && rawUnit !== null) {
+    const normCheck = normaliseUnit(rawUnit);
+    if (normCheck?.canonical === "count") qty = 1;
+  }
 
   if (qty != null) {
     if (rawUnit !== null) {
@@ -137,9 +146,19 @@ export function resolveWeightGrams(
     }
   }
 
-  // qty is null — no portion information at all. Use history, then serving size, then 100 g.
+  // qty is null — no portion information at all.
   if (history != null) return { kind: "ok", grams: history.usual_g, source: "history" };
-  return { kind: "ok", grams: defaultServingG ?? 100, source: "default" };
+  if (defaultServingG != null) return { kind: "ok", grams: defaultServingG, source: "default" };
+  // Food identified but no amount given and no serving size on record.
+  // The 100 g constant is not a defensible fallback for meal logging.
+  return {
+    kind: "clarification",
+    clarification: {
+      code: "MISSING_PORTION",
+      raw_unit: null,
+      message: "The food was identified but no amount was given and no serving size is on record. Please specify a weight (e.g. 30 g).",
+    },
+  };
 }
 
 export function checkExtreme(

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { callFunction } from "../lib/supabase";
 import { DailyLogStatus } from "../lib/goalTypes";
 import {
@@ -13,6 +13,24 @@ import ConfidenceBadge from "../components/ConfidenceBadge";
 import { scaleMacros } from "../lib/meal";
 
 type Step = "input" | "reviewing" | "confirming" | "logged";
+
+function generateUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
 export default function LogMeal() {
   const [step, setStep] = useState<Step>("input");
@@ -32,6 +50,8 @@ export default function LogMeal() {
   const [extremeConfirmedIds, setExtremeConfirmedIds] = useState<string[]>([]);
   // gram overrides typed into the clarification panel inputs
   const [clarificationGrams, setClarificationGrams] = useState<Record<number, string>>({});
+  // One key per meal draft — generated on mount, reused across retries, reset on start-over.
+  const idempotencyKey = useRef(generateUUID());
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -208,7 +228,7 @@ export default function LogMeal() {
     setError(null);
     try {
       const result = await callFunction<{ meal_id: string; meal_confidence: string; daily_log_status: DailyLogStatus }>("log-meal", {
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: idempotencyKey.current,
         meal_type: mealType,
         eaten_at: new Date().toISOString(),
         source: "draft",
@@ -241,9 +261,11 @@ export default function LogMeal() {
     setExtremeConfirmedIds([]);
     setClarificationGrams({});
     setError(null);
+    idempotencyKey.current = generateUUID();
   }
 
-  const canConfirm = !loading && items.length > 0 && needsAttention.length === 0;
+  const hasDefaultPortions = items.some((i) => i.portion_source === "default");
+  const canConfirm = !loading && items.length > 0 && needsAttention.length === 0 && !hasDefaultPortions;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -465,6 +487,12 @@ export default function LogMeal() {
                 {totals.protein_g}g protein · {totals.carbs_g}g carbs · {totals.fat_g}g fat · {totals.fibre_g}g fibre
               </p>
             </div>
+          )}
+
+          {hasDefaultPortions && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Some items have estimated portions (marked "portion?"). Set the actual gram weight before logging.
+            </p>
           )}
 
           <div className="flex gap-2">
