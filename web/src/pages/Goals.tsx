@@ -102,10 +102,13 @@ export default function Goals() {
     if (form.target_change_kg_per_week) {
       const rate = parseFloat(form.target_change_kg_per_week);
       if (isNaN(rate)) return "Weekly change rate must be a number.";
-      if (rate > 0) return "Weekly change rate must be negative (loss) or zero (maintenance).";
-      if (rate < -2.0) return "Weekly change rate cannot exceed 2.0 kg/week.";
-      if (form.mode === "cut" && rate === 0) return "A cut phase requires a negative weekly change rate.";
-      if (form.mode === "maintenance" && rate !== 0) return "A maintenance phase requires a zero or blank rate.";
+      if (form.mode === "cut") {
+        // User enters a positive loss amount; we negate it on submit.
+        if (rate <= 0) return "Loss per week must be greater than 0.";
+        if (rate > 2.0) return "Loss per week cannot exceed 2.0 kg/week.";
+      } else {
+        if (rate !== 0) return "A maintenance phase requires a zero or blank rate.";
+      }
     }
 
     if (form.target_calories) {
@@ -149,7 +152,11 @@ export default function Goals() {
         body.starting_weight_kg = parseFloat(form.starting_weight_kg);
       }
       if (form.target_weight_kg) body.target_weight_kg = parseFloat(form.target_weight_kg);
-      if (form.target_change_kg_per_week) body.target_change_kg_per_week = parseFloat(form.target_change_kg_per_week);
+      if (form.target_change_kg_per_week) {
+        const rawRate = parseFloat(form.target_change_kg_per_week);
+        // Cut mode: user entered a positive loss amount — send it as negative.
+        body.target_change_kg_per_week = form.mode === "cut" ? -rawRate : rawRate;
+      }
       if (form.target_calories) body.target_calories = parseFloat(form.target_calories);
       if (form.target_protein_g) body.target_protein_g = parseFloat(form.target_protein_g);
       if (form.target_carbs_g) body.target_carbs_g = parseFloat(form.target_carbs_g);
@@ -309,10 +316,10 @@ export default function Goals() {
                 placeholder="optional"
               />
               <FormField
-                label={`Weekly rate (kg/week${form.mode === "cut" ? ", negative" : ""})`}
+                label={form.mode === "cut" ? "Loss per week (kg)" : "Weekly rate (kg/week)"}
                 value={form.target_change_kg_per_week}
                 onChange={(v) => setForm((f) => ({ ...f, target_change_kg_per_week: v }))}
-                placeholder={form.mode === "cut" ? "e.g. −0.5" : "0"}
+                placeholder={form.mode === "cut" ? "e.g. 0.5" : "0"}
               />
               <FormField
                 label="Target calories (kcal)"
@@ -473,7 +480,7 @@ function ActivePhaseDetail({
           <p><span className="text-muted">Calories: </span><span className="font-medium text-ink">{phase.target_calories} kcal</span></p>
         )}
         {phase.target_change_kg_per_week != null && (
-          <p><span className="text-muted">Rate: </span><span className="font-medium text-ink">{phase.target_change_kg_per_week} kg/wk</span></p>
+          <p><span className="text-muted">{phase.mode === "cut" ? "Loss/week: " : "Rate: "}</span><span className="font-medium text-ink">{phase.mode === "cut" ? Math.abs(phase.target_change_kg_per_week!) : phase.target_change_kg_per_week} kg/wk</span></p>
         )}
         {phase.target_weight_kg != null && (
           <p><span className="text-muted">Goal weight: </span><span className="font-medium text-ink">{phase.target_weight_kg} kg</span></p>
@@ -564,7 +571,7 @@ function HistoryRow({ phase }: { phase: GoalPhase }) {
           {phase.target_calories != null && <span>{phase.target_calories} kcal</span>}
           {phase.target_weight_kg != null && <span>goal {phase.target_weight_kg} kg</span>}
           {phase.target_change_kg_per_week != null && (
-            <span>{phase.target_change_kg_per_week} kg/wk</span>
+            <span>{phase.mode === "cut" ? Math.abs(phase.target_change_kg_per_week) : phase.target_change_kg_per_week} kg/wk loss</span>
           )}
         </div>
       )}
