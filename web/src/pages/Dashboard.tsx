@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { callFunction } from "../lib/supabase";
 import { GoalPhase, DailyLogStatus, WeightChange } from "../lib/goalTypes";
 import GoalPhaseCard from "../components/GoalPhaseCard";
 import DailyStatusControl from "../components/DailyStatusControl";
+
+interface LatestWeight {
+  weight_kg: number;
+  measured_at: string;
+  logged_date: string;
+}
 
 interface DashboardData {
   date: string;
@@ -12,6 +19,7 @@ interface DashboardData {
   active_phase: GoalPhase | null;
   daily_log_status: DailyLogStatus;
   weight_change: WeightChange | null;
+  latest_weight: LatestWeight | null;
 }
 
 export default function Dashboard() {
@@ -63,6 +71,29 @@ export default function Dashboard() {
             <Stat label="Fat" value={`${data.totals.fat_g}g`} />
           </div>
 
+          {/* Latest weight tile */}
+          <Link
+            to="/weight"
+            className="flex items-center justify-between rounded-lg border border-border bg-surface px-5 py-3 hover:border-primary transition-colors"
+            aria-label="View weight log"
+          >
+            <div>
+              {data.latest_weight ? (
+                <>
+                  <p className="font-display text-xl font-semibold text-ink">
+                    {data.latest_weight.weight_kg} <span className="text-sm font-normal text-muted">kg</span>
+                  </p>
+                  <p className="text-xs text-muted">
+                    {formatDate(data.latest_weight.logged_date)}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted">No weight logged yet</p>
+              )}
+            </div>
+            <span className="text-xs text-primary">Log weight →</span>
+          </Link>
+
           {/* Daily log completeness — never inferred from meals */}
           <DailyStatusControl
             date={data.date}
@@ -71,7 +102,7 @@ export default function Dashboard() {
           />
 
           {!data.goal && !data.active_phase && (
-            <p className="text-sm text-muted">No goal set yet — totals shown without a target.</p>
+            <p className="text-sm text-muted">No goal set yet — <Link to="/goals" className="text-primary hover:underline">start a phase</Link> to track progress.</p>
           )}
         </div>
       )}
@@ -86,4 +117,12 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="text-xs text-muted">{label}</p>
     </div>
   );
+}
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr + "T12:00:00").toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }

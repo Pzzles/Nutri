@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
       }).format(new Date());
 
     // Run independent queries in parallel.
-    const [mealsResult, activePhaseResult, legacyGoalResult, dailyStatusResult] =
+    const [mealsResult, activePhaseResult, legacyGoalResult, dailyStatusResult, latestWeightResult] =
       await Promise.all([
         service
           .from("meals")
@@ -72,11 +72,22 @@ Deno.serve(async (req) => {
           .eq("user_id", userId)
           .eq("logged_date", date)
           .maybeSingle(),
+        // Latest official weight — always included so the dashboard can show it
+        // even when no active phase exists.
+        service
+          .from("weight_logs")
+          .select("weight_kg, measured_at, logged_date")
+          .eq("user_id", userId)
+          .eq("is_official", true)
+          .order("measured_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
 
     const meals = mealsResult.data ?? [];
     const activePhase = activePhaseResult.data ?? null;
     const legacyGoal = legacyGoalResult.data ?? null;
+    const latestWeight = latestWeightResult.data ?? null;
 
     const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0 };
     for (const meal of meals) {
@@ -172,6 +183,10 @@ Deno.serve(async (req) => {
       active_phase: activePhase,
       daily_log_status: dailyStatus,
       weight_change,
+      // Always-present latest official weight, independent of active phase.
+      latest_weight: latestWeight
+        ? { weight_kg: Number(latestWeight.weight_kg), measured_at: latestWeight.measured_at, logged_date: latestWeight.logged_date }
+        : null,
     });
   } catch (err) {
     console.error(err);

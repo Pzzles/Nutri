@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import SearchFood from "./pages/SearchFood";
 import AccountLink from "./pages/AccountLink";
 import Goals from "./pages/Goals";
+import WeightLogPage from "./pages/WeightLog";
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="/log" element={<LogMeal />} />
           <Route path="/search" element={<SearchFood />} />
           <Route path="/goals" element={<Goals />} />
+          <Route path="/weight" element={<WeightLogPage />} />
           <Route path="/account" element={<AccountLink />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -79,6 +81,12 @@ function NavBar({ darkMode, onToggleTheme }: { darkMode: boolean; onToggleTheme:
           className={`rounded-full px-3 py-1.5 text-sm ${isActive("/search") ? "bg-primary text-white" : "text-muted"}`}
         >
           Search
+        </Link>
+        <Link
+          to="/weight"
+          className={`rounded-full px-3 py-1.5 text-sm ${isActive("/weight") ? "bg-primary text-white" : "text-muted"}`}
+        >
+          Weight
         </Link>
         <Link
           to="/goals"
