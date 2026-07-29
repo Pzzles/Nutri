@@ -20,6 +20,7 @@ interface StartPhaseForm {
   target_protein_g: string;
   target_carbs_g: string;
   target_fat_g: string;
+  target_fibre_g: string;
   transition: PhaseTransition | "";
 }
 
@@ -33,6 +34,7 @@ const INITIAL_FORM: StartPhaseForm = {
   target_protein_g: "",
   target_carbs_g: "",
   target_fat_g: "",
+  target_fibre_g: "",
   transition: "",
 };
 
@@ -120,7 +122,7 @@ export default function Goals() {
       if (isNaN(c) || c <= 0) return "Target calories must be a positive number.";
     }
 
-    for (const field of ["target_protein_g", "target_carbs_g", "target_fat_g"] as const) {
+    for (const field of ["target_protein_g", "target_carbs_g", "target_fat_g", "target_fibre_g"] as const) {
       if (form[field]) {
         const v = parseFloat(form[field]);
         if (isNaN(v) || v < 0) return `${field.replace("_g", "").replace("target_", "")} target must be non-negative.`;
@@ -165,6 +167,7 @@ export default function Goals() {
       if (form.target_protein_g) body.target_protein_g = parseFloat(form.target_protein_g);
       if (form.target_carbs_g) body.target_carbs_g = parseFloat(form.target_carbs_g);
       if (form.target_fat_g) body.target_fat_g = parseFloat(form.target_fat_g);
+      if (form.target_fibre_g) body.target_fibre_g = parseFloat(form.target_fibre_g);
       if (form.transition) body.transition = form.transition;
 
       await callFunction<GoalPhase>("start-goal-phase", body);
@@ -349,6 +352,12 @@ export default function Goals() {
                 onChange={(v) => setForm((f) => ({ ...f, target_fat_g: v }))}
                 placeholder="optional"
               />
+              <FormField
+                label="Fibre (g)"
+                value={form.target_fibre_g}
+                onChange={(v) => setForm((f) => ({ ...f, target_fibre_g: v }))}
+                placeholder="optional"
+              />
             </div>
 
             {/* Transition selector — shown if active phase exists or the API bounced with conflict */}
@@ -497,6 +506,9 @@ function ActivePhaseDetail({
         )}
         {phase.target_fat_g != null && (
           <p><span className="text-muted">Fat: </span><span className="font-medium text-ink">{phase.target_fat_g}g</span></p>
+        )}
+        {phase.target_fibre_g != null && (
+          <p><span className="text-muted">Fibre: </span><span className="font-medium text-ink">{phase.target_fibre_g}g</span></p>
         )}
         <p>
           <span className="text-muted">Start weight: </span>

@@ -18,7 +18,7 @@ interface DashboardData {
   date: string;
   totals: { calories: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number };
   goal: { target_calories: number | null; target_protein_g: number | null } | null;
-  percent_of_goal: { calories: number | null; protein_g: number | null } | null;
+  percent_of_goal: { calories: number | null; protein_g: number | null; fibre_g: number | null } | null;
   active_phase: GoalPhase | null;
   daily_log_status: DailyLogStatus;
   weight_change: WeightChange | null;
@@ -90,10 +90,11 @@ export default function Dashboard() {
                 {data.percent_of_goal?.calories != null && (
                   <p className="mt-0.5 text-xs text-muted">{data.percent_of_goal.calories}% of goal</p>
                 )}
-                <div className="mt-3 grid grid-cols-3 gap-x-3 text-center">
+                <div className="mt-3 grid grid-cols-4 gap-x-2 text-center">
                   <MacroStat label="Protein" value={data.totals.protein_g} color="#0094FF" />
                   <MacroStat label="Carbs" value={data.totals.carbs_g} color="#F59E0B" />
                   <MacroStat label="Fat" value={data.totals.fat_g} color="#EF4444" />
+                  <MacroStat label="Fibre" value={data.totals.fibre_g} color="#22C55E" />
                 </div>
               </div>
             </div>

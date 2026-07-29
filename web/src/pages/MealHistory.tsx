@@ -262,11 +262,12 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
           {data.meals.length > 0 && (
             <div className="rounded-xl border border-border bg-surface p-3">
               <p className="mb-2 text-[10px] uppercase tracking-wide text-muted">Day total</p>
-              <div className="grid grid-cols-4 gap-1">
+              <div className="grid grid-cols-5 gap-1">
                 <MacroRow label="Cal" value={String(r0(data.day_totals.calories))} />
                 <MacroRow label="Protein" value={`${r0(data.day_totals.protein_g)}g`} />
                 <MacroRow label="Carbs" value={`${r0(data.day_totals.carbs_g)}g`} />
                 <MacroRow label="Fat" value={`${r0(data.day_totals.fat_g)}g`} />
+                <MacroRow label="Fibre" value={`${r0(data.day_totals.fibre_g)}g`} />
               </div>
             </div>
           )}
@@ -379,7 +380,7 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
 
                           {/* Nutrition row */}
                           <p className="mt-1 text-xs text-muted">
-                            {r0(item.calories)} kcal · P {r0(item.protein_g)}g · C {r0(item.carbs_g)}g · F {r0(item.fat_g)}g
+                            {r0(item.calories)} kcal · P {r0(item.protein_g)}g · C {r0(item.carbs_g)}g · F {r0(item.fat_g)}g{item.fibre_g != null ? ` · Fi ${r0(item.fibre_g)}g` : ""}
                           </p>
 
                           {/* Inline edit form */}

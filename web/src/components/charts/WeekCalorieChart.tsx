@@ -16,6 +16,7 @@ export interface WeekDay {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  fibre_g: number;
 }
 
 function dayLabel(dateStr: string): string {
@@ -41,6 +42,7 @@ function CustomTooltip({ active, payload, dark }: { active?: boolean; payload?: 
       {d.protein_g > 0 && <p style={{ color: "#0094FF" }}>P {d.protein_g}g</p>}
       {d.carbs_g > 0 && <p style={{ color: "#F59E0B" }}>C {d.carbs_g}g</p>}
       {d.fat_g > 0 && <p style={{ color: "#EF4444" }}>F {d.fat_g}g</p>}
+      {d.fibre_g > 0 && <p style={{ color: "#22C55E" }}>Fi {d.fibre_g}g</p>}
     </div>
   );
 }

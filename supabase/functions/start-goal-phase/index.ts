@@ -20,6 +20,7 @@ interface StartPhaseBody {
   target_protein_g?: number;
   target_carbs_g?: number;
   target_fat_g?: number;
+  target_fibre_g?: number;
   transition?: string;
 }
 
@@ -121,6 +122,7 @@ Deno.serve(async (req) => {
       ["target_protein_g", body.target_protein_g],
       ["target_carbs_g", body.target_carbs_g],
       ["target_fat_g", body.target_fat_g],
+      ["target_fibre_g", body.target_fibre_g],
     ] as [string, number | undefined][]) {
       if (val != null) {
         const n = Number(val);
@@ -151,6 +153,7 @@ Deno.serve(async (req) => {
       p_target_protein_g: body.target_protein_g ?? null,
       p_target_carbs_g: body.target_carbs_g ?? null,
       p_target_fat_g: body.target_fat_g ?? null,
+      p_target_fibre_g: body.target_fibre_g ?? null,
       p_transition: body.transition ?? null,
     });
 

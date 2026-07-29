@@ -18,6 +18,7 @@ export interface GoalPhase {
   target_protein_g: number | null;
   target_carbs_g: number | null;
   target_fat_g: number | null;
+  target_fibre_g: number | null;
   superseded_by: string | null;
   created_at: string;
   updated_at: string;

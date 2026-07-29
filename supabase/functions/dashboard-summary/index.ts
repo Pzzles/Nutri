@@ -41,8 +41,17 @@ Deno.serve(async (req) => {
         day: "2-digit",
       }).format(new Date());
 
+    // Compute the 7-day window (today + 6 prior days) using UTC date math to
+    // avoid any timezone offset shifting the date string.
+    const [y, mo, dy] = date.split("-").map(Number);
+    const weekDays: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      weekDays.push(new Date(Date.UTC(y, mo - 1, dy - i)).toISOString().slice(0, 10));
+    }
+    const weekStart = weekDays[0];
+
     // Run independent queries in parallel.
-    const [mealsResult, activePhaseResult, legacyGoalResult, dailyStatusResult, latestWeightResult] =
+    const [mealsResult, activePhaseResult, legacyGoalResult, dailyStatusResult, latestWeightResult, weekMealsResult] =
       await Promise.all([
         service
           .from("meals")
@@ -59,7 +68,7 @@ Deno.serve(async (req) => {
         // FR-041: legacy user_goals — still used as fallback when no active phase.
         service
           .from("user_goals")
-          .select("target_calories, target_protein_g, target_carbs_g, target_fat_g")
+          .select("target_calories, target_protein_g, target_carbs_g, target_fat_g, target_fibre_g")
           .eq("user_id", userId)
           .lte("effective_from", date)
           .order("effective_from", { ascending: false })
@@ -82,12 +91,42 @@ Deno.serve(async (req) => {
           .order("measured_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        // 7-day trend (FR-050 AC2).
+        service
+          .from("meals")
+          .select("logged_date, meal_items(calories, protein_g, carbs_g, fat_g, fibre_g)")
+          .eq("user_id", userId)
+          .gte("logged_date", weekStart)
+          .lte("logged_date", date),
       ]);
 
     const meals = mealsResult.data ?? [];
     const activePhase = activePhaseResult.data ?? null;
     const legacyGoal = legacyGoalResult.data ?? null;
     const latestWeight = latestWeightResult.data ?? null;
+
+    // Build zero-filled 7-day trend map then aggregate from weekMealsResult.
+    const dayMap: Record<string, { calories: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number }> = {};
+    for (const d of weekDays) dayMap[d] = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0 };
+    for (const meal of weekMealsResult.data ?? []) {
+      const bucket = dayMap[(meal as any).logged_date];
+      if (!bucket) continue;
+      for (const item of (meal as any).meal_items ?? []) {
+        bucket.calories += item.calories ?? 0;
+        bucket.protein_g += item.protein_g ?? 0;
+        bucket.carbs_g += item.carbs_g ?? 0;
+        bucket.fat_g += item.fat_g ?? 0;
+        bucket.fibre_g += item.fibre_g ?? 0;
+      }
+    }
+    const week_trend = weekDays.map((d) => ({
+      date: d,
+      calories: round(dayMap[d].calories),
+      protein_g: round(dayMap[d].protein_g),
+      carbs_g: round(dayMap[d].carbs_g),
+      fat_g: round(dayMap[d].fat_g),
+      fibre_g: round(dayMap[d].fibre_g),
+    }));
 
     const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0 };
     for (const meal of meals) {
@@ -107,6 +146,7 @@ Deno.serve(async (req) => {
           target_protein_g: activePhase.target_protein_g,
           target_carbs_g: activePhase.target_carbs_g,
           target_fat_g: activePhase.target_fat_g,
+          target_fibre_g: (activePhase as any).target_fibre_g ?? null,
         }
       : legacyGoal;
 
@@ -178,6 +218,7 @@ Deno.serve(async (req) => {
             protein_g: percentOf(totals.protein_g, targets.target_protein_g),
             carbs_g: percentOf(totals.carbs_g, targets.target_carbs_g),
             fat_g: percentOf(totals.fat_g, targets.target_fat_g),
+            fibre_g: percentOf(totals.fibre_g, (targets as any).target_fibre_g),
           }
         : null, // FR-050 AC1: null, never 0%, when no goal is set.
       active_phase: activePhase,
@@ -187,6 +228,7 @@ Deno.serve(async (req) => {
       latest_weight: latestWeight
         ? { weight_kg: Number(latestWeight.weight_kg), measured_at: latestWeight.measured_at, logged_date: latestWeight.logged_date }
         : null,
+      week_trend,
     });
   } catch (err) {
     console.error(err);
