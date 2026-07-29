@@ -5,6 +5,8 @@ import { GoalPhase, DailyLogStatus, WeightChange } from "../lib/goalTypes";
 import GoalPhaseCard from "../components/GoalPhaseCard";
 import DailyStatusControl from "../components/DailyStatusControl";
 import MealHistory from "./MealHistory";
+import { WeekCalorieChart, WeekDay } from "../components/charts/WeekCalorieChart";
+import { MacroRingChart } from "../components/charts/MacroRingChart";
 
 interface LatestWeight {
   weight_kg: number;
@@ -21,6 +23,7 @@ interface DashboardData {
   daily_log_status: DailyLogStatus;
   weight_change: WeightChange | null;
   latest_weight: LatestWeight | null;
+  week_trend: WeekDay[];
 }
 
 export default function Dashboard() {
@@ -49,28 +52,51 @@ export default function Dashboard() {
         <div className="mt-6 space-y-4">
           {/* Active goal phase card */}
           {data.active_phase && (
-            <GoalPhaseCard
-              phase={data.active_phase}
-              weightChange={data.weight_change}
-            />
+            <GoalPhaseCard phase={data.active_phase} weightChange={data.weight_change} />
           )}
 
-          {/* Calories */}
-          <div className="rounded-lg border border-border bg-surface px-5 py-4">
-            <p className="font-display text-3xl font-semibold text-ink">{data.totals.calories}</p>
-            <p className="text-sm text-muted">
-              kcal today
-              {data.percent_of_goal?.calories != null && (
-                <span> · {data.percent_of_goal.calories}% of goal</span>
-              )}
-            </p>
-          </div>
+          {/* 7-day calorie trend */}
+          {data.week_trend?.length > 0 && (
+            <div className="rounded-lg border border-border bg-surface px-4 pt-4 pb-2">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">This week</p>
+                {data.goal?.target_calories && (
+                  <p className="text-xs text-muted">
+                    Goal: {data.goal.target_calories} kcal
+                  </p>
+                )}
+              </div>
+              <WeekCalorieChart
+                data={data.week_trend}
+                target={data.goal?.target_calories ?? null}
+              />
+            </div>
+          )}
 
-          {/* Macros */}
-          <div className="grid grid-cols-3 gap-3">
-            <Stat label="Protein" value={`${data.totals.protein_g}g`} />
-            <Stat label="Carbs" value={`${data.totals.carbs_g}g`} />
-            <Stat label="Fat" value={`${data.totals.fat_g}g`} />
+          {/* Today: macro ring + calorie summary */}
+          <div className="rounded-lg border border-border bg-surface px-5 py-4">
+            <div className="flex items-center gap-5">
+              <MacroRingChart
+                protein={data.totals.protein_g}
+                carbs={data.totals.carbs_g}
+                fat={data.totals.fat_g}
+                calories={data.totals.calories}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="font-display text-3xl font-semibold text-ink leading-none">
+                  {data.totals.calories}
+                  <span className="ml-1.5 text-base font-normal text-muted">kcal</span>
+                </p>
+                {data.percent_of_goal?.calories != null && (
+                  <p className="mt-0.5 text-xs text-muted">{data.percent_of_goal.calories}% of goal</p>
+                )}
+                <div className="mt-3 grid grid-cols-3 gap-x-3 text-center">
+                  <MacroStat label="Protein" value={data.totals.protein_g} color="#0094FF" />
+                  <MacroStat label="Carbs" value={data.totals.carbs_g} color="#F59E0B" />
+                  <MacroStat label="Fat" value={data.totals.fat_g} color="#EF4444" />
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Meals widget — expandable history panel */}
@@ -105,9 +131,7 @@ export default function Dashboard() {
                     {data.latest_weight.weight_kg}{" "}
                     <span className="text-sm font-normal text-muted">kg</span>
                   </p>
-                  <p className="text-xs text-muted">
-                    {formatDate(data.latest_weight.logged_date)}
-                  </p>
+                  <p className="text-xs text-muted">{formatDate(data.latest_weight.logged_date)}</p>
                 </>
               ) : (
                 <p className="text-sm text-muted">No weight logged yet</p>
@@ -138,11 +162,11 @@ export default function Dashboard() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function MacroStat({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-4 py-3 text-center">
-      <p className="font-display text-lg font-semibold text-ink">{value}</p>
-      <p className="text-xs text-muted">{label}</p>
+    <div>
+      <p className="text-sm font-semibold text-ink">{value}g</p>
+      <p className="text-xs" style={{ color }}>{label}</p>
     </div>
   );
 }

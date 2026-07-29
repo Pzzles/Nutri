@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { callFunction, getFunction } from "../lib/supabase";
 import { WeightLog, GetWeightLogsResponse } from "../lib/weightTypes";
+import { WeightTrendChart } from "../components/charts/WeightTrendChart";
 
 export default function WeightLogPage() {
   const [logs, setLogs] = useState<WeightLog[]>([]);
@@ -71,6 +72,16 @@ export default function WeightLogPage() {
           <p className="mt-0.5 text-xs text-muted">
             {formatDateTime(latestOfficial.measured_at)}
           </p>
+        </div>
+      )}
+
+      {/* Trend chart */}
+      {logs.length >= 2 && (
+        <div className="mt-4 rounded-lg border border-border bg-surface px-4 pt-4 pb-2">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Trend</p>
+          <WeightTrendChart
+            data={[...logs].reverse().map((l) => ({ date: l.logged_date, weight: Number(l.weight_kg) }))}
+          />
         </div>
       )}
 
