@@ -67,6 +67,15 @@ interface ConfirmState {
   itemId?: string;
 }
 
+type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+
+interface LogAgainState {
+  mealId: string;
+  mealType: MealType;
+  busy: boolean;
+  error: string | null;
+}
+
 // ── sub-components ────────────────────────────────────────────────────────────
 
 function MacroRow({ label, value }: { label: string; value: string }) {
@@ -122,6 +131,7 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
   const [saving, setSaving] = useState(false);
   const [confirmDel, setConfirmDel] = useState<ConfirmState | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [logAgain, setLogAgain] = useState<LogAgainState | null>(null);
 
   const loadDate = useCallback(async (d: string) => {
     setLoading(true);
@@ -200,6 +210,40 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
       setPageError(err.message ?? "Failed to delete");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleLogAgain(meal: MealData) {
+    if (!logAgain) return;
+    setLogAgain((s) => s && { ...s, busy: true, error: null });
+    try {
+      await callFunction("log-meal", {
+        idempotency_key: crypto.randomUUID(),
+        meal_type: logAgain.mealType,
+        eaten_at: new Date().toISOString(),
+        source: "draft",
+        raw_input: `REPEAT:${meal.id}`,
+        meal_confidence: meal.meal_confidence,
+        items: meal.items.map((item) => ({
+          food_id: item.food_id,
+          raw_phrases: [item.food_name],
+          quantity: item.quantity,
+          unit: item.unit,
+          weight_g: item.weight_g,
+          calories: item.calories,
+          protein_g: item.protein_g,
+          carbs_g: item.carbs_g,
+          fat_g: item.fat_g,
+          fibre_g: item.fibre_g,
+          match_confidence: item.match_confidence,
+          portion_confidence: item.portion_confidence,
+          confidence: item.confidence,
+        })),
+      });
+      setLogAgain(null);
+      if (date === todayStr()) await loadDate(date);
+    } catch (err: any) {
+      setLogAgain((s) => s && { ...s, busy: false, error: err.message ?? "Failed to log meal." });
     }
   }
 
@@ -318,15 +362,59 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
                       </button>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => requestDelete("meal", meal.id)}
-                      className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-full text-muted hover:text-red-500 transition-colors"
-                      aria-label="Delete meal"
-                    >
-                      <TrashIcon />
-                    </button>
+                    <>
+                      <button
+                        onClick={() => { setLogAgain({ mealId: meal.id, mealType: meal.meal_type, busy: false, error: null }); setConfirmDel(null); setEditState(null); }}
+                        className="flex-shrink-0 text-xs text-primary hover:underline"
+                      >
+                        Log again
+                      </button>
+                      <button
+                        onClick={() => requestDelete("meal", meal.id)}
+                        className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-full text-muted hover:text-red-500 transition-colors"
+                        aria-label="Delete meal"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </>
                   )}
                 </div>
+
+                {/* Log again panel */}
+                {logAgain?.mealId === meal.id && (
+                  <div className="border-t border-border px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={logAgain.mealType}
+                        onChange={(e) => setLogAgain((s) => s && { ...s, mealType: e.target.value as MealType })}
+                        disabled={logAgain.busy}
+                        className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                      >
+                        <option value="breakfast">Breakfast</option>
+                        <option value="lunch">Lunch</option>
+                        <option value="dinner">Dinner</option>
+                        <option value="snack">Snack</option>
+                      </select>
+                      <button
+                        onClick={() => handleLogAgain(meal)}
+                        disabled={logAgain.busy}
+                        className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+                      >
+                        {logAgain.busy ? "Logging…" : "Log"}
+                      </button>
+                      <button
+                        onClick={() => setLogAgain(null)}
+                        disabled={logAgain.busy}
+                        className="text-sm text-muted hover:text-ink disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {logAgain.error && (
+                      <p className="mt-2 text-xs text-confidence-low">{logAgain.error}</p>
+                    )}
+                  </div>
+                )}
 
                 {/* Items list */}
                 {open && (

@@ -274,22 +274,24 @@ export default function LogMeal() {
         Describe what you ate — the app handles the lookup and the math.
       </p>
 
+      {step !== "logged" && (
+        <div className="mt-4">
+          <label className="text-xs font-medium text-muted">Meal type</label>
+          <select
+            value={mealType}
+            onChange={(e) => setMealType(e.target.value as typeof mealType)}
+            className="mt-1 block rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+            <option value="snack">Snack</option>
+          </select>
+        </div>
+      )}
+
       {step === "input" && (
-        <form onSubmit={handleParseAndResolve} className="mt-6 space-y-4">
-          <div className="flex gap-2">
-            {(["breakfast", "lunch", "dinner", "snack"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setMealType(t)}
-                className={`rounded-full px-3 py-1.5 text-sm capitalize ${
-                  mealType === t ? "bg-primary text-white" : "bg-surface text-muted border border-border"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+        <form onSubmit={handleParseAndResolve} className="mt-4 space-y-4">
           <textarea
             required
             value={text}
