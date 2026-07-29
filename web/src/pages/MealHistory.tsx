@@ -240,6 +240,7 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
           portion_confidence: item.portion_confidence,
           item_confidence: item.confidence,
           portion_g: item.weight_g,
+          nutrition_source: "repeat",
         })),
       });
       setLogAgain(null);
