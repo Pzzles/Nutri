@@ -4,23 +4,27 @@ const MACRO_COLORS = {
   Protein: "#0094FF",
   Carbs: "#F59E0B",
   Fat: "#EF4444",
+  Fibre: "#22C55E",
 };
 
 export function MacroRingChart({
   protein,
   carbs,
   fat,
+  fibre,
   calories,
 }: {
   protein: number;
   carbs: number;
   fat: number;
+  fibre: number;
   calories: number;
 }) {
   const proteinKcal = protein * 4;
   const carbsKcal = carbs * 4;
   const fatKcal = fat * 9;
-  const total = proteinKcal + carbsKcal + fatKcal;
+  const fibreKcal = fibre * 2;
+  const total = proteinKcal + carbsKcal + fatKcal + fibreKcal;
 
   const slices =
     total > 0
@@ -28,7 +32,8 @@ export function MacroRingChart({
           { name: "Protein", value: proteinKcal },
           { name: "Carbs", value: carbsKcal },
           { name: "Fat", value: fatKcal },
-        ]
+          { name: "Fibre", value: fibreKcal },
+        ].filter((s) => s.value > 0)
       : [{ name: "Empty", value: 1 }];
 
   return (

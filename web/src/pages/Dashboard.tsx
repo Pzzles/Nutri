@@ -80,6 +80,7 @@ export default function Dashboard() {
                 protein={data.totals.protein_g}
                 carbs={data.totals.carbs_g}
                 fat={data.totals.fat_g}
+                fibre={data.totals.fibre_g}
                 calories={data.totals.calories}
               />
               <div className="min-w-0 flex-1">
