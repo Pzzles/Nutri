@@ -4,26 +4,26 @@
 
 :root {
   color-scheme: light;
-  --color-background: 250 249 246;
-  --color-surface: 255 255 255;
-  --color-ink: 31 42 36;
-  --color-muted: 107 114 128;
-  --color-border: 228 225 216;
-  --color-primary: 47 111 78;
-  --color-primary-dark: 32 73 53;
-  --color-primary-light: 231 240 234;
+  --color-background: 245 246 250;   /* #F5F6FA */
+  --color-surface: 255 255 255;      /* #FFFFFF */
+  --color-ink: 24 24 35;             /* #181823 */
+  --color-muted: 107 114 128;        /* #6B7280 */
+  --color-border: 220 223 234;       /* #DCDFE A */
+  --color-primary: 0 148 255;        /* #0094FF */
+  --color-primary-dark: 0 112 204;   /* #0070CC */
+  --color-primary-light: 232 244 255; /* #E8F4FF */
 }
 
 :root.dark {
   color-scheme: dark;
-  --color-background: 15 23 19;
-  --color-surface: 23 34 28;
-  --color-ink: 232 238 234;
-  --color-muted: 157 169 161;
-  --color-border: 53 69 60;
-  --color-primary: 74 156 111;
-  --color-primary-dark: 188 226 204;
-  --color-primary-light: 29 62 44;
+  --color-background: 24 24 35;      /* #181823 */
+  --color-surface: 30 30 46;         /* #1E1E2E */
+  --color-ink: 255 255 255;          /* #FFFFFF */
+  --color-muted: 139 146 165;        /* #8B92A5 */
+  --color-border: 45 45 68;          /* #2D2D44 */
+  --color-primary: 0 148 255;        /* #0094FF */
+  --color-primary-dark: 105 192 255; /* #69C0FF */
+  --color-primary-light: 10 25 41;   /* #0A1929 */
 }
 
 @layer base {
