@@ -11,6 +11,7 @@ import {
 } from "../lib/types";
 import ConfidenceBadge from "../components/ConfidenceBadge";
 import { scaleMacros } from "../lib/meal";
+import { MealTypeDropdown } from "../components/MealTypeDropdown";
 
 type Step = "input" | "reviewing" | "confirming" | "logged";
 
@@ -276,17 +277,8 @@ export default function LogMeal() {
 
       {step !== "logged" && (
         <div className="mt-4">
-          <label className="text-xs font-medium text-muted">Meal type</label>
-          <select
-            value={mealType}
-            onChange={(e) => setMealType(e.target.value as typeof mealType)}
-            className="mt-1 block rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="breakfast">Breakfast</option>
-            <option value="lunch">Lunch</option>
-            <option value="dinner">Dinner</option>
-            <option value="snack">Snack</option>
-          </select>
+          <label className="mb-1 block text-xs font-medium text-muted">Meal type</label>
+          <MealTypeDropdown value={mealType} onChange={setMealType} />
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { callFunction, getFunction } from "../lib/supabase";
 import type { GetMealsResponse, MealData, MealItemData } from "../lib/mealTypes";
+import { MealTypeDropdown, type MealType } from "../components/MealTypeDropdown";
 
 // ── date helpers ──────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ interface ConfirmState {
   itemId?: string;
 }
 
-type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+
 
 interface LogAgainState {
   mealId: string;
@@ -237,7 +238,8 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
           fibre_g: item.fibre_g,
           match_confidence: item.match_confidence,
           portion_confidence: item.portion_confidence,
-          confidence: item.confidence,
+          item_confidence: item.confidence,
+          portion_g: item.weight_g,
         })),
       });
       setLogAgain(null);
@@ -384,17 +386,11 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
                 {logAgain?.mealId === meal.id && (
                   <div className="border-t border-border px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <select
+                      <MealTypeDropdown
                         value={logAgain.mealType}
-                        onChange={(e) => setLogAgain((s) => s && { ...s, mealType: e.target.value as MealType })}
+                        onChange={(v) => setLogAgain((s) => s && { ...s, mealType: v })}
                         disabled={logAgain.busy}
-                        className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-                      >
-                        <option value="breakfast">Breakfast</option>
-                        <option value="lunch">Lunch</option>
-                        <option value="dinner">Dinner</option>
-                        <option value="snack">Snack</option>
-                      </select>
+                      />
                       <button
                         onClick={() => handleLogAgain(meal)}
                         disabled={logAgain.busy}
