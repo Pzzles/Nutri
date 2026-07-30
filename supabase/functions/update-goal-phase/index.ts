@@ -14,6 +14,7 @@ const MUTABLE_FIELDS = [
   "target_protein_g",
   "target_carbs_g",
   "target_fat_g",
+  "target_fibre_g",
 ] as const;
 
 type MutableField = (typeof MUTABLE_FIELDS)[number];

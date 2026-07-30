@@ -3,6 +3,26 @@ import { callFunction, getFunction } from "../lib/supabase";
 import type { GetMealsResponse, MealData, MealItemData } from "../lib/mealTypes";
 import { MealTypeDropdown, type MealType } from "../components/MealTypeDropdown";
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function generateUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 // ── date helpers ──────────────────────────────────────────────────────────────
 
 function todayStr(): string {
@@ -219,7 +239,7 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
     setLogAgain((s) => s && { ...s, busy: true, error: null });
     try {
       await callFunction("log-meal", {
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: generateUUID(),
         meal_type: logAgain.mealType,
         eaten_at: new Date().toISOString(),
         source: "draft",
@@ -240,7 +260,7 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
           portion_confidence: item.portion_confidence,
           item_confidence: item.confidence,
           portion_g: item.weight_g,
-          nutrition_source: "repeat",
+          nutrition_source: item.nutrition_source,
         })),
       });
       setLogAgain(null);
@@ -440,7 +460,14 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
                                   </span>
                                 )}
                               </p>
-                              <p className="text-xs text-muted">{formatQuantity(item)}</p>
+                              <p className="text-xs text-muted">
+                                {formatQuantity(item)}
+                                {item.portion_confidence === "estimated" && (
+                                  <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                    adjusted
+                                  </span>
+                                )}
+                              </p>
                             </div>
 
                             {!isEditing && !isDeletingItem && (

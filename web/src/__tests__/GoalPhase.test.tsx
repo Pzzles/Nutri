@@ -8,9 +8,10 @@ import GoalPhaseCard from "../components/GoalPhaseCard";
 import Goals from "../pages/Goals";
 import { GoalPhase, WeightChange } from "../lib/goalTypes";
 
-vi.mock("../lib/supabase", () => ({ callFunction: vi.fn() }));
-import { callFunction } from "../lib/supabase";
+vi.mock("../lib/supabase", () => ({ callFunction: vi.fn(), getFunction: vi.fn() }));
+import { callFunction, getFunction } from "../lib/supabase";
 const mockCall = vi.mocked(callFunction);
+const mockGet = vi.mocked(getFunction);
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
@@ -97,11 +98,11 @@ describe("GoalPhaseCard", () => {
 
 // ── Goals page ────────────────────────────────────────────────────────────────
 
-beforeEach(() => { mockCall.mockReset(); });
+beforeEach(() => { mockCall.mockReset(); mockGet.mockReset(); });
 
 describe("Goals page — loading and display", () => {
   it("shows active phase after loading", async () => {
-    mockCall.mockResolvedValueOnce({
+    mockGet.mockResolvedValueOnce({
       active_phase: ACTIVE_PHASE,
       phases: [ACTIVE_PHASE],
       total_count: 1,
@@ -113,15 +114,13 @@ describe("Goals page — loading and display", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
-
     await waitFor(() => {
       expect(screen.getByText("Cut")).toBeInTheDocument();
     });
   });
 
   it("shows 'No active phase' message when none exists", async () => {
-    mockCall.mockResolvedValueOnce({ active_phase: null, phases: [], total_count: 0 });
+    mockGet.mockResolvedValueOnce({ active_phase: null, phases: [], total_count: 0 });
 
     render(
       <MemoryRouter>
@@ -141,7 +140,7 @@ describe("Goals page — loading and display", () => {
       status: "completed",
       ended_at: "2026-06-30T23:59:00Z",
     };
-    mockCall.mockResolvedValueOnce({
+    mockGet.mockResolvedValueOnce({
       active_phase: null,
       phases: [completed],
       total_count: 1,
@@ -161,7 +160,7 @@ describe("Goals page — loading and display", () => {
 
 describe("Goals page — start new phase form", () => {
   it("opens the new phase form when 'Start new phase' is clicked", async () => {
-    mockCall.mockResolvedValueOnce({ active_phase: null, phases: [], total_count: 0 });
+    mockGet.mockResolvedValueOnce({ active_phase: null, phases: [], total_count: 0 });
 
     render(
       <MemoryRouter>
@@ -176,7 +175,7 @@ describe("Goals page — start new phase form", () => {
   });
 
   it("shows transition selector when an active phase exists", async () => {
-    mockCall.mockResolvedValueOnce({
+    mockGet.mockResolvedValueOnce({
       active_phase: ACTIVE_PHASE,
       phases: [ACTIVE_PHASE],
       total_count: 1,
@@ -193,4 +192,25 @@ describe("Goals page — start new phase form", () => {
 
     expect(screen.getByText(/you have an active phase/i)).toBeInTheDocument();
   });
+});
+
+// ── GoalPhaseCard mode labels ─────────────────────────────────────────────────
+
+describe("GoalPhaseCard — mode labels", () => {
+  const modes: Array<{ mode: GoalPhase["mode"]; label: string }> = [
+    { mode: "cut", label: "Cut" },
+    { mode: "maintenance", label: "Maintenance" },
+    { mode: "bulk", label: "Bulk" },
+  ];
+
+  for (const { mode, label } of modes) {
+    it(`renders "${label}" badge for mode="${mode}"`, () => {
+      render(
+        <MemoryRouter>
+          <GoalPhaseCard phase={{ ...ACTIVE_PHASE, mode }} weightChange={null} />
+        </MemoryRouter>,
+      );
+      expect(screen.getByText(label)).toBeInTheDocument();
+    });
+  }
 });

@@ -14,6 +14,7 @@ export interface MealItemData {
   confidence: "high" | "medium" | "low";
   match_confidence: "exact" | "partial" | "none";
   portion_confidence: "exact" | "estimated" | "assumed_default";
+  nutrition_source: string;
 }
 
 export interface MealTotals {

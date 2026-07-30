@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
     const weekStart = weekDays[0];
 
     // Run independent queries in parallel.
-    const [mealsResult, activePhaseResult, legacyGoalResult, dailyStatusResult, latestWeightResult, weekMealsResult] =
+    const [mealsResult, activePhaseResult, legacyGoalResult, dailyStatusResult, latestWeightResult, weekMealRowsResult] =
       await Promise.all([
         service
           .from("meals")
@@ -91,10 +91,11 @@ Deno.serve(async (req) => {
           .order("measured_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        // 7-day trend (FR-050 AC2).
+        // 7-day trend: fetch meal IDs + dates first, then items separately.
+        // Two plain queries avoids any PostgREST nested-select edge cases.
         service
           .from("meals")
-          .select("logged_date, meal_items(calories, protein_g, carbs_g, fat_g, fibre_g)")
+          .select("id, logged_date")
           .eq("user_id", userId)
           .gte("logged_date", weekStart)
           .lte("logged_date", date),
@@ -105,19 +106,33 @@ Deno.serve(async (req) => {
     const legacyGoal = legacyGoalResult.data ?? null;
     const latestWeight = latestWeightResult.data ?? null;
 
-    // Build zero-filled 7-day trend map then aggregate from weekMealsResult.
+    // Fetch items for all week meals in a second pass.
+    const weekMealRows = weekMealRowsResult.data ?? [];
+    const weekMealIdDateMap: Record<string, string> = {};
+    for (const m of weekMealRows) weekMealIdDateMap[(m as any).id] = (m as any).logged_date;
+    const weekMealIds = Object.keys(weekMealIdDateMap);
+
+    let weekItems: any[] = [];
+    if (weekMealIds.length > 0) {
+      const { data: itemsData } = await service
+        .from("meal_items")
+        .select("meal_id, calories, protein_g, carbs_g, fat_g, fibre_g")
+        .in("meal_id", weekMealIds);
+      weekItems = itemsData ?? [];
+    }
+
+    // Build zero-filled 7-day trend map then aggregate.
     const dayMap: Record<string, { calories: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number }> = {};
     for (const d of weekDays) dayMap[d] = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0 };
-    for (const meal of weekMealsResult.data ?? []) {
-      const bucket = dayMap[(meal as any).logged_date];
+    for (const item of weekItems) {
+      const loggedDate = weekMealIdDateMap[item.meal_id];
+      const bucket = dayMap[loggedDate];
       if (!bucket) continue;
-      for (const item of (meal as any).meal_items ?? []) {
-        bucket.calories += item.calories ?? 0;
-        bucket.protein_g += item.protein_g ?? 0;
-        bucket.carbs_g += item.carbs_g ?? 0;
-        bucket.fat_g += item.fat_g ?? 0;
-        bucket.fibre_g += item.fibre_g ?? 0;
-      }
+      bucket.calories += Number(item.calories ?? 0);
+      bucket.protein_g += Number(item.protein_g ?? 0);
+      bucket.carbs_g += Number(item.carbs_g ?? 0);
+      bucket.fat_g += Number(item.fat_g ?? 0);
+      bucket.fibre_g += Number(item.fibre_g ?? 0);
     }
     const week_trend = weekDays.map((d) => ({
       date: d,
@@ -131,11 +146,11 @@ Deno.serve(async (req) => {
     const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fibre_g: 0 };
     for (const meal of meals) {
       for (const item of (meal as any).meal_items ?? []) {
-        totals.calories += item.calories ?? 0;
-        totals.protein_g += item.protein_g ?? 0;
-        totals.carbs_g += item.carbs_g ?? 0;
-        totals.fat_g += item.fat_g ?? 0;
-        totals.fibre_g += item.fibre_g ?? 0;
+        totals.calories += Number(item.calories ?? 0);
+        totals.protein_g += Number(item.protein_g ?? 0);
+        totals.carbs_g += Number(item.carbs_g ?? 0);
+        totals.fat_g += Number(item.fat_g ?? 0);
+        totals.fibre_g += Number(item.fibre_g ?? 0);
       }
     }
 
@@ -197,9 +212,6 @@ Deno.serve(async (req) => {
           reopened_at: dailyStatusResult.data.reopened_at,
         }
       : { status: "unknown", marked_complete_at: null, reopened_at: null };
-
-    // TODO: 7-day trend (FR-050 AC2) — query the trailing 7 logged_date
-    // range and fill zero-meal days explicitly rather than leaving gaps.
 
     return ok({
       date,

@@ -9,6 +9,13 @@ interface Props {
 const MODE_LABEL: Record<string, string> = {
   cut: "Cut",
   maintenance: "Maintenance",
+  bulk: "Bulk",
+};
+
+const MODE_BADGE_CLASS: Record<string, string> = {
+  cut: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  maintenance: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  bulk: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 };
 
 export default function GoalPhaseCard({ phase, weightChange }: Props) {
@@ -18,9 +25,10 @@ export default function GoalPhaseCard({ phase, weightChange }: Props) {
     year: "numeric",
   });
 
+  const RATE_SUFFIX: Record<string, string> = { cut: "loss", bulk: "gain", maintenance: "change" };
   const weeklyRateLabel =
     phase.target_change_kg_per_week != null
-      ? `${Math.abs(phase.target_change_kg_per_week)} kg/week ${phase.mode === "cut" ? "loss" : "change"}`
+      ? `${Math.abs(phase.target_change_kg_per_week)} kg/week ${RATE_SUFFIX[phase.mode] ?? "change"}`
       : null;
 
   return (
@@ -29,9 +37,7 @@ export default function GoalPhaseCard({ phase, weightChange }: Props) {
         <div className="flex items-center gap-2">
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-              phase.mode === "cut"
-                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-                : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+              MODE_BADGE_CLASS[phase.mode] ?? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
             }`}
           >
             {MODE_LABEL[phase.mode] ?? phase.mode}

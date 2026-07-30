@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
         meal_items (
           id, food_id, quantity, unit, weight_g,
           calories, protein_g, carbs_g, fat_g, fibre_g,
-          match_confidence, portion_confidence, confidence,
+          match_confidence, portion_confidence, confidence, nutrition_source,
           foods ( name, brand )
         )
       `)
@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
         confidence: item.confidence,
         match_confidence: item.match_confidence,
         portion_confidence: item.portion_confidence,
+        nutrition_source: item.nutrition_source,
       }));
 
       const totals = items.reduce(
