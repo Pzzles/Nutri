@@ -45,3 +45,7 @@ export const CONFIG_VERSIONS = {
   algorithm:           ALGORITHM_VERSION,
   activity_multiplier: ACTIVITY_MULTIPLIER_VERSION,
 } as const;
+
+// Weight freshness threshold: weight older than this many days appears in
+// stale_fields on the preview response (a warning, not a hard rejection).
+export const WEIGHT_FRESHNESS_WARNING_DAYS = 30 as const;

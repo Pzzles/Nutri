@@ -98,10 +98,10 @@ Deno.serve(async (req) => {
       return fail("VALIDATION_ERROR", "starting_weight_source must be 'manual' or 'latest_weight_log'");
     }
 
-    // Fetch latest official weight (used for both starting weight and energy calc).
+    // Fetch latest official weight (with provenance fields for the snapshot).
     const { data: latestWeight } = await service
       .from("weight_logs")
-      .select("id, weight_kg")
+      .select("id, weight_kg, measured_at, source")
       .eq("user_id", userId)
       .eq("is_official", true)
       .order("measured_at", { ascending: false })
@@ -190,10 +190,11 @@ Deno.serve(async (req) => {
 
     // ── Resolve activity level (body override wins if valid) ─────────────────
     const validActivityLevels = ["sedentary", "light", "moderate", "active", "very_active"];
-    const resolvedActivityLevel =
+    const activityLevelSource =
       (body.activity_level && validActivityLevels.includes(body.activity_level))
-        ? body.activity_level
-        : profile?.activity_level;
+        ? "goals_form" : "profile_field";
+    const resolvedActivityLevel =
+      activityLevelSource === "goals_form" ? body.activity_level : profile?.activity_level;
 
     // ── Check for missing profile fields required by energy calc ─────────────
     const missingFields: string[] = [];
@@ -273,6 +274,25 @@ Deno.serve(async (req) => {
     const warningCodes: string[] = [];
     if (aggressive) warningCodes.push("aggressive_rate");
 
+    // ── Build input provenance for the snapshot ───────────────────────────────
+    const inputProvenance: Record<string, unknown> = {
+      weight: {
+        source_type:  "measured",
+        log_source:   (latestWeight as Record<string, unknown>).source ?? "unknown",
+        measured_at:  (latestWeight as Record<string, unknown>).measured_at,
+      },
+      activity_level: {
+        source_type:  "user_selected",
+        provided_via: activityLevelSource,
+      },
+      bmr:         { source_type: "calculated", algorithm: ALGORITHM_VERSION },
+      tdee:        { source_type: "calculated", algorithm: ACTIVITY_MULTIPLIER_VERSION },
+      final_target: { source_type: "calculated" },
+    };
+    if (body.manual_maintenance_kcal != null) {
+      inputProvenance.maintenance = { source_type: "manually_estimated", provided_via: "goals_form_override" };
+    }
+
     // ── Call v2 atomic RPC ────────────────────────────────────────────────────
     const { data: rpcResult, error: rpcErr } = await service.rpc("fn_start_goal_phase_v2", {
       p_user_id: userId,
@@ -300,6 +320,9 @@ Deno.serve(async (req) => {
       p_height_cm: height_cm,
       p_official_weight_kg: officialWeightKg,
       p_weight_log_id: latestWeight!.id,
+      p_weight_measured_at: (latestWeight as Record<string, unknown>).measured_at ?? null,
+      p_weight_log_source: (latestWeight as Record<string, unknown>).source ?? null,
+      p_input_provenance: JSON.stringify(inputProvenance),
       p_age_years: age_years,
       p_activity_level: activity_level,
       p_activity_multiplier: actMultiplier,
