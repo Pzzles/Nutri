@@ -44,6 +44,7 @@ beforeAll(async () => {
     user_id: userId,
     weight_kg: 80,
     measured_at: new Date().toISOString(),
+    logged_date: new Date().toISOString().split("T")[0],
     is_official: true,
     source: "manual",
   });
@@ -367,8 +368,9 @@ describe("daily_log_status — complete vs incomplete days are distinguishable",
     const today     = new Date().toISOString().split("T")[0];
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().split("T")[0];
 
+    const now = new Date().toISOString();
     await svc.from("daily_log_status").upsert([
-      { user_id: userId, logged_date: today,     status: "complete" },
+      { user_id: userId, logged_date: today,     status: "complete", marked_complete_at: now },
       { user_id: userId, logged_date: yesterday, status: "partial" },
     ], { onConflict: "user_id,logged_date" });
 

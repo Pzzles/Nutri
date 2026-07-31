@@ -53,6 +53,7 @@ beforeAll(async () => {
     user_id: userId,
     weight_kg: 80,
     measured_at: new Date().toISOString(),
+    logged_date: new Date().toISOString().split("T")[0],
     is_official: true,
     source: "manual",
   });
@@ -173,8 +174,9 @@ describe("preview-energy-calc — activity multipliers", () => {
     });
     const d = json.data;
     expect(d.ready).toBe(true);
+    // TDEE = round(rawBmr × multiplier); rawBmr ≠ roundedBmr, so allow ±1.
     const expectedTdee = Math.round(d.estimated_bmr_kcal * multiplier);
-    expect(d.estimated_tdee_kcal).toBe(expectedTdee);
+    expect(Math.abs(d.estimated_tdee_kcal - expectedTdee)).toBeLessThanOrEqual(1);
     expect(d.input_snapshot.activity_multiplier).toBe(multiplier);
   });
 });
@@ -309,27 +311,27 @@ describe("preview-energy-calc — missing profile fields", () => {
 describe("preview-energy-calc — stale weight", () => {
   it("returns stale_fields when official weight is older than WEIGHT_FRESHNESS_WARNING_DAYS", async () => {
     const svc = svcClient();
-    // Insert a weight log with measured_at = 45 days ago (beyond the 30-day threshold).
+    // Replace all weight logs with one measured 45 days ago (beyond 30-day threshold).
     const staleDate = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: staleLog } = await svc.from("weight_logs").insert({
+    await svc.from("weight_logs").delete().eq("user_id", userId);
+    await svc.from("weight_logs").insert({
       user_id: userId,
       weight_kg: 79,
       measured_at: staleDate,
+      logged_date: staleDate.split("T")[0],
       is_official: true,
       source: "manual",
-    }).select("id").single();
-
-    // Remove the fresh weight log so only the stale one remains.
-    await svc.from("weight_logs").delete().eq("user_id", userId).neq("id", staleLog!.id);
+    });
 
     const { status, json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
 
-    // Restore: delete stale log and re-insert fresh one.
+    // Restore fresh weight log.
     await svc.from("weight_logs").delete().eq("user_id", userId);
     await svc.from("weight_logs").insert({
       user_id: userId,
       weight_kg: 80,
       measured_at: new Date().toISOString(),
+      logged_date: new Date().toISOString().split("T")[0],
       is_official: true,
       source: "manual",
     });
@@ -346,28 +348,32 @@ describe("preview-energy-calc — stale weight", () => {
 
   it("stale weight is reported separately from missing weight", async () => {
     const svc = svcClient();
-    // Stale weight: should appear in stale_fields, not in missing_fields.
+    // Replace all weight logs with one measured 60 days ago.
     const staleDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: staleLog } = await svc.from("weight_logs").insert({
+    await svc.from("weight_logs").delete().eq("user_id", userId);
+    await svc.from("weight_logs").insert({
       user_id: userId,
       weight_kg: 79,
       measured_at: staleDate,
+      logged_date: staleDate.split("T")[0],
       is_official: true,
       source: "manual",
-    }).select("id").single();
-    await svc.from("weight_logs").delete().eq("user_id", userId).neq("id", staleLog!.id);
+    });
 
     const { json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
 
+    // Restore.
     await svc.from("weight_logs").delete().eq("user_id", userId);
     await svc.from("weight_logs").insert({
       user_id: userId,
       weight_kg: 80,
       measured_at: new Date().toISOString(),
+      logged_date: new Date().toISOString().split("T")[0],
       is_official: true,
       source: "manual",
     });
 
+    // Stale weight appears in stale_fields, NOT in missing_fields.
     const fieldNames = (json.data.missing_fields ?? []).map((f: { field: string }) => f.field);
     expect(fieldNames).not.toContain("official_weight_kg");
     expect(json.data.stale_fields.length).toBeGreaterThan(0);

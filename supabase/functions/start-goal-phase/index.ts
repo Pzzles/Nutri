@@ -322,7 +322,7 @@ Deno.serve(async (req) => {
       p_weight_log_id: latestWeight!.id,
       p_weight_measured_at: (latestWeight as Record<string, unknown>).measured_at ?? null,
       p_weight_log_source: (latestWeight as Record<string, unknown>).source ?? null,
-      p_input_provenance: JSON.stringify(inputProvenance),
+      p_input_provenance: inputProvenance,
       p_age_years: age_years,
       p_activity_level: activity_level,
       p_activity_multiplier: actMultiplier,
@@ -334,9 +334,9 @@ Deno.serve(async (req) => {
       p_daily_adjustment_kcal: dailyAdj,
       p_raw_target_kcal: rawTarget,
       p_final_target_kcal: finalTarget,
-      p_warning_codes: JSON.stringify(warningCodes),
+      p_warning_codes: warningCodes,
       p_aggressive_rate_acknowledged: body.aggressive_rate_acknowledged ?? false,
-      p_config_versions: JSON.stringify(CONFIG_VERSIONS),
+      p_config_versions: CONFIG_VERSIONS,
     });
 
     if (rpcErr) {
