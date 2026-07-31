@@ -20,6 +20,7 @@ export interface GoalPhase {
   target_fat_g: number | null;
   target_fibre_g: number | null;
   superseded_by: string | null;
+  edit_count: number;
   created_at: string;
   updated_at: string;
 }

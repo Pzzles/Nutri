@@ -33,6 +33,7 @@ const ACTIVE_PHASE: GoalPhase = {
   target_fat_g: 70,
   target_fibre_g: null,
   superseded_by: null,
+  edit_count: 0,
   created_at: "2026-07-01T06:00:00Z",
   updated_at: "2026-07-01T06:00:00Z",
 };

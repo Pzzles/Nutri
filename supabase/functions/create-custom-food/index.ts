@@ -36,9 +36,23 @@ Deno.serve(async (req) => {
     const service = getServiceClient();
     const normalizedName = String(body.name).trim().toLowerCase();
     const servingSize = Number(body.serving_size);
-    // Nutrition values arrive per-serving; normalize to per-100g for storage,
-    // since `foods` always stores canonical per-100g values.
-    const factor = servingSize > 0 ? 100 / servingSize : 1;
+    const servingUnit = String(body.serving_unit).toLowerCase().trim();
+
+    // Gram equivalent of one serving — used for portion resolution (e.g. "2 slices").
+    // For gram/ml units, it equals servingSize. For count-based units (slice, piece, cup…)
+    // the caller must supply gram_per_serving so the engine can convert without asking
+    // the user every time they log.
+    const gramPerServing: number | null =
+      servingUnit === "g" ? servingSize
+      : servingUnit === "ml" ? servingSize
+      : body.gram_per_serving != null ? Number(body.gram_per_serving)
+      : null;
+
+    // Nutrition values arrive per-serving; normalize to per-100g for storage.
+    // Use gramPerServing as the gram base when available; fall back to servingSize
+    // (preserves behaviour for callers that don't supply gram_per_serving).
+    const normBase = gramPerServing ?? servingSize;
+    const factor = normBase > 0 ? 100 / normBase : 1;
 
     const { data: food, error: foodErr } = await service
       .from("foods")
@@ -48,7 +62,7 @@ Deno.serve(async (req) => {
         barcode: body.barcode ?? null,
         source: "user_manual",
         owner_user_id: userId,
-        serving_size_g: body.serving_unit === "g" ? servingSize : null,
+        serving_size_g: gramPerServing,
         calories_100g: Number(body.calories) * factor,
         protein_100g: Number(body.protein_g) * factor,
         carbs_100g: Number(body.carbs_g) * factor,

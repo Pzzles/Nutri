@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
     // Verify ownership and that the phase is active.
     const { data: existing } = await service
       .from("goal_phases")
-      .select("id, user_id, status, mode, starting_weight_kg")
+      .select("id, user_id, status, mode, starting_weight_kg, edit_count")
       .eq("id", phaseId)
       .maybeSingle();
 
@@ -66,6 +66,15 @@ Deno.serve(async (req) => {
       return fail(
         "PHASE_NOT_ACTIVE",
         `Cannot update a phase with status '${existing.status}'. Only active phases can be modified.`,
+        409,
+      );
+    }
+
+    const editCount = Number(existing.edit_count ?? 0);
+    if (editCount >= 2) {
+      return fail(
+        "EDIT_LIMIT_REACHED",
+        "This phase has reached its 2-edit limit. Start a new phase to change parameters.",
         409,
       );
     }
@@ -123,7 +132,7 @@ Deno.serve(async (req) => {
 
     const { data: updated, error: updateErr } = await service
       .from("goal_phases")
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update({ ...updates, edit_count: editCount + 1, updated_at: new Date().toISOString() })
       .eq("id", phaseId)
       .select("*")
       .single();

@@ -260,6 +260,7 @@ export default function Goals() {
               setEndReason={setEndReason}
               endError={endError}
               endingPhase={endingPhase}
+              onUpdate={fetchPhases}
             />
           ) : (
             <p className="mt-3 text-sm text-muted">No active phase. Start one below.</p>
@@ -472,6 +473,7 @@ function ActivePhaseDetail({
   setEndReason,
   endError,
   endingPhase,
+  onUpdate,
 }: {
   phase: GoalPhase;
   onEndSubmit: (e: React.FormEvent) => void;
@@ -481,8 +483,70 @@ function ActivePhaseDetail({
   setEndReason: (v: string) => void;
   endError: string | null;
   endingPhase: boolean;
+  onUpdate: () => void;
 }) {
   const [showEnd, setShowEnd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editFields, setEditFields] = useState({
+    target_weight_kg: phase.target_weight_kg != null ? String(phase.target_weight_kg) : "",
+    target_change_kg_per_week: phase.target_change_kg_per_week != null ? String(Math.abs(phase.target_change_kg_per_week)) : "",
+    target_calories: phase.target_calories != null ? String(phase.target_calories) : "",
+    target_protein_g: phase.target_protein_g != null ? String(phase.target_protein_g) : "",
+    target_carbs_g: phase.target_carbs_g != null ? String(phase.target_carbs_g) : "",
+    target_fat_g: phase.target_fat_g != null ? String(phase.target_fat_g) : "",
+    target_fibre_g: phase.target_fibre_g != null ? String(phase.target_fibre_g) : "",
+  });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSuccess, setEditSuccess] = useState(false);
+
+  const editsUsed = phase.edit_count ?? 0;
+  const editsRemaining = Math.max(0, 2 - editsUsed);
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setEditError(null);
+    setEditSuccess(false);
+
+    const body: Record<string, number | null> = {};
+    const tw = editFields.target_weight_kg !== "" ? parseFloat(editFields.target_weight_kg) : null;
+    const rate = editFields.target_change_kg_per_week !== "" ? parseFloat(editFields.target_change_kg_per_week) : null;
+    const cal = editFields.target_calories !== "" ? parseFloat(editFields.target_calories) : null;
+    const prot = editFields.target_protein_g !== "" ? parseFloat(editFields.target_protein_g) : null;
+    const carb = editFields.target_carbs_g !== "" ? parseFloat(editFields.target_carbs_g) : null;
+    const fat = editFields.target_fat_g !== "" ? parseFloat(editFields.target_fat_g) : null;
+    const fib = editFields.target_fibre_g !== "" ? parseFloat(editFields.target_fibre_g) : null;
+
+    if (tw !== null) { if (isNaN(tw) || tw < 1 || tw > 500) { setEditError("Target weight must be 1–500 kg."); return; } body.target_weight_kg = tw; }
+    if (rate !== null) {
+      if (isNaN(rate) || rate < 0 || rate > 2.0) { setEditError("Rate must be 0–2.0 kg/wk."); return; }
+      body.target_change_kg_per_week = phase.mode === "cut" ? -rate : rate;
+    }
+    if (cal !== null) { if (isNaN(cal) || cal <= 0) { setEditError("Calories must be > 0."); return; } body.target_calories = cal; }
+    if (prot !== null) { if (isNaN(prot) || prot < 0) { setEditError("Protein must be ≥ 0."); return; } body.target_protein_g = prot; }
+    if (carb !== null) { if (isNaN(carb) || carb < 0) { setEditError("Carbs must be ≥ 0."); return; } body.target_carbs_g = carb; }
+    if (fat !== null) { if (isNaN(fat) || fat < 0) { setEditError("Fat must be ≥ 0."); return; } body.target_fat_g = fat; }
+    if (fib !== null) { if (isNaN(fib) || fib < 0) { setEditError("Fibre must be ≥ 0."); return; } body.target_fibre_g = fib; }
+
+    if (Object.keys(body).length === 0) { setEditError("No changes to save."); return; }
+
+    setEditSubmitting(true);
+    try {
+      await callFunction("update-goal-phase", body);
+      setEditSuccess(true);
+      setShowEdit(false);
+      onUpdate();
+    } catch (err: any) {
+      const code = err?.code ?? "";
+      if (code === "EDIT_LIMIT_REACHED") {
+        setEditError("Edit limit reached. Start a new phase to change targets.");
+      } else {
+        setEditError(err?.message ?? "Failed to update phase.");
+      }
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
 
   const startDate = new Date(phase.started_at).toLocaleDateString("en-ZA", {
     day: "numeric",
@@ -541,6 +605,66 @@ function ActivePhaseDetail({
           <span className="font-medium text-ink">{phase.starting_weight_kg} kg</span>
           <span className="ml-1 text-xs text-muted">({phase.starting_weight_source})</span>
         </p>
+      </div>
+
+      {/* ── Edit targets ──────────────────────────────────────────────────── */}
+      <div className="mt-3 border-t border-border pt-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted">
+            Edits used: {editsUsed}/2{editsRemaining > 0 ? ` · ${editsRemaining} remaining` : " · no more edits"}
+          </span>
+          {editsRemaining > 0 && (
+            <button
+              type="button"
+              onClick={() => { setShowEdit((v) => !v); setEditError(null); setEditSuccess(false); }}
+              className="text-xs text-primary hover:underline"
+            >
+              {showEdit ? "Cancel" : "Edit targets"}
+            </button>
+          )}
+        </div>
+        {editSuccess && !showEdit && (
+          <p className="mt-1 text-xs text-confidence-high">Targets updated.</p>
+        )}
+        {editsRemaining === 0 && (
+          <p className="mt-1 text-xs text-muted">Start a new phase to change targets.</p>
+        )}
+
+        {showEdit && (
+          <form onSubmit={handleEditSubmit} className="mt-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {[
+                { key: "target_weight_kg", label: "Goal weight (kg)" },
+                { key: "target_change_kg_per_week", label: phase.mode === "cut" ? "Loss/wk (kg)" : phase.mode === "bulk" ? "Gain/wk (kg)" : "Rate (kg/wk)" },
+                { key: "target_calories", label: "Calories (kcal)" },
+                { key: "target_protein_g", label: "Protein (g)" },
+                { key: "target_carbs_g", label: "Carbs (g)" },
+                { key: "target_fat_g", label: "Fat (g)" },
+                { key: "target_fibre_g", label: "Fibre (g)" },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="mb-0.5 block text-xs text-muted">{label}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editFields[key as keyof typeof editFields]}
+                    onChange={(e) => setEditFields((f) => ({ ...f, [key]: e.target.value }))}
+                    className="w-full rounded border border-border bg-surface px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              ))}
+            </div>
+            {editError && <p className="text-xs text-confidence-low">{editError}</p>}
+            <button
+              type="submit"
+              disabled={editSubmitting}
+              className="rounded-lg bg-primary px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {editSubmitting ? "Saving…" : "Save changes"}
+            </button>
+          </form>
+        )}
       </div>
 
       {showEnd && (
