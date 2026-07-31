@@ -87,14 +87,52 @@ async function callPreview(body: Record<string, unknown>) {
 //   BMR = 10*80 + 6.25*175 − 5*36 + 5 = 800 + 1093.75 − 180 + 5 = 1718.75
 // × moderate (1.55) = 2664.0625 → TDEE
 describe("preview-energy-calc — male BMR", () => {
-  it("returns eligible:true with correct BMR for a male profile", async () => {
+  it("returns ready:true with correct BMR for a male profile", async () => {
     const { status, json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
     expect(status).toBe(200);
     expect(json.success).toBe(true);
     const d = json.data;
-    expect(d.eligible).toBe(true);
+    expect(d.ready).toBe(true);
     expect(d.estimated_bmr_kcal).toBe(Math.round(1718.75));  // 1719
     expect(d.maintenance_source).toBe("equation_estimate");
+  });
+
+  it("includes data_quality when ready:true", async () => {
+    const { json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
+    const d = json.data;
+    expect(d.data_quality.profile_complete).toBe(true);
+    expect(d.data_quality.calculation_possible).toBe(true);
+    expect(typeof d.data_quality.weight_current).toBe("boolean");
+  });
+
+  it("includes input_provenance with correct source_types", async () => {
+    const { json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
+    const p = json.data.input_provenance;
+    expect(p.weight.source_type).toBe("measured");
+    expect(p.weight.log_source).toBe("manual");
+    expect(typeof p.weight.measured_at).toBe("string");
+    expect(p.activity_level.source_type).toBe("user_selected");
+    expect(p.bmr.source_type).toBe("calculated");
+    expect(p.tdee.source_type).toBe("calculated");
+    expect(p.final_target.source_type).toBe("calculated");
+  });
+
+  it("manual maintenance override gets source_type manually_estimated", async () => {
+    const { json } = await callPreview({
+      goal_mode: "maintenance",
+      target_change_kg_per_week: 0,
+      manual_maintenance_kcal: 2500,
+    });
+    const p = json.data.input_provenance;
+    expect(p.maintenance.source_type).toBe("manually_estimated");
+    expect(p.maintenance.provided_via).toBe("goals_form_override");
+  });
+
+  it("input_snapshot.weight_measured_at is a valid ISO timestamp", async () => {
+    const { json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
+    const ts = json.data.input_snapshot.weight_measured_at;
+    expect(typeof ts).toBe("string");
+    expect(new Date(ts).getTime()).toBeGreaterThan(0);
   });
 });
 
@@ -134,7 +172,7 @@ describe("preview-energy-calc — activity multipliers", () => {
       activity_level: level,
     });
     const d = json.data;
-    expect(d.eligible).toBe(true);
+    expect(d.ready).toBe(true);
     const expectedTdee = Math.round(d.estimated_bmr_kcal * multiplier);
     expect(d.estimated_tdee_kcal).toBe(expectedTdee);
     expect(d.input_snapshot.activity_multiplier).toBe(multiplier);
@@ -180,7 +218,7 @@ describe("preview-energy-calc — aggressive rate", () => {
   it("returns aggressive_rate warning when abs(rate) > 1% of body weight", async () => {
     // 80 kg × 0.01 = 0.8 kg/week threshold; 0.9 > 0.8 → aggressive
     const { json } = await callPreview({ goal_mode: "cut", target_change_kg_per_week: -0.9 });
-    expect(json.data.eligible).toBe(true);
+    expect(json.data.ready).toBe(true);
     expect(json.data.warnings).toContain("aggressive_rate");
     expect(json.data.is_aggressive_rate).toBe(true);
   });
@@ -208,7 +246,7 @@ describe("preview-energy-calc — floor rejection", () => {
 
 // ── Missing profile fields ────────────────────────────────────────────────────
 describe("preview-energy-calc — missing profile fields", () => {
-  it("returns eligible:false with missing_fields when height_cm is null", async () => {
+  it("returns ready:false with structured missing_fields when height_cm is null", async () => {
     const svc = svcClient();
     await svc.from("profiles").update({ height_cm: null }).eq("id", userId);
 
@@ -218,7 +256,121 @@ describe("preview-energy-calc — missing profile fields", () => {
     await svc.from("profiles").update({ height_cm: 175 }).eq("id", userId);
 
     expect(status).toBe(200);
-    expect(json.data.eligible).toBe(false);
-    expect(json.data.missing_fields).toContain("height_cm");
+    expect(json.data.ready).toBe(false);
+    const fieldNames = json.data.missing_fields.map((f: { field: string }) => f.field);
+    expect(fieldNames).toContain("height_cm");
+  });
+
+  it("missing_fields entries include field, reason, and action", async () => {
+    const svc = svcClient();
+    await svc.from("profiles").update({ height_cm: null, sex: null }).eq("id", userId);
+
+    const { json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
+
+    await svc.from("profiles").update({ height_cm: 175, sex: "male" }).eq("id", userId);
+
+    expect(json.data.ready).toBe(false);
+    const missing = json.data.missing_fields;
+    expect(Array.isArray(missing)).toBe(true);
+    for (const m of missing) {
+      expect(typeof m.field).toBe("string");
+      expect(typeof m.reason).toBe("string");
+      expect(typeof m.action).toBe("string");
+    }
+  });
+
+  it("each missing field is reported separately", async () => {
+    const svc = svcClient();
+    await svc.from("profiles").update({ height_cm: null, birth_date: null }).eq("id", userId);
+
+    const { json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
+
+    await svc.from("profiles").update({ height_cm: 175, birth_date: "1990-07-31" }).eq("id", userId);
+
+    const fieldNames = json.data.missing_fields.map((f: { field: string }) => f.field);
+    expect(fieldNames).toContain("height_cm");
+    expect(fieldNames).toContain("birth_date");
+  });
+
+  it("returns data_quality with correct booleans when profile is incomplete", async () => {
+    const svc = svcClient();
+    await svc.from("profiles").update({ height_cm: null }).eq("id", userId);
+
+    const { json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
+
+    await svc.from("profiles").update({ height_cm: 175 }).eq("id", userId);
+
+    expect(json.data.data_quality.profile_complete).toBe(false);
+    expect(json.data.data_quality.calculation_possible).toBe(false);
+  });
+});
+
+// ── Stale weight ──────────────────────────────────────────────────────────────
+describe("preview-energy-calc — stale weight", () => {
+  it("returns stale_fields when official weight is older than WEIGHT_FRESHNESS_WARNING_DAYS", async () => {
+    const svc = svcClient();
+    // Insert a weight log with measured_at = 45 days ago (beyond the 30-day threshold).
+    const staleDate = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: staleLog } = await svc.from("weight_logs").insert({
+      user_id: userId,
+      weight_kg: 79,
+      measured_at: staleDate,
+      is_official: true,
+      source: "manual",
+    }).select("id").single();
+
+    // Remove the fresh weight log so only the stale one remains.
+    await svc.from("weight_logs").delete().eq("user_id", userId).neq("id", staleLog!.id);
+
+    const { status, json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
+
+    // Restore: delete stale log and re-insert fresh one.
+    await svc.from("weight_logs").delete().eq("user_id", userId);
+    await svc.from("weight_logs").insert({
+      user_id: userId,
+      weight_kg: 80,
+      measured_at: new Date().toISOString(),
+      is_official: true,
+      source: "manual",
+    });
+
+    expect(status).toBe(200);
+    expect(json.data.ready).toBe(true);
+    expect(json.data.stale_fields.length).toBeGreaterThan(0);
+    const stale = json.data.stale_fields[0];
+    expect(stale.field).toBe("official_weight");
+    expect(typeof stale.recorded_at).toBe("string");
+    expect(stale.days_old).toBeGreaterThanOrEqual(44);
+    expect(stale.action).toBe("log_current_weight");
+  });
+
+  it("stale weight is reported separately from missing weight", async () => {
+    const svc = svcClient();
+    // Stale weight: should appear in stale_fields, not in missing_fields.
+    const staleDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: staleLog } = await svc.from("weight_logs").insert({
+      user_id: userId,
+      weight_kg: 79,
+      measured_at: staleDate,
+      is_official: true,
+      source: "manual",
+    }).select("id").single();
+    await svc.from("weight_logs").delete().eq("user_id", userId).neq("id", staleLog!.id);
+
+    const { json } = await callPreview({ goal_mode: "maintenance", target_change_kg_per_week: 0 });
+
+    await svc.from("weight_logs").delete().eq("user_id", userId);
+    await svc.from("weight_logs").insert({
+      user_id: userId,
+      weight_kg: 80,
+      measured_at: new Date().toISOString(),
+      is_official: true,
+      source: "manual",
+    });
+
+    const fieldNames = (json.data.missing_fields ?? []).map((f: { field: string }) => f.field);
+    expect(fieldNames).not.toContain("official_weight_kg");
+    expect(json.data.stale_fields.length).toBeGreaterThan(0);
+    expect(json.data.data_quality.weight_current).toBe(false);
   });
 });
