@@ -10,6 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:mocked": "playwright test --project=mocked",
+    "test:e2e:integration": "playwright test --project=integration",
+    "test:e2e:integration:headed": "playwright test --project=integration --headed",
     "test:e2e:report": "playwright show-report",
     "gen:types": "node ../scripts/gen-types.mjs"
   },

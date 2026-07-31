@@ -9,6 +9,7 @@ if (process.env.SUPABASE_ANON_KEY) supabaseEnv.VITE_SUPABASE_ANON_KEY = process.
 
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -16,10 +17,20 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:5173",
     trace: "on-first-retry",
+    screenshot: "only-on-failure",
   },
   projects: [
+    // ── Mocked tests: network-intercepted, no real Supabase needed ─────────────
     {
-      name: "chromium",
+      name: "mocked",
+      testMatch: ["edition-1/**/*.spec.ts", "weight-logging.spec.ts"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    // ── Integration tests: real Supabase + real edge functions ─────────────────
+    // Requires: supabase start + GROQ_API_KEY set in the edge function env.
+    {
+      name: "integration",
+      testMatch: "integration/**/*.spec.ts",
       use: { ...devices["Desktop Chrome"] },
     },
   ],
