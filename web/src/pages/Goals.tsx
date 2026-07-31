@@ -65,6 +65,8 @@ export default function Goals() {
   const [formError, setFormError] = useState<string | null>(null);
   const [needsTransition, setNeedsTransition] = useState(false);
 
+  const [latestWeight, setLatestWeight] = useState<number | null | undefined>(undefined); // undefined = not yet fetched
+
   const [endingPhase, setEndingPhase] = useState(false);
   const [endOutcome, setEndOutcome] = useState<"completed" | "cancelled">("completed");
   const [endReason, setEndReason] = useState("");
@@ -72,7 +74,17 @@ export default function Goals() {
 
   useEffect(() => {
     fetchPhases();
+    fetchLatestWeight();
   }, []);
+
+  async function fetchLatestWeight() {
+    try {
+      const result = await getFunction<{ latest_official: { weight_kg: number } | null }>("get-weight-logs", { limit: "1" });
+      setLatestWeight(result.latest_official ? result.latest_official.weight_kg : null);
+    } catch {
+      setLatestWeight(null);
+    }
+  }
 
   async function fetchPhases() {
     setLoading(true);
@@ -312,6 +324,11 @@ export default function Goals() {
                   className="mt-2 w-32 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
               )}
+              {form.starting_weight_source === "latest_weight_log" && latestWeight !== undefined && (
+                latestWeight !== null
+                  ? <p className="mt-1.5 text-xs text-muted">Will use <span className="font-medium text-ink">{latestWeight} kg</span></p>
+                  : <p className="mt-1.5 text-xs text-confidence-low">No official weight logged yet. <a href="/weight" className="underline">Log one first</a> or switch to manual entry.</p>
+              )}
             </div>
 
             {/* Optional targets */}
@@ -473,6 +490,8 @@ function ActivePhaseDetail({
           <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
             phase.mode === "cut"
               ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+              : phase.mode === "bulk"
+              ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
               : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
           }`}>
             {MODE_LABEL[phase.mode] ?? phase.mode}
