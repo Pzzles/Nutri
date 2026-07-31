@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import { callFunction, getFunction } from "../lib/supabase";
-import { GoalPhase, GoalPhaseMode, GoalPhaseStatus, PhaseTransition } from "../lib/goalTypes";
+import { callFunction, getFunction, supabase } from "../lib/supabase";
+import {
+  GoalPhase, GoalPhaseMode, GoalPhaseStatus, PhaseTransition,
+  CalorieTargetSnapshot, EnergyCalcPreview,
+} from "../lib/goalTypes";
+import { ACTIVITY_LABELS, ABSOLUTE_FLOOR_KCAL } from "../lib/scienceConfig";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -10,13 +14,31 @@ interface GetPhasesResponse {
   total_count: number;
 }
 
+interface StartPhaseBody {
+  mode: string;
+  starting_weight_source: "manual" | "latest_weight_log";
+  starting_weight_kg?: number;
+  target_weight_kg?: number;
+  target_change_kg_per_week?: number;
+  activity_level?: string;
+  manual_maintenance_kcal?: number;
+  aggressive_rate_acknowledged?: boolean;
+  target_protein_g?: number;
+  target_carbs_g?: number;
+  target_fat_g?: number;
+  target_fibre_g?: number;
+  transition?: string;
+}
+
 interface StartPhaseForm {
   mode: GoalPhaseMode;
   starting_weight_source: "manual" | "latest_weight_log";
   starting_weight_kg: string;
   target_weight_kg: string;
   target_change_kg_per_week: string;
-  target_calories: string;
+  activity_level: string;
+  use_manual_maintenance: boolean;
+  manual_maintenance_kcal: string;
   target_protein_g: string;
   target_carbs_g: string;
   target_fat_g: string;
@@ -30,7 +52,9 @@ const INITIAL_FORM: StartPhaseForm = {
   starting_weight_kg: "",
   target_weight_kg: "",
   target_change_kg_per_week: "",
-  target_calories: "",
+  activity_level: "",
+  use_manual_maintenance: false,
+  manual_maintenance_kcal: "",
   target_protein_g: "",
   target_carbs_g: "",
   target_fat_g: "",
@@ -51,6 +75,10 @@ const MODE_LABEL: Record<GoalPhaseMode, string> = {
   bulk: "Bulk",
 };
 
+const ACTIVITY_LEVEL_OPTIONS = [
+  "sedentary", "light", "moderate", "active", "very_active",
+] as const;
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Goals() {
@@ -66,7 +94,17 @@ export default function Goals() {
   const [formError, setFormError] = useState<string | null>(null);
   const [needsTransition, setNeedsTransition] = useState(false);
 
-  const [latestWeight, setLatestWeight] = useState<number | null | undefined>(undefined); // undefined = not yet fetched
+  const [latestWeight, setLatestWeight] = useState<number | null | undefined>(undefined);
+  const [profileActivityLevel, setProfileActivityLevel] = useState<string>("");
+
+  // Energy preview
+  const [preview, setPreview] = useState<EnergyCalcPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [aggressiveAcknowledged, setAggressiveAcknowledged] = useState(false);
+
+  // Active phase snapshot
+  const [snapshot, setSnapshot] = useState<CalorieTargetSnapshot | null>(null);
 
   const [endingPhase, setEndingPhase] = useState(false);
   const [endOutcome, setEndOutcome] = useState<"completed" | "cancelled">("completed");
@@ -76,7 +114,23 @@ export default function Goals() {
   useEffect(() => {
     fetchPhases();
     fetchLatestWeight();
+    fetchProfile();
   }, []);
+
+  async function fetchProfile() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("activity_level")
+        .eq("id", user.id)
+        .maybeSingle();
+      setProfileActivityLevel(data?.activity_level ?? "");
+    } catch {
+      // profile may not have activity_level set yet — that's fine
+    }
+  }
 
   async function fetchLatestWeight() {
     try {
@@ -95,10 +149,60 @@ export default function Goals() {
       setActive(result.active_phase);
       setHistory(result.phases.filter((p) => p.status !== "active"));
       setVisibleHistory(5);
+
+      // Fetch snapshot for the active phase if it has one.
+      if (result.active_phase?.snapshot_id) {
+        fetchSnapshot(result.active_phase.snapshot_id);
+      } else {
+        setSnapshot(null);
+      }
     } catch (err: any) {
       setError(err.message ?? "Failed to load goal phases.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchSnapshot(snapshotId: string) {
+    try {
+      const { data } = await supabase
+        .from("calorie_target_snapshots")
+        .select("*")
+        .eq("id", snapshotId)
+        .maybeSingle();
+      setSnapshot(data as CalorieTargetSnapshot | null);
+    } catch {
+      setSnapshot(null);
+    }
+  }
+
+  // ── Preview calculation ─────────────────────────────────────────────────────
+
+  async function handlePreview() {
+    setPreviewError(null);
+    setPreview(null);
+    setAggressiveAcknowledged(false);
+
+    const rate = form.mode === "maintenance" ? 0 : parseFloat(form.target_change_kg_per_week || "0");
+    const finalRate = form.mode === "cut" ? -Math.abs(rate) : rate;
+
+    const previewBody: Record<string, unknown> = {
+      goal_mode: form.mode,
+      target_change_kg_per_week: finalRate,
+    };
+    if (form.activity_level) previewBody.activity_level = form.activity_level;
+    if (form.use_manual_maintenance && form.manual_maintenance_kcal) {
+      previewBody.manual_maintenance_kcal = parseFloat(form.manual_maintenance_kcal);
+    }
+
+    setPreviewing(true);
+    try {
+      const result = await callFunction<EnergyCalcPreview>("preview-energy-calc", previewBody);
+      setPreview(result);
+    } catch (err: any) {
+      setPreviewError(err.message ?? "Could not calculate preview.");
+    } finally {
+      setPreviewing(false);
     }
   }
 
@@ -123,24 +227,16 @@ export default function Goals() {
       }
     }
 
-    if (form.target_change_kg_per_week) {
+    if (form.mode !== "maintenance" && form.target_change_kg_per_week) {
       const rate = parseFloat(form.target_change_kg_per_week);
       if (isNaN(rate)) return "Weekly change rate must be a number.";
-      if (form.mode === "cut") {
-        // User enters a positive loss amount; we negate it on submit.
-        if (rate <= 0) return "Loss per week must be greater than 0.";
-        if (rate > 2.0) return "Loss per week cannot exceed 2.0 kg/week.";
-      } else if (form.mode === "bulk") {
-        if (rate <= 0) return "Gain per week must be greater than 0.";
-        if (rate > 2.0) return "Gain per week cannot exceed 2.0 kg/week.";
-      } else {
-        if (rate !== 0) return "A maintenance phase requires a zero or blank rate.";
-      }
+      if (rate <= 0) return `${form.mode === "cut" ? "Loss" : "Gain"} per week must be greater than 0.`;
+      if (rate > 2.0) return "Rate cannot exceed 2.0 kg/week.";
     }
 
-    if (form.target_calories) {
-      const c = parseFloat(form.target_calories);
-      if (isNaN(c) || c <= 0) return "Target calories must be a positive number.";
+    if (form.use_manual_maintenance && form.manual_maintenance_kcal) {
+      const m = parseFloat(form.manual_maintenance_kcal);
+      if (isNaN(m) || m < 500 || m > 10_000) return "Manual maintenance must be between 500 and 10,000 kcal/day.";
     }
 
     for (const field of ["target_protein_g", "target_carbs_g", "target_fat_g", "target_fibre_g"] as const) {
@@ -152,6 +248,11 @@ export default function Goals() {
 
     if (active && !form.transition) {
       return "You have an active phase. Choose whether to supersede or cancel it.";
+    }
+
+    // If aggressive rate is flagged in the preview, require acknowledgement.
+    if (preview?.is_aggressive_rate && !aggressiveAcknowledged) {
+      return "Acknowledge the aggressive rate warning before starting this phase.";
     }
 
     return null;
@@ -170,7 +271,7 @@ export default function Goals() {
     setNeedsTransition(false);
 
     try {
-      const body: Record<string, unknown> = {
+      const body: StartPhaseBody = {
         mode: form.mode,
         starting_weight_source: form.starting_weight_source,
       };
@@ -179,21 +280,28 @@ export default function Goals() {
         body.starting_weight_kg = parseFloat(form.starting_weight_kg);
       }
       if (form.target_weight_kg) body.target_weight_kg = parseFloat(form.target_weight_kg);
-      if (form.target_change_kg_per_week) {
+      if (form.mode !== "maintenance" && form.target_change_kg_per_week) {
         const rawRate = parseFloat(form.target_change_kg_per_week);
-        // Cut: user enters positive loss amount → send negative. Bulk/maintenance: send as-is.
         body.target_change_kg_per_week = form.mode === "cut" ? -rawRate : rawRate;
       }
-      if (form.target_calories) body.target_calories = parseFloat(form.target_calories);
+      if (form.activity_level) body.activity_level = form.activity_level;
+      if (form.use_manual_maintenance && form.manual_maintenance_kcal) {
+        body.manual_maintenance_kcal = parseFloat(form.manual_maintenance_kcal);
+      }
+      if (aggressiveAcknowledged) body.aggressive_rate_acknowledged = true;
       if (form.target_protein_g) body.target_protein_g = parseFloat(form.target_protein_g);
       if (form.target_carbs_g) body.target_carbs_g = parseFloat(form.target_carbs_g);
       if (form.target_fat_g) body.target_fat_g = parseFloat(form.target_fat_g);
       if (form.target_fibre_g) body.target_fibre_g = parseFloat(form.target_fibre_g);
       if (form.transition) body.transition = form.transition;
 
-      await callFunction<GoalPhase>("start-goal-phase", body);
+      await callFunction<{ phase: GoalPhase; snapshot: CalorieTargetSnapshot | null }>(
+        "start-goal-phase", body,
+      );
       setShowNewForm(false);
       setForm(INITIAL_FORM);
+      setPreview(null);
+      setAggressiveAcknowledged(false);
       await fetchPhases();
     } catch (err: any) {
       if (err.message?.includes("ACTIVE_PHASE_EXISTS")) {
@@ -228,6 +336,14 @@ export default function Goals() {
     }
   }
 
+  // Reset preview when mode or rate changes.
+  function updateForm(updater: (f: StartPhaseForm) => StartPhaseForm) {
+    setForm(updater);
+    setPreview(null);
+    setPreviewError(null);
+    setAggressiveAcknowledged(false);
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -237,7 +353,19 @@ export default function Goals() {
         {!showNewForm && (
           <button
             type="button"
-            onClick={() => { setShowNewForm(true); setForm({ ...INITIAL_FORM, mode: active?.mode ?? "cut" }); setFormError(null); setNeedsTransition(false); }}
+            onClick={() => {
+              setShowNewForm(true);
+              setForm({
+                ...INITIAL_FORM,
+                mode: active?.mode ?? "cut",
+                activity_level: profileActivityLevel,
+              });
+              setFormError(null);
+              setNeedsTransition(false);
+              setPreview(null);
+              setPreviewError(null);
+              setAggressiveAcknowledged(false);
+            }}
             className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-dark"
           >
             Start new phase
@@ -255,6 +383,7 @@ export default function Goals() {
           {active ? (
             <ActivePhaseDetail
               phase={active}
+              snapshot={snapshot}
               onEndSubmit={handleEndPhase}
               endOutcome={endOutcome}
               setEndOutcome={setEndOutcome}
@@ -277,22 +406,23 @@ export default function Goals() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">New phase</h2>
             <button
               type="button"
-              onClick={() => setShowNewForm(false)}
+              onClick={() => { setShowNewForm(false); setPreview(null); setPreviewError(null); }}
               className="text-xs text-muted hover:text-ink"
             >
               Cancel
             </button>
           </div>
-          <form onSubmit={handleStartPhase} className="mt-3 space-y-4 rounded-lg border border-border bg-surface p-5">
-            {/* Mode */}
+
+          <form onSubmit={handleStartPhase} className="mt-3 space-y-5 rounded-lg border border-border bg-surface p-5">
+            {/* ── Mode ──────────────────────────────────────────────────────── */}
             <div>
-              <label className="block text-xs font-medium text-muted">Mode</label>
+              <label className="block text-xs font-medium text-muted">Phase mode</label>
               <div className="mt-1 flex gap-2">
                 {(["cut", "maintenance", "bulk"] as GoalPhaseMode[]).map((m) => (
                   <button
                     key={m}
                     type="button"
-                    onClick={() => setForm((f) => ({ ...f, mode: m }))}
+                    onClick={() => updateForm((f) => ({ ...f, mode: m }))}
                     className={`rounded-full px-4 py-1.5 text-sm capitalize ${
                       form.mode === m ? "bg-primary text-white" : "border border-border text-muted"
                     }`}
@@ -303,7 +433,7 @@ export default function Goals() {
               </div>
             </div>
 
-            {/* Starting weight */}
+            {/* ── Starting weight ────────────────────────────────────────────── */}
             <div>
               <label className="block text-xs font-medium text-muted">Starting weight</label>
               <div className="mt-1 flex gap-2">
@@ -311,7 +441,7 @@ export default function Goals() {
                   <button
                     key={src}
                     type="button"
-                    onClick={() => setForm((f) => ({ ...f, starting_weight_source: src }))}
+                    onClick={() => updateForm((f) => ({ ...f, starting_weight_source: src }))}
                     className={`rounded-full px-3 py-1 text-xs ${
                       form.starting_weight_source === src
                         ? "bg-primary text-white"
@@ -324,13 +454,9 @@ export default function Goals() {
               </div>
               {form.starting_weight_source === "manual" && (
                 <input
-                  type="number"
-                  min="1"
-                  max="500"
-                  step="0.1"
-                  placeholder="kg"
+                  type="number" min="1" max="500" step="0.1" placeholder="kg"
                   value={form.starting_weight_kg}
-                  onChange={(e) => setForm((f) => ({ ...f, starting_weight_kg: e.target.value }))}
+                  onChange={(e) => updateForm((f) => ({ ...f, starting_weight_kg: e.target.value }))}
                   className="mt-2 w-32 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
               )}
@@ -341,53 +467,187 @@ export default function Goals() {
               )}
             </div>
 
-            {/* Optional targets */}
-            <div className="grid grid-cols-2 gap-3">
-              <FormField
-                label="Target weight (kg)"
+            {/* ── Rate ───────────────────────────────────────────────────────── */}
+            {form.mode !== "maintenance" && (
+              <div>
+                <label className="block text-xs font-medium text-muted">
+                  {form.mode === "cut" ? "Loss per week (kg)" : "Gain per week (kg)"}
+                </label>
+                <input
+                  type="number" step="0.05" min="0.05" max="2.0" placeholder="e.g. 0.5"
+                  value={form.target_change_kg_per_week}
+                  onChange={(e) => updateForm((f) => ({ ...f, target_change_kg_per_week: e.target.value }))}
+                  className="mt-1 w-32 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                />
+                <p className="mt-1 text-xs text-muted">Enter a positive number; max 2.0 kg/week.</p>
+              </div>
+            )}
+
+            {/* ── Activity level ─────────────────────────────────────────────── */}
+            <div>
+              <label className="block text-xs font-medium text-muted">Activity level</label>
+              <p className="mt-0.5 text-xs text-muted">
+                Used to estimate your maintenance calories.
+                {profileActivityLevel && ` Your profile has: ${ACTIVITY_LABELS[profileActivityLevel] ?? profileActivityLevel}`}
+              </p>
+              <select
+                value={form.activity_level || profileActivityLevel}
+                onChange={(e) => updateForm((f) => ({ ...f, activity_level: e.target.value }))}
+                className="mt-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">— select activity level —</option>
+                {ACTIVITY_LEVEL_OPTIONS.map((level) => (
+                  <option key={level} value={level}>{ACTIVITY_LABELS[level]}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* ── Manual maintenance override ─────────────────────────────────── */}
+            <div>
+              <label className="flex items-center gap-2 text-xs font-medium text-muted">
+                <input
+                  type="checkbox"
+                  checked={form.use_manual_maintenance}
+                  onChange={(e) => updateForm((f) => ({ ...f, use_manual_maintenance: e.target.checked }))}
+                  className="rounded"
+                />
+                Use manual maintenance override
+              </label>
+              {form.use_manual_maintenance && (
+                <div className="mt-2">
+                  <p className="text-xs text-muted mb-1">
+                    If you know your actual maintenance calories (e.g. from a metabolic test or tracking history),
+                    enter it here. This overrides the equation estimate.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" step="10" min="500" max="10000" placeholder="kcal/day"
+                      value={form.manual_maintenance_kcal}
+                      onChange={(e) => updateForm((f) => ({ ...f, manual_maintenance_kcal: e.target.value }))}
+                      className="w-36 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <span className="text-xs text-muted">kcal/day</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Optional: target weight ─────────────────────────────────────── */}
+            <div>
+              <label className="block text-xs font-medium text-muted">Target weight (optional)</label>
+              <input
+                type="number" step="0.1" min="1" max="500" placeholder="kg"
                 value={form.target_weight_kg}
-                onChange={(v) => setForm((f) => ({ ...f, target_weight_kg: v }))}
-                placeholder="optional"
-              />
-              <FormField
-                label={form.mode === "cut" ? "Loss per week (kg)" : form.mode === "bulk" ? "Gain per week (kg)" : "Weekly rate (kg/week)"}
-                value={form.target_change_kg_per_week}
-                onChange={(v) => setForm((f) => ({ ...f, target_change_kg_per_week: v }))}
-                placeholder={form.mode === "maintenance" ? "0" : "e.g. 0.5"}
-              />
-              <FormField
-                label="Target calories (kcal)"
-                value={form.target_calories}
-                onChange={(v) => setForm((f) => ({ ...f, target_calories: v }))}
-                placeholder="optional"
-              />
-              <FormField
-                label="Protein (g)"
-                value={form.target_protein_g}
-                onChange={(v) => setForm((f) => ({ ...f, target_protein_g: v }))}
-                placeholder="optional"
-              />
-              <FormField
-                label="Carbs (g)"
-                value={form.target_carbs_g}
-                onChange={(v) => setForm((f) => ({ ...f, target_carbs_g: v }))}
-                placeholder="optional"
-              />
-              <FormField
-                label="Fat (g)"
-                value={form.target_fat_g}
-                onChange={(v) => setForm((f) => ({ ...f, target_fat_g: v }))}
-                placeholder="optional"
-              />
-              <FormField
-                label="Fibre (g)"
-                value={form.target_fibre_g}
-                onChange={(v) => setForm((f) => ({ ...f, target_fibre_g: v }))}
-                placeholder="optional"
+                onChange={(e) => updateForm((f) => ({ ...f, target_weight_kg: e.target.value }))}
+                className="mt-1 w-32 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
-            {/* Transition selector — shown if active phase exists or the API bounced with conflict */}
+            {/* ── Macronutrient targets ───────────────────────────────────────── */}
+            <details>
+              <summary className="cursor-pointer text-xs font-medium text-muted hover:text-ink">
+                Optional macronutrient targets ▸
+              </summary>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {([
+                  { key: "target_protein_g", label: "Protein (g)" },
+                  { key: "target_carbs_g",   label: "Carbs (g)" },
+                  { key: "target_fat_g",     label: "Fat (g)" },
+                  { key: "target_fibre_g",   label: "Fibre (g)" },
+                ] as { key: keyof StartPhaseForm; label: string }[]).map(({ key, label }) => (
+                  <FormField
+                    key={key}
+                    label={label}
+                    value={form[key] as string}
+                    onChange={(v) => updateForm((f) => ({ ...f, [key]: v }))}
+                    placeholder="optional"
+                  />
+                ))}
+              </div>
+            </details>
+
+            {/* ── Preview calculation ─────────────────────────────────────────── */}
+            <div className="border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={handlePreview}
+                disabled={previewing}
+                className="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary hover:text-white disabled:opacity-50"
+              >
+                {previewing ? "Calculating…" : "Preview calorie target"}
+              </button>
+              <p className="mt-1 text-xs text-muted">
+                Estimates your calorie target before committing. The final value is calculated by the server when you start the phase.
+              </p>
+
+              {previewError && (
+                <div className="mt-3 rounded-lg border border-confidence-low bg-red-50 p-3 text-sm text-confidence-low dark:bg-red-950/30">
+                  {previewError}
+                </div>
+              )}
+
+              {preview && !preview.eligible && (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Profile incomplete</p>
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{preview.instructions}</p>
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                    Missing: {preview.missing_fields.join(", ")}
+                  </p>
+                </div>
+              )}
+
+              {preview?.eligible && (
+                <div className="mt-3 space-y-3">
+                  {/* Calorie breakdown */}
+                  <div className="rounded-lg border border-border bg-surface/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">Calorie breakdown</p>
+                    <CalorieBreakdown preview={preview} />
+                  </div>
+
+                  {/* Aggressive rate warning */}
+                  {preview.is_aggressive_rate && (
+                    <div className="rounded-lg border border-amber-400 bg-amber-50 p-3 dark:border-amber-600 dark:bg-amber-950/30">
+                      <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Aggressive rate</p>
+                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                        The requested rate exceeds 1% of body weight per week, which is considered aggressive.
+                        Rapid fat loss or gain increases risk of muscle loss, metabolic adaptation, or nutrient deficiency.
+                      </p>
+                      <label className="mt-2 flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+                        <input
+                          type="checkbox"
+                          checked={aggressiveAcknowledged}
+                          onChange={(e) => setAggressiveAcknowledged(e.target.checked)}
+                          className="rounded"
+                        />
+                        I understand and accept this rate.
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Floor warning */}
+                  {preview.warnings?.includes("target_below_floor") && (
+                    <div className="rounded-lg border border-confidence-low bg-red-50 p-3 text-sm text-confidence-low dark:bg-red-950/30">
+                      Calculated target ({preview.recommended_target_kcal} kcal/day) is below the minimum of {ABSOLUTE_FLOOR_KCAL} kcal/day.
+                      Reduce your rate or increase your manual maintenance.
+                    </div>
+                  )}
+
+                  {/* Expandable explanation */}
+                  {preview.explanation && (
+                    <details>
+                      <summary className="cursor-pointer text-xs text-primary hover:underline">
+                        How this was calculated ▸
+                      </summary>
+                      <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-surface/80 p-3 text-xs text-muted border border-border">
+                        {preview.explanation}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Transition selector ─────────────────────────────────────────── */}
             {(active || needsTransition) && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
                 <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
@@ -446,27 +706,63 @@ export default function Goals() {
   );
 }
 
+// ── CalorieBreakdown ──────────────────────────────────────────────────────────
+
+function CalorieBreakdown({ preview }: { preview: EnergyCalcPreview }) {
+  return (
+    <div className="space-y-1 text-sm">
+      <BreakdownRow label="Resting energy (BMR)" value={`${preview.estimated_bmr_kcal} kcal/day`} />
+      <BreakdownRow label={`× Activity multiplier (${preview.input_snapshot?.activity_level ?? ""})`}
+                    value={`${preview.estimated_tdee_kcal} kcal/day`} />
+      {preview.maintenance_source === "manual_override" ? (
+        <BreakdownRow label="Maintenance (manual override)" value={`${preview.effective_maintenance_kcal} kcal/day`} highlight />
+      ) : (
+        <BreakdownRow label="Estimated maintenance (TDEE)" value={`${preview.effective_maintenance_kcal} kcal/day`} />
+      )}
+      {preview.daily_adjustment_kcal !== 0 && (
+        <BreakdownRow
+          label={preview.daily_adjustment_kcal! < 0 ? "Daily deficit" : "Daily surplus"}
+          value={`${preview.daily_adjustment_kcal! < 0 ? "" : "+"}${preview.daily_adjustment_kcal} kcal/day`}
+        />
+      )}
+      <div className="border-t border-border pt-1 mt-1">
+        <BreakdownRow
+          label="Calorie target"
+          value={`${preview.recommended_target_kcal} kcal/day`}
+          bold
+        />
+      </div>
+    </div>
+  );
+}
+
+function BreakdownRow({
+  label, value, bold, highlight,
+}: {
+  label: string; value: string; bold?: boolean; highlight?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className={`text-xs ${highlight ? "text-blue-600 dark:text-blue-400" : "text-muted"}`}>{label}</span>
+      <span className={`text-xs ${bold ? "font-semibold text-ink" : highlight ? "text-blue-600 dark:text-blue-400" : "text-ink"}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function FormField({
-  label,
-  value,
-  onChange,
-  placeholder,
+  label, value, onChange, placeholder,
 }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
+  label: string; value: string; onChange: (v: string) => void; placeholder: string;
 }) {
   return (
     <div>
       <label className="block text-xs font-medium text-muted">{label}</label>
       <input
-        type="number"
-        step="any"
-        placeholder={placeholder}
-        value={value}
+        type="number" step="any" placeholder={placeholder} value={value}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
       />
@@ -475,17 +771,12 @@ function FormField({
 }
 
 function ActivePhaseDetail({
-  phase,
-  onEndSubmit,
-  endOutcome,
-  setEndOutcome,
-  endReason,
-  setEndReason,
-  endError,
-  endingPhase,
-  onUpdate,
+  phase, snapshot,
+  onEndSubmit, endOutcome, setEndOutcome, endReason, setEndReason,
+  endError, endingPhase, onUpdate,
 }: {
   phase: GoalPhase;
+  snapshot: CalorieTargetSnapshot | null;
   onEndSubmit: (e: React.FormEvent) => void;
   endOutcome: "completed" | "cancelled";
   setEndOutcome: (v: "completed" | "cancelled") => void;
@@ -500,7 +791,6 @@ function ActivePhaseDetail({
   const [editFields, setEditFields] = useState({
     target_weight_kg: phase.target_weight_kg != null ? String(phase.target_weight_kg) : "",
     target_change_kg_per_week: phase.target_change_kg_per_week != null ? String(Math.abs(phase.target_change_kg_per_week)) : "",
-    target_calories: phase.target_calories != null ? String(phase.target_calories) : "",
     target_protein_g: phase.target_protein_g != null ? String(phase.target_protein_g) : "",
     target_carbs_g: phase.target_carbs_g != null ? String(phase.target_carbs_g) : "",
     target_fat_g: phase.target_fat_g != null ? String(phase.target_fat_g) : "",
@@ -519,24 +809,22 @@ function ActivePhaseDetail({
     setEditSuccess(false);
 
     const body: Record<string, number | null> = {};
-    const tw = editFields.target_weight_kg !== "" ? parseFloat(editFields.target_weight_kg) : null;
+    const tw   = editFields.target_weight_kg !== "" ? parseFloat(editFields.target_weight_kg) : null;
     const rate = editFields.target_change_kg_per_week !== "" ? parseFloat(editFields.target_change_kg_per_week) : null;
-    const cal = editFields.target_calories !== "" ? parseFloat(editFields.target_calories) : null;
     const prot = editFields.target_protein_g !== "" ? parseFloat(editFields.target_protein_g) : null;
     const carb = editFields.target_carbs_g !== "" ? parseFloat(editFields.target_carbs_g) : null;
-    const fat = editFields.target_fat_g !== "" ? parseFloat(editFields.target_fat_g) : null;
-    const fib = editFields.target_fibre_g !== "" ? parseFloat(editFields.target_fibre_g) : null;
+    const fat  = editFields.target_fat_g !== "" ? parseFloat(editFields.target_fat_g) : null;
+    const fib  = editFields.target_fibre_g !== "" ? parseFloat(editFields.target_fibre_g) : null;
 
-    if (tw !== null) { if (isNaN(tw) || tw < 1 || tw > 500) { setEditError("Target weight must be 1–500 kg."); return; } body.target_weight_kg = tw; }
+    if (tw !== null)   { if (isNaN(tw) || tw < 1 || tw > 500) { setEditError("Target weight must be 1–500 kg."); return; } body.target_weight_kg = tw; }
     if (rate !== null) {
       if (isNaN(rate) || rate < 0 || rate > 2.0) { setEditError("Rate must be 0–2.0 kg/wk."); return; }
       body.target_change_kg_per_week = phase.mode === "cut" ? -rate : rate;
     }
-    if (cal !== null) { if (isNaN(cal) || cal <= 0) { setEditError("Calories must be > 0."); return; } body.target_calories = cal; }
     if (prot !== null) { if (isNaN(prot) || prot < 0) { setEditError("Protein must be ≥ 0."); return; } body.target_protein_g = prot; }
     if (carb !== null) { if (isNaN(carb) || carb < 0) { setEditError("Carbs must be ≥ 0."); return; } body.target_carbs_g = carb; }
-    if (fat !== null) { if (isNaN(fat) || fat < 0) { setEditError("Fat must be ≥ 0."); return; } body.target_fat_g = fat; }
-    if (fib !== null) { if (isNaN(fib) || fib < 0) { setEditError("Fibre must be ≥ 0."); return; } body.target_fibre_g = fib; }
+    if (fat  !== null) { if (isNaN(fat)  || fat  < 0) { setEditError("Fat must be ≥ 0."); return; }  body.target_fat_g = fat; }
+    if (fib  !== null) { if (isNaN(fib)  || fib  < 0) { setEditError("Fibre must be ≥ 0."); return; } body.target_fibre_g = fib; }
 
     if (Object.keys(body).length === 0) { setEditError("No changes to save."); return; }
 
@@ -559,9 +847,7 @@ function ActivePhaseDetail({
   }
 
   const startDate = new Date(phase.started_at).toLocaleDateString("en-ZA", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+    day: "numeric", month: "short", year: "numeric",
   });
 
   return (
@@ -593,7 +879,10 @@ function ActivePhaseDetail({
           <p><span className="text-muted">Calories: </span><span className="font-medium text-ink">{phase.target_calories} kcal</span></p>
         )}
         {phase.target_change_kg_per_week != null && (
-          <p><span className="text-muted">{phase.mode === "cut" ? "Loss/week: " : phase.mode === "bulk" ? "Gain/week: " : "Rate: "}</span><span className="font-medium text-ink">{Math.abs(phase.target_change_kg_per_week!)} kg/wk</span></p>
+          <p>
+            <span className="text-muted">{phase.mode === "cut" ? "Loss/week: " : phase.mode === "bulk" ? "Gain/week: " : "Rate: "}</span>
+            <span className="font-medium text-ink">{Math.abs(phase.target_change_kg_per_week)} kg/wk</span>
+          </p>
         )}
         {phase.target_weight_kg != null && (
           <p><span className="text-muted">Goal weight: </span><span className="font-medium text-ink">{phase.target_weight_kg} kg</span></p>
@@ -616,6 +905,45 @@ function ActivePhaseDetail({
           <span className="ml-1 text-xs text-muted">({phase.starting_weight_source})</span>
         </p>
       </div>
+
+      {/* ── How this was calculated (snapshot) ──────────────────────────── */}
+      {snapshot && (
+        <details className="mt-3 border-t border-border pt-3">
+          <summary className="cursor-pointer text-xs text-primary hover:underline">
+            How this target was calculated ▸
+          </summary>
+          <div className="mt-3 space-y-1 text-xs text-muted">
+            <SnapshotRow label="Algorithm" value={`${snapshot.algorithm_name} (${snapshot.algorithm_version})`} />
+            <SnapshotRow label="Calculated at" value={new Date(snapshot.calculation_timestamp).toLocaleString("en-ZA")} />
+            <SnapshotRow label="Age at calculation" value={`${snapshot.age_years} years`} />
+            <SnapshotRow label="Weight used" value={`${snapshot.official_weight_kg} kg`} />
+            <SnapshotRow label="Height" value={`${snapshot.height_cm} cm`} />
+            <SnapshotRow label="Sex" value={snapshot.equation_sex} />
+            <SnapshotRow label="Activity level" value={ACTIVITY_LABELS[snapshot.activity_level] ?? snapshot.activity_level} />
+            <SnapshotRow label="Activity multiplier" value={String(snapshot.activity_multiplier)} />
+            <div className="border-t border-border mt-1 pt-1 space-y-1">
+              <SnapshotRow label="Estimated BMR" value={`${snapshot.calculated_bmr_kcal} kcal/day`} />
+              <SnapshotRow label="Estimated TDEE" value={`${snapshot.calculated_tdee_kcal} kcal/day`} />
+              <SnapshotRow
+                label={snapshot.maintenance_source === "manual_override" ? "Maintenance (manual)" : "Maintenance (equation)"}
+                value={`${snapshot.effective_maintenance_kcal} kcal/day`}
+              />
+              {snapshot.daily_adjustment_kcal !== 0 && (
+                <SnapshotRow
+                  label={snapshot.daily_adjustment_kcal < 0 ? "Daily deficit" : "Daily surplus"}
+                  value={`${snapshot.daily_adjustment_kcal} kcal/day`}
+                />
+              )}
+              <SnapshotRow label="Final target" value={`${snapshot.final_target_kcal} kcal/day`} />
+            </div>
+            {snapshot.warning_codes.length > 0 && (
+              <p className="mt-1 text-amber-600 dark:text-amber-400">
+                Warnings at creation: {snapshot.warning_codes.join(", ")}
+              </p>
+            )}
+          </div>
+        </details>
+      )}
 
       {/* ── Edit targets ──────────────────────────────────────────────────── */}
       <div className="mt-3 border-t border-border pt-3">
@@ -646,7 +974,6 @@ function ActivePhaseDetail({
               {[
                 { key: "target_weight_kg", label: "Goal weight (kg)" },
                 { key: "target_change_kg_per_week", label: phase.mode === "cut" ? "Loss/wk (kg)" : phase.mode === "bulk" ? "Gain/wk (kg)" : "Rate (kg/wk)" },
-                { key: "target_calories", label: "Calories (kcal)" },
                 { key: "target_protein_g", label: "Protein (g)" },
                 { key: "target_carbs_g", label: "Carbs (g)" },
                 { key: "target_fat_g", label: "Fat (g)" },
@@ -655,9 +982,7 @@ function ActivePhaseDetail({
                 <div key={key}>
                   <label className="mb-0.5 block text-xs text-muted">{label}</label>
                   <input
-                    type="number"
-                    min="0"
-                    step="any"
+                    type="number" min="0" step="any"
                     value={editFields[key as keyof typeof editFields]}
                     onChange={(e) => setEditFields((f) => ({ ...f, [key]: e.target.value }))}
                     className="w-full rounded border border-border bg-surface px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-primary"
@@ -716,11 +1041,18 @@ function ActivePhaseDetail({
   );
 }
 
+function SnapshotRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-muted">{label}</span>
+      <span className="text-ink">{value}</span>
+    </div>
+  );
+}
+
 function HistoryRow({ phase }: { phase: GoalPhase }) {
   const startDate = new Date(phase.started_at).toLocaleDateString("en-ZA", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+    day: "numeric", month: "short", year: "numeric",
   });
   const endDate = phase.ended_at
     ? new Date(phase.ended_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })
