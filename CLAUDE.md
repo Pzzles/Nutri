@@ -112,5 +112,12 @@ Before `git clean`, show the user what would be deleted (`git clean -n`) and ask
 
 ## Active Phases
 
-Phase 5 has NOT been started. Do not implement Phase 5 features.
-See `docs/verification/phases-1-4-verification.md` for the Phase 5 readiness verdict.
+Phase 5 (Scientific Baseline Calculations) is **in progress** on branch
+`feat/science-baseline-calculations`. It implements Mifflin–St Jeor BMR/TDEE,
+server-authoritative calorie targets, immutable calculation snapshots, and the
+Phase 5 data-collection and data-quality contract.
+
+Do not implement Phase 6 features (EWMA smoothing, adaptive maintenance, plateau
+detection, Hall model, effective-dated activity history, waist-to-height ratio).
+See `docs/algorithms/phase-5-energy-calculations.md` and
+`docs/data/measurement-and-calculation-data-contract.md` for Phase 5 scope.
