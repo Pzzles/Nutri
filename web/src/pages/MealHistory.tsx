@@ -97,6 +97,14 @@ interface LogAgainState {
   error: string | null;
 }
 
+interface SaveTemplateState {
+  mealId: string;
+  name: string;
+  busy: boolean;
+  done: boolean;
+  error: string | null;
+}
+
 // ── sub-components ────────────────────────────────────────────────────────────
 
 function MacroRow({ label, value }: { label: string; value: string }) {
@@ -140,6 +148,25 @@ function PencilIcon() {
   );
 }
 
+function RepeatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <polyline points="17 1 21 5 17 9" />
+      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+      <polyline points="7 23 3 19 7 15" />
+      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
+
+function BookmarkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
 // ── main page ─────────────────────────────────────────────────────────────────
 
 export default function MealHistory({ embedded = false }: { embedded?: boolean }) {
@@ -153,6 +180,7 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
   const [confirmDel, setConfirmDel] = useState<ConfirmState | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [logAgain, setLogAgain] = useState<LogAgainState | null>(null);
+  const [saveTemplate, setSaveTemplate] = useState<SaveTemplateState | null>(null);
 
   const loadDate = useCallback(async (d: string) => {
     setLoading(true);
@@ -242,31 +270,34 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
         idempotency_key: generateUUID(),
         meal_type: logAgain.mealType,
         eaten_at: new Date().toISOString(),
-        source: "draft",
-        raw_input: `REPEAT:${meal.id}`,
-        meal_confidence: meal.meal_confidence,
-        items: meal.items.map((item) => ({
-          food_id: item.food_id,
-          raw_phrases: [item.food_name],
-          quantity: item.quantity,
-          unit: item.unit,
-          weight_g: item.weight_g,
-          calories: item.calories,
-          protein_g: item.protein_g,
-          carbs_g: item.carbs_g,
-          fat_g: item.fat_g,
-          fibre_g: item.fibre_g,
-          match_confidence: item.match_confidence,
-          portion_confidence: item.portion_confidence,
-          item_confidence: item.confidence,
-          portion_g: item.weight_g,
-          nutrition_source: item.nutrition_source,
-        })),
+        source: "copy_previous",
+        reference_meal_id: meal.id,
       });
       setLogAgain(null);
       if (date === todayStr()) await loadDate(date);
     } catch (err: any) {
       setLogAgain((s) => s && { ...s, busy: false, error: err.message ?? "Failed to log meal." });
+    }
+  }
+
+  async function handleSaveTemplate(meal: MealData) {
+    if (!saveTemplate) return;
+    const name = saveTemplate.name.trim();
+    if (!name) return;
+    setSaveTemplate((s) => s && { ...s, busy: true, error: null });
+    try {
+      await callFunction("save-meal-template", {
+        action: "create",
+        name,
+        items: meal.items.map((item) => ({
+          food_id: item.food_id,
+          quantity: item.quantity,
+          unit: item.unit,
+        })),
+      });
+      setSaveTemplate((s) => s && { ...s, busy: false, done: true });
+    } catch (err: any) {
+      setSaveTemplate((s) => s && { ...s, busy: false, error: err.message ?? "Failed to save template." });
     }
   }
 
@@ -387,10 +418,18 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
                   ) : (
                     <>
                       <button
-                        onClick={() => { setLogAgain({ mealId: meal.id, mealType: meal.meal_type, busy: false, error: null }); setConfirmDel(null); setEditState(null); }}
-                        className="flex-shrink-0 text-xs text-primary hover:underline"
+                        onClick={() => { setLogAgain({ mealId: meal.id, mealType: meal.meal_type, busy: false, error: null }); setSaveTemplate(null); setConfirmDel(null); setEditState(null); }}
+                        title="Log again"
+                        className="flex-shrink-0 grid h-7 w-7 place-items-center rounded-full text-primary hover:bg-primary/10 transition-colors"
                       >
-                        Log again
+                        <RepeatIcon />
+                      </button>
+                      <button
+                        onClick={() => { setSaveTemplate({ mealId: meal.id, name: "", busy: false, done: false, error: null }); setLogAgain(null); setConfirmDel(null); setEditState(null); }}
+                        title="Save as template"
+                        className="flex-shrink-0 grid h-7 w-7 place-items-center rounded-full text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <BookmarkIcon />
                       </button>
                       <button
                         onClick={() => requestDelete("meal", meal.id)}
@@ -429,6 +468,43 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
                     </div>
                     {logAgain.error && (
                       <p className="mt-2 text-xs text-confidence-low">{logAgain.error}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Save template panel */}
+                {saveTemplate?.mealId === meal.id && (
+                  <div className="border-t border-border px-4 py-3">
+                    {saveTemplate.done ? (
+                      <p className="text-sm text-confidence-high">Template saved.</p>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={saveTemplate.name}
+                          onChange={(e) => setSaveTemplate((s) => s && { ...s, name: e.target.value })}
+                          placeholder="Template name"
+                          maxLength={80}
+                          className="flex-1 min-w-[160px] rounded-lg border border-border bg-bg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+                        />
+                        <button
+                          onClick={() => handleSaveTemplate(meal)}
+                          disabled={saveTemplate.busy || saveTemplate.name.trim().length === 0}
+                          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+                        >
+                          {saveTemplate.busy ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          onClick={() => setSaveTemplate(null)}
+                          disabled={saveTemplate.busy}
+                          className="text-sm text-muted hover:text-ink disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    {saveTemplate.error && (
+                      <p className="mt-2 text-xs text-confidence-low">{saveTemplate.error}</p>
                     )}
                   </div>
                 )}

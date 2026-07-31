@@ -56,6 +56,7 @@ const MODE_LABEL: Record<GoalPhaseMode, string> = {
 export default function Goals() {
   const [active, setActive] = useState<GoalPhase | null>(null);
   const [history, setHistory] = useState<GoalPhase[]>([]);
+  const [visibleHistory, setVisibleHistory] = useState(5);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,6 +94,7 @@ export default function Goals() {
       const result = await getFunction<GetPhasesResponse>("get-goal-phases");
       setActive(result.active_phase);
       setHistory(result.phases.filter((p) => p.status !== "active"));
+      setVisibleHistory(5);
     } catch (err: any) {
       setError(err.message ?? "Failed to load goal phases.");
     } finally {
@@ -426,10 +428,18 @@ export default function Goals() {
         <section className="mt-8">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">History</h2>
           <div className="mt-3 space-y-3">
-            {history.map((phase) => (
+            {history.slice(0, visibleHistory).map((phase) => (
               <HistoryRow key={phase.id} phase={phase} />
             ))}
           </div>
+          {visibleHistory < history.length && (
+            <button
+              onClick={() => setVisibleHistory((v) => v + 5)}
+              className="mt-3 w-full rounded-lg border border-border py-2.5 text-sm text-muted hover:text-ink"
+            >
+              Show more
+            </button>
+          )}
         </section>
       )}
     </div>

@@ -15,6 +15,34 @@ import { MealTypeDropdown } from "../components/MealTypeDropdown";
 
 type Step = "input" | "reviewing" | "confirming" | "logged";
 
+// ── Saved-meal template types ─────────────────────────────────────────────────
+interface TemplateFood {
+  name: string;
+  normalized_name: string;
+  calories_100g: number;
+  protein_100g: number;
+  carbs_100g: number;
+  fat_100g: number;
+  fibre_100g: number | null;
+  serving_size_g: number | null;
+}
+interface TemplateItem {
+  id: string;
+  food_id: string;
+  default_quantity: number | null;
+  default_unit: string | null;
+  foods: TemplateFood;
+}
+interface Template {
+  id: string;
+  name: string;
+  description: string | null;
+  is_favorite: boolean;
+  usage_count: number;
+  last_used_at: string | null;
+  saved_meal_items: TemplateItem[];
+}
+
 function generateUUID(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -56,6 +84,13 @@ export default function LogMeal() {
   const [clarificationGrams, setClarificationGrams] = useState<Record<number, string>>({});
   // One key per meal draft — generated on mount, reused across retries, reset on start-over.
   const idempotencyKey = useRef(generateUUID());
+
+  // ── Saved-meal templates ────────────────────────────────────────────────────
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templateTotal, setTemplateTotal] = useState(0);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -252,16 +287,14 @@ export default function LogMeal() {
     setLoading(true);
     setError(null);
     try {
-      const result = await callFunction<{ meal_id: string; meal_confidence: string; daily_log_status: DailyLogStatus }>("log-meal", {
-        idempotency_key: idempotencyKey.current,
-        meal_type: mealType,
-        eaten_at: logDate === todayStr ? new Date().toISOString() : logDate + "T12:00:00.000Z",
-        source: "draft",
-        raw_input: text,
-        meal_confidence: mealConfidence,
-        ai_parse_request_id: aiParseRequestId,
-        items,
-      });
+      const eatenAt = logDate === todayStr ? new Date().toISOString() : logDate + "T12:00:00.000Z";
+      const base = { idempotency_key: idempotencyKey.current, meal_type: mealType, eaten_at: eatenAt, meal_confidence: mealConfidence };
+      const result = await callFunction<{ meal_id: string; meal_confidence: string; daily_log_status: DailyLogStatus }>(
+        "log-meal",
+        selectedTemplateId
+          ? { ...base, source: "template", saved_meal_id: selectedTemplateId }
+          : { ...base, source: "draft", raw_input: text, ai_parse_request_id: aiParseRequestId, items },
+      );
       setLoggedMealId(result.meal_id);
       setLoggedDailyStatus(result.daily_log_status ?? null);
       setStep("logged");
@@ -286,7 +319,127 @@ export default function LogMeal() {
     setExtremeConfirmedIds([]);
     setClarificationGrams({});
     setError(null);
+    setSelectedTemplateId(null);
+    setShowTemplatePicker(false);
+    setTemplates([]);
+    setTemplateTotal(0);
     idempotencyKey.current = generateUUID();
+  }
+
+  // ── Template helpers ────────────────────────────────────────────────────────
+
+  async function openTemplatePicker() {
+    setShowTemplatePicker(true);
+    if (templates.length > 0) return;
+    setTemplatesLoading(true);
+    try {
+      const result = await callFunction<{ templates: Template[]; total_count: number }>(
+        "save-meal-template",
+        { action: "list", limit: 10, offset: 0 },
+      );
+      setTemplates(result.templates ?? []);
+      setTemplateTotal(result.total_count ?? 0);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to load saved meals");
+      setShowTemplatePicker(false);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function loadMoreTemplates() {
+    setTemplatesLoading(true);
+    try {
+      const result = await callFunction<{ templates: Template[]; total_count: number }>(
+        "save-meal-template",
+        { action: "list", limit: 10, offset: templates.length },
+      );
+      setTemplates((prev) => [...prev, ...(result.templates ?? [])]);
+      setTemplateTotal(result.total_count ?? 0);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to load more templates");
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function loadTemplate(template: Template) {
+    setShowTemplatePicker(false);
+    const hasText = text.trim().length > 0;
+    // Only bind to source=template for a pure template load (no pre-typed text to merge).
+    if (!hasText) setSelectedTemplateId(template.id);
+    setLoading(true);
+    setError(null);
+    try {
+      const templateResolved: ResolvedFoodItem[] = template.saved_meal_items
+        .filter((ti) => ti.foods)
+        .map((ti) => ({
+          raw_phrase: ti.default_quantity != null
+            ? `${ti.default_quantity} ${ti.default_unit ?? ""}`.trimEnd() + ` ${ti.foods.name}`
+            : ti.foods.name,
+          normalized_query: ti.foods.normalized_name,
+          food_id: ti.food_id,
+          quantity: ti.default_quantity,
+          unit: ti.default_unit,
+          match_confidence: "exact" as const,
+          portion_confidence: ti.default_quantity != null
+            ? ("exact" as const)
+            : ("assumed_default" as const),
+          item_confidence: "high" as const,
+        }));
+
+      let allResolved: ResolvedFoodItem[] = templateResolved;
+      const allClarifications: ClarificationItem[] = [];
+
+      // If user had text in the input, parse + resolve it and merge with template items.
+      if (hasText) {
+        const parsed = await callFunction<{ ai_parse_request_id: string; items: ParsedFoodItem[] }>(
+          "parse-meal",
+          { text },
+        );
+        setAiParseRequestId(parsed.ai_parse_request_id);
+
+        if (parsed.items?.length > 0) {
+          const resolved = await callFunction<{
+            resolved_items: ResolvedFoodItem[];
+            clarification_required: ClarificationItem[];
+          }>("resolve-foods", { items: parsed.items });
+
+          allClarifications.push(...(resolved.clarification_required ?? []));
+          allResolved = [...(resolved.resolved_items ?? []), ...templateResolved];
+        }
+      }
+
+      const calc = await callFunction<{
+        items: CalculatedItem[];
+        clarification_required: PortionClarificationResult[];
+        meal_totals: MealTotals;
+        meal_confidence: "high" | "medium" | "low";
+      }>("calculate-meal", { resolved_items: allResolved, extreme_confirmed_ids: [] });
+
+      for (const c of calc.clarification_required ?? []) {
+        allClarifications.push({
+          raw_phrase: c.raw_phrase,
+          reason: "portion_clarification" as const,
+          food_id: c.food_id,
+          code: c.code,
+          message: c.message,
+          suggested_unit: c.suggested_unit,
+          suggested_qty: c.suggested_qty,
+        });
+      }
+
+      setItems(calc.items);
+      setTotals(calc.meal_totals);
+      setMealConfidence(calc.meal_confidence);
+      setNeedsAttention(allClarifications);
+      setStep("reviewing");
+    } catch (err: any) {
+      setError(err.message ?? "Failed to load template");
+      setSelectedTemplateId(null);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const hasDefaultPortions = items.some((i) => i.portion_source === "default");
@@ -320,25 +473,96 @@ export default function LogMeal() {
       )}
 
       {step === "input" && (
-        <form onSubmit={handleParseAndResolve} className="mt-4 space-y-4">
-          <textarea
-            required
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="e.g. 4 boiled eggs, small avo, bread with butter, tea"
-            rows={3}
-            maxLength={500}
-            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-          />
-          <button
-            type="submit"
-            disabled={loading || text.trim().length === 0}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
-          >
-            {loading ? "Parsing…" : "Parse meal"}
-          </button>
+        <div className="mt-4 space-y-4">
+          <form onSubmit={handleParseAndResolve} className="space-y-4">
+            <textarea
+              required
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="e.g. 4 boiled eggs, small avo, bread with butter, tea"
+              rows={3}
+              maxLength={500}
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={loading || text.trim().length === 0}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+              >
+                {loading ? "Parsing…" : "Parse meal"}
+              </button>
+              <button
+                type="button"
+                onClick={openTemplatePicker}
+                disabled={loading}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted hover:border-primary hover:text-primary disabled:opacity-50"
+              >
+                Use saved meal
+              </button>
+            </div>
+          </form>
+
+          {showTemplatePicker && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+              onClick={() => setShowTemplatePicker(false)}
+            >
+              <div
+                className="w-full max-w-sm rounded-xl border border-border bg-surface shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                  <p className="text-sm font-semibold text-ink">Saved meals</p>
+                  <button onClick={() => setShowTemplatePicker(false)} className="text-lg leading-none text-muted hover:text-ink">×</button>
+                </div>
+                <div className="px-4 py-4">
+                  {templatesLoading && <p className="text-sm text-muted">Loading…</p>}
+                  {!templatesLoading && templates.length === 0 && (
+                    <p className="text-sm text-muted">No saved meals yet. Log a meal and save it as a template from the history tab.</p>
+                  )}
+                  {!templatesLoading && templates.length > 0 && (
+                    <>
+                      <ul className="max-h-64 divide-y divide-border overflow-y-auto">
+                        {templates.map((t) => (
+                          <li key={t.id} className="flex items-center justify-between gap-3 py-2.5">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-ink">
+                                {t.is_favorite && <span className="mr-1 text-amber-500">★</span>}
+                                {t.name}
+                              </p>
+                              <p className="text-xs text-muted">
+                                {t.saved_meal_items.length} item{t.saved_meal_items.length !== 1 ? "s" : ""}
+                                {t.usage_count > 0 && ` · used ${t.usage_count}×`}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => loadTemplate(t)}
+                              className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                            >
+                              {items.length > 0 ? "Add" : "Load"}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      {templates.length < templateTotal && (
+                        <button
+                          onClick={loadMoreTemplates}
+                          disabled={templatesLoading}
+                          className="mt-2 w-full rounded-lg border border-border py-2 text-xs text-muted hover:text-ink disabled:opacity-50"
+                        >
+                          {templatesLoading ? "Loading…" : `Load more (${templateTotal - templates.length} remaining)`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {error && <p className="text-sm text-confidence-low">{error}</p>}
-        </form>
+        </div>
       )}
 
       {step === "reviewing" && (
@@ -564,6 +788,7 @@ export default function LogMeal() {
               Today's log was re-opened because you added a meal after marking it complete.
             </div>
           )}
+
           <button onClick={reset} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark">
             Log another meal
           </button>
