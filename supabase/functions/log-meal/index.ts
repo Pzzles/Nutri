@@ -8,6 +8,11 @@
 import { ok, fail, preflight } from "../_shared/envelope.ts";
 import { getUserClient, getServiceClient } from "../_shared/supabaseClient.ts";
 import { toLocalDateString } from "../_shared/timezone.ts";
+import { resolveWeightGrams } from "../_shared/portionResolution.ts";
+import { computeItemConfidence, computeMealConfidence } from "../_shared/confidence.ts";
+import { MatchConfidence, PortionConfidence } from "../_shared/types.ts";
+
+function round(n: number): number { return Math.round(n * 10) / 10; }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight();
@@ -45,6 +50,7 @@ Deno.serve(async (req) => {
     let items: any[];
     let rawInput: string | null = body.raw_input ?? null;
     let parsedJson: unknown = body.parsed_json ?? null;
+    let mealConfidence: string = body.meal_confidence ?? "low";
 
     if (source === "draft") {
       items = body.items;
@@ -52,19 +58,78 @@ Deno.serve(async (req) => {
         return fail("VALIDATION_ERROR", "items required for source=draft");
       }
     } else if (source === "template") {
-      // FR-032 / ADR-006: templates never store totals — re-resolve against
-      // current foods data now, exactly as calculate-meal would.
-      return fail(
-        "NOT_IMPLEMENTED",
-        "source=template is not yet implemented in this scaffold — wire this to fetch saved_meal_items and re-run the calculate-meal logic inline. See docs/07-edge-functions.md → log-meal.",
-        501,
-      );
+      const { saved_meal_id } = body;
+      if (!saved_meal_id) return fail("VALIDATION_ERROR", "saved_meal_id required for source=template");
+
+      const { data: template } = await service
+        .from("saved_meals")
+        .select("id, name, usage_count")
+        .eq("id", saved_meal_id)
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .maybeSingle();
+      if (!template) return fail("NOT_FOUND", "Saved meal not found", 404);
+
+      const { data: templateItems, error: tiErr } = await service
+        .from("saved_meal_items")
+        .select("food_id, default_quantity, default_unit, foods:food_id(name, normalized_name, calories_100g, protein_100g, carbs_100g, fat_100g, fibre_100g, serving_size_g, source)")
+        .eq("saved_meal_id", saved_meal_id);
+      if (tiErr || !templateItems || templateItems.length === 0) {
+        return fail("NOT_FOUND", "Template has no items", 404);
+      }
+
+      items = buildItemsFromTemplate(templateItems);
+      if (items.length === 0) return fail("VALIDATION_ERROR", "Template has no resolvable items");
+      mealConfidence = computeMealConfidence(items.map((i: any) => i.item_confidence));
+      rawInput = `template:${saved_meal_id}`;
+      parsedJson = { source: "template", saved_meal_id };
+
+      // Update usage stats (best-effort — failure must not block the log).
+      service.from("saved_meals")
+        .update({ usage_count: (template.usage_count ?? 0) + 1, last_used_at: new Date().toISOString() })
+        .eq("id", saved_meal_id)
+        .then(({ error }) => { if (error) console.error("[template] usage update failed:", error); });
+
     } else {
-      // copy_previous — FR-033 "same as yesterday".
+      // copy_previous — FR-033: re-log a past meal with current food nutrition.
+      const { reference_meal_id } = body;
+      if (!reference_meal_id) return fail("VALIDATION_ERROR", "reference_meal_id required for source=copy_previous");
+
+      const { data: refMeal } = await service
+        .from("meals")
+        .select("id")
+        .eq("id", reference_meal_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!refMeal) return fail("NOT_FOUND", "Reference meal not found", 404);
+
+      const { data: refItems, error: riErr } = await service
+        .from("meal_items")
+        .select("food_id, weight_g, quantity, unit, foods:food_id(name, normalized_name, calories_100g, protein_100g, carbs_100g, fat_100g, fibre_100g, serving_size_g, source)")
+        .eq("meal_id", reference_meal_id);
+      if (riErr || !refItems || refItems.length === 0) {
+        return fail("NOT_FOUND", "Reference meal has no items", 404);
+      }
+
+      items = buildItemsFromMeal(refItems);
+      if (items.length === 0) return fail("VALIDATION_ERROR", "Reference meal has no resolvable items");
+      mealConfidence = computeMealConfidence(items.map((i: any) => i.item_confidence));
+      rawInput = `copy_previous:${reference_meal_id}`;
+      parsedJson = { source: "copy_previous", reference_meal_id };
+    }
+
+    // B10: Backend portion-safety guard.
+    // Reject any item whose weight was never resolved — the frontend enforces
+    // this too, but direct API calls must not bypass the check.
+    // portion_source==="default" means the 100g fallback was applied without
+    // an explicit user-confirmed gram weight.
+    const defaultPortionItem = items.find((i: any) => i.portion_source === "default");
+    if (defaultPortionItem) {
       return fail(
-        "NOT_IMPLEMENTED",
-        "source=copy_previous is not yet implemented in this scaffold — wire this to fetch meal_items from the matching prior meals row. See docs/07-edge-functions.md → log-meal.",
-        501,
+        "VALIDATION_ERROR",
+        `Item '${defaultPortionItem.raw_phrase ?? "unknown"}' has an unresolved default portion. ` +
+        "Provide an explicit gram weight before confirming.",
+        422,
       );
     }
 
@@ -80,8 +145,6 @@ Deno.serve(async (req) => {
       .single();
     const timezone = profile?.timezone ?? "UTC";
     const loggedDate = toLocalDateString(eatenAtDate, timezone);
-
-    const mealConfidence = body.meal_confidence ?? "low";
 
     const { data: mealId, error: rpcErr } = await service.rpc("fn_log_meal", {
       p_user_id: userId,
@@ -148,6 +211,100 @@ Deno.serve(async (req) => {
     return fail("INTERNAL_ERROR", "Unexpected error logging meal", 500);
   }
 });
+
+// ── Template / copy_previous item builders ────────────────────────────────────
+
+function buildItemsFromTemplate(templateItems: any[]): any[] {
+  const result: any[] = [];
+  for (const ti of templateItems) {
+    const food = ti.foods;
+    if (!food) continue;
+
+    const resolution = resolveWeightGrams(
+      { quantity: ti.default_quantity ?? null, unit: ti.default_unit ?? null, extreme_confirmed: true },
+      food.serving_size_g ?? null,
+      null,
+    );
+
+    let weightG: number;
+    let portionConf: PortionConfidence;
+    let portionSource: "explicit" | "default";
+
+    if (resolution.kind === "clarification") {
+      weightG = food.serving_size_g ?? 100;
+      portionConf = "assumed_default";
+      portionSource = "default";
+    } else {
+      weightG = resolution.grams;
+      portionConf = ti.default_quantity != null ? "exact" : "assumed_default";
+      portionSource = resolution.source === "default" ? "default" : "explicit";
+    }
+
+    const matchConf: MatchConfidence = "exact";
+    const itemConf = computeItemConfidence(matchConf, portionConf);
+    const factor = weightG / 100;
+
+    result.push({
+      food_id: ti.food_id,
+      raw_phrase: ti.default_quantity != null
+        ? `${ti.default_quantity} ${ti.default_unit ?? ""}`.trimEnd() + ` ${food.name}`
+        : food.name,
+      raw_phrases: [food.name],
+      normalized_query: food.normalized_name,
+      quantity: ti.default_quantity ?? null,
+      unit: ti.default_unit ?? null,
+      portion_g: weightG,
+      calories: round(food.calories_100g * factor),
+      protein_g: round(food.protein_100g * factor),
+      carbs_g: round(food.carbs_100g * factor),
+      fat_g: round(food.fat_100g * factor),
+      fibre_g: food.fibre_100g != null ? round(food.fibre_100g * factor) : null,
+      nutrition_source: food.source,
+      match_confidence: matchConf,
+      portion_confidence: portionConf,
+      item_confidence: itemConf,
+      portion_source: portionSource,
+      history_use_count: null,
+    });
+  }
+  return result;
+}
+
+function buildItemsFromMeal(mealItems: any[]): any[] {
+  const result: any[] = [];
+  for (const mi of mealItems) {
+    const food = mi.foods;
+    if (!food || mi.weight_g == null) continue;
+
+    const weightG = Number(mi.weight_g);
+    const factor = weightG / 100;
+    const matchConf: MatchConfidence = "exact";
+    const portionConf: PortionConfidence = "exact";
+    const itemConf = computeItemConfidence(matchConf, portionConf);
+
+    result.push({
+      food_id: mi.food_id,
+      raw_phrase: food.name,
+      raw_phrases: [food.name],
+      normalized_query: food.normalized_name,
+      quantity: mi.quantity ?? null,
+      unit: mi.unit ?? null,
+      portion_g: weightG,
+      calories: round(food.calories_100g * factor),
+      protein_g: round(food.protein_100g * factor),
+      carbs_g: round(food.carbs_100g * factor),
+      fat_g: round(food.fat_100g * factor),
+      fibre_g: food.fibre_100g != null ? round(food.fibre_100g * factor) : null,
+      nutrition_source: food.source,
+      match_confidence: matchConf,
+      portion_confidence: portionConf,
+      item_confidence: itemConf,
+      portion_source: "explicit" as const,
+      history_use_count: null,
+    });
+  }
+  return result;
+}
 
 async function promoteToCache(service: any, userId: string, items: any[]) {
   const { data: threshold } = await service

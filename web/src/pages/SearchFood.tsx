@@ -2,6 +2,141 @@ import { useEffect, useRef, useState } from "react";
 import { callFunction } from "../lib/supabase";
 import { FoodSearchResult } from "../lib/types";
 
+// ── Create custom food ────────────────────────────────────────────────────────
+
+const COUNT_UNITS = ["piece", "slice", "cup", "tbsp", "tsp", "scoop", "sachet"];
+const ALL_UNITS = ["g", "ml", ...COUNT_UNITS];
+
+interface CreateForm {
+  name: string;
+  serving_size: string;
+  serving_unit: string;
+  gram_per_serving: string;
+  calories: string;
+  protein_g: string;
+  carbs_g: string;
+  fat_g: string;
+  fibre_g: string;
+}
+
+const BLANK_FORM: CreateForm = {
+  name: "", serving_size: "1", serving_unit: "piece",
+  gram_per_serving: "", calories: "", protein_g: "",
+  carbs_g: "", fat_g: "", fibre_g: "",
+};
+
+function CreateCustomFoodForm({ onCreated }: { onCreated: (name: string) => void }) {
+  const [form, setForm] = useState<CreateForm>(BLANK_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const isCountUnit = COUNT_UNITS.includes(form.serving_unit);
+  const set = (k: keyof CreateForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    const name = form.name.trim();
+    if (!name) { setError("Name is required."); return; }
+    const servingSize = parseFloat(form.serving_size);
+    if (!servingSize || servingSize <= 0) { setError("Serving size must be > 0."); return; }
+    const cal = parseFloat(form.calories);
+    const prot = parseFloat(form.protein_g);
+    const carb = parseFloat(form.carbs_g);
+    const fat = parseFloat(form.fat_g);
+    if ([cal, prot, carb, fat].some(isNaN)) { setError("Calories, protein, carbs, and fat are required."); return; }
+
+    const body: Record<string, any> = {
+      name, serving_size: servingSize, serving_unit: form.serving_unit,
+      calories: cal, protein_g: prot, carbs_g: carb, fat_g: fat,
+    };
+    if (form.fibre_g !== "") body.fibre_g = parseFloat(form.fibre_g);
+    if (isCountUnit && form.gram_per_serving !== "") body.gram_per_serving = parseFloat(form.gram_per_serving);
+
+    setSubmitting(true);
+    try {
+      await callFunction("create-custom-food", body);
+      setSuccess(`"${name}" saved. You can now log it by name.`);
+      setForm(BLANK_FORM);
+      onCreated(name);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to create food.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const inputCls = "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary";
+  const labelCls = "mb-1 block text-xs font-medium text-muted";
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-lg border border-border bg-surface px-5 py-5">
+      <p className="text-sm font-semibold text-ink">Create custom food</p>
+
+      <div>
+        <label className={labelCls}>Food name</label>
+        <input required value={form.name} onChange={set("name")} placeholder="e.g. Homemade roti" className={inputCls} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Serving size</label>
+          <input type="number" min="0.01" step="any" required value={form.serving_size} onChange={set("serving_size")} className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls}>Unit</label>
+          <select value={form.serving_unit} onChange={set("serving_unit")} className={inputCls}>
+            {ALL_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {isCountUnit && (
+        <div>
+          <label className={labelCls}>Grams per {form.serving_unit} <span className="text-muted font-normal">(optional — enables "1 {form.serving_unit}" logging without a weight prompt)</span></label>
+          <input type="number" min="1" step="any" value={form.gram_per_serving} onChange={set("gram_per_serving")} placeholder="e.g. 80" className={inputCls} />
+        </div>
+      )}
+
+      <p className="text-xs text-muted">Macros per serving ({form.serving_size || "?"} {form.serving_unit})</p>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {([
+          { key: "calories", label: "Calories (kcal)" },
+          { key: "protein_g", label: "Protein (g)" },
+          { key: "carbs_g", label: "Carbs (g)" },
+          { key: "fat_g", label: "Fat (g)" },
+        ] as const).map(({ key, label }) => (
+          <div key={key}>
+            <label className={labelCls}>{label}</label>
+            <input type="number" min="0" step="any" required value={form[key]} onChange={set(key)} className={inputCls} />
+          </div>
+        ))}
+      </div>
+
+      <div className="w-1/2">
+        <label className={labelCls}>Fibre (g) <span className="font-normal text-muted">optional</span></label>
+        <input type="number" min="0" step="any" value={form.fibre_g} onChange={set("fibre_g")} className={inputCls} />
+      </div>
+
+      {error && <p className="text-sm text-confidence-low">{error}</p>}
+      {success && <p className="text-sm text-confidence-high">{success}</p>}
+
+      <button
+        type="submit"
+        disabled={submitting}
+        className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+      >
+        {submitting ? "Saving…" : "Save food"}
+      </button>
+    </form>
+  );
+}
+
 const MAX_COMPARE = 4;
 
 function fmt(n: number | null | undefined, decimals = 1) {
@@ -189,6 +324,7 @@ export default function SearchFood() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [compareList, setCompareList] = useState<FoodSearchResult[]>([]);
+  const [showCreate, setShowCreate] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -232,10 +368,33 @@ export default function SearchFood() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
-      <h1 className="font-display text-2xl font-semibold text-ink">Food search</h1>
-      <p className="mt-1 text-sm text-muted">
-        Search by name, then add foods to compare them side by side.
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-ink">Food search</h1>
+          <p className="mt-1 text-sm text-muted">
+            Search by name, then add foods to compare them side by side.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCreate((v) => !v)}
+          className={`shrink-0 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+            showCreate
+              ? "border-primary bg-primary text-white"
+              : "border-border text-muted hover:border-primary hover:text-primary"
+          }`}
+        >
+          {showCreate ? "Cancel" : "+ Custom food"}
+        </button>
+      </div>
+
+      {showCreate && (
+        <CreateCustomFoodForm
+          onCreated={(name) => {
+            setShowCreate(false);
+            setQuery(name);
+          }}
+        />
+      )}
 
       <div className="mt-6">
         <input
@@ -252,7 +411,17 @@ export default function SearchFood() {
       {error && <p className="mt-4 text-sm text-confidence-low">{error}</p>}
 
       {!loading && !error && query.trim().length >= 2 && results.length === 0 && (
-        <p className="mt-4 text-sm text-muted">No foods found for "{query.trim()}".</p>
+        <p className="mt-4 text-sm text-muted">
+          No foods found for "{query.trim()}".{" "}
+          {!showCreate && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="font-medium text-primary hover:underline"
+            >
+              Create a custom food?
+            </button>
+          )}
+        </p>
       )}
 
       {results.length > 0 && (

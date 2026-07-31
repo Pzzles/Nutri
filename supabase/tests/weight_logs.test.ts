@@ -148,10 +148,10 @@ describe("weight_logs RLS", () => {
 // ── Constraint: weight range ───────────────────────────────────────────────────
 
 describe("weight_logs — constraints", () => {
-  it("rejects weight_kg below 20", async () => {
+  it("rejects weight_kg below 1", async () => {
     const { error } = await svcClient().from("weight_logs").insert({
       user_id: userId,
-      weight_kg: 10,
+      weight_kg: 0,
       measured_at: new Date().toISOString(),
       logged_date: "2026-07-07",
       is_official: true,
@@ -159,10 +159,10 @@ describe("weight_logs — constraints", () => {
     expect(error).toBeTruthy();
   });
 
-  it("rejects weight_kg above 300", async () => {
+  it("rejects weight_kg above 500", async () => {
     const { error } = await svcClient().from("weight_logs").insert({
       user_id: userId,
-      weight_kg: 400,
+      weight_kg: 501,
       measured_at: new Date().toISOString(),
       logged_date: "2026-07-08",
       is_official: true,

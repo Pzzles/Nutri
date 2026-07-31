@@ -21,6 +21,7 @@ export function filterForbiddenKeys(items: any[]): any[] {
 
 // Normalise fields that Groq sometimes returns as the string "null"
 // instead of JSON null, and coerce quantity to a number.
+// llama-3.1-8b-instant also emits "true"/"false" strings instead of booleans.
 export function sanitizeGroqItem(item: any): any {
   return {
     ...item,
@@ -29,5 +30,6 @@ export function sanitizeGroqItem(item: any): any {
         ? null
         : Number(item.quantity),
     unit: item.unit === "null" || item.unit === "" ? null : item.unit,
+    ambiguous: item.ambiguous === true || item.ambiguous === "true",
   };
 }

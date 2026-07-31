@@ -3,11 +3,15 @@ import { callFunction, getFunction } from "../lib/supabase";
 import { WeightLog, GetWeightLogsResponse } from "../lib/weightTypes";
 import { WeightTrendChart } from "../components/charts/WeightTrendChart";
 
+const PAGE_SIZE = 10;
+
 export default function WeightLogPage() {
   const [logs, setLogs] = useState<WeightLog[]>([]);
   const [latestOfficial, setLatestOfficial] = useState<WeightLog | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [weightInput, setWeightInput] = useState("");
   const [notesInput, setNotesInput] = useState("");
@@ -22,13 +26,36 @@ export default function WeightLogPage() {
     setLoading(true);
     setError(null);
     try {
-      const result = await getFunction<GetWeightLogsResponse>("get-weight-logs");
-      setLogs(result.logs);
+      const result = await getFunction<GetWeightLogsResponse>("get-weight-logs", { limit: String(PAGE_SIZE + 1) });
+      setHasMore(result.logs.length > PAGE_SIZE);
+      setLogs(result.logs.slice(0, PAGE_SIZE));
       setLatestOfficial(result.latest_official);
     } catch (err: any) {
       setError(err.message ?? "Failed to load weight logs.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMore() {
+    const lastLog = logs[logs.length - 1];
+    if (!lastLog) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const result = await getFunction<GetWeightLogsResponse>("get-weight-logs", {
+        limit: String(PAGE_SIZE + 1),
+        before_date: lastLog.logged_date,
+      });
+      // before_date uses lte — deduplicate ids already shown
+      const seen = new Set(logs.map((l) => l.id));
+      const fresh = result.logs.filter((l) => !seen.has(l.id));
+      setHasMore(result.logs.length > PAGE_SIZE && fresh.length > 0);
+      setLogs((prev) => [...prev, ...fresh.slice(0, PAGE_SIZE)]);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to load more entries.");
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -48,6 +75,9 @@ export default function WeightLogPage() {
         weight_kg: kg,
         notes: notesInput.trim() || undefined,
       });
+      // B1: Guard against a missing/null return (e.g. in tests where the mock
+      // is not set up).  Production should never reach this branch.
+      if (!newLog) throw new Error("log-weight returned no data");
       setLogs((prev) => [newLog, ...prev]);
       setLatestOfficial(newLog);
       setWeightInput("");
@@ -136,28 +166,39 @@ export default function WeightLogPage() {
         )}
 
         {logs.length > 0 && (
-          <div className="mt-3 divide-y divide-border rounded-lg border border-border bg-surface">
-            {(() => {
-              const hasNonOfficial = logs.some((l) => !l.is_official);
-              return logs.map((log) => (
-                <div key={log.id} className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="text-sm font-semibold text-ink">{log.weight_kg} kg</p>
-                    <p className="text-xs text-muted">{formatDate(log.logged_date)}</p>
-                    {log.notes && <p className="mt-0.5 text-xs text-muted">{log.notes}</p>}
+          <>
+            <div className="mt-3 divide-y divide-border rounded-lg border border-border bg-surface">
+              {(() => {
+                const hasNonOfficial = logs.some((l) => !l.is_official);
+                return logs.map((log) => (
+                  <div key={log.id} className="flex items-center justify-between px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-ink">{log.weight_kg} kg</p>
+                      <p className="text-xs text-muted">{formatDate(log.logged_date)}</p>
+                      {log.notes && <p className="mt-0.5 text-xs text-muted">{log.notes}</p>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {hasNonOfficial && log.is_official && (
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                          Official
+                        </span>
+                      )}
+                      <p className="text-xs text-muted">{formatTime(log.measured_at)}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {hasNonOfficial && log.is_official && (
-                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
-                        Official
-                      </span>
-                    )}
-                    <p className="text-xs text-muted">{formatTime(log.measured_at)}</p>
-                  </div>
-                </div>
-              ));
-            })()}
-          </div>
+                ));
+              })()}
+            </div>
+            {hasMore && (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="mt-3 w-full rounded-lg border border-border py-2.5 text-sm text-muted hover:text-ink disabled:opacity-50"
+              >
+                {loadingMore ? "Loading…" : "Load more"}
+              </button>
+            )}
+          </>
         )}
       </section>
     </div>

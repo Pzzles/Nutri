@@ -5,6 +5,10 @@
 // templates never store nutrition totals; those are always computed fresh
 // on read from current food data.
 // See docs/02-prs.md FR-032, FR-072.
+//
+// B3: The create action accepts an idempotency_key and delegates to the
+// fn_save_meal_template RPC (migration 0017) which is atomic.
+// Retrying the same key returns the original saved_meal_id.
 
 import { ok, fail, preflight } from "../_shared/envelope.ts";
 import { getUserClient, getServiceClient } from "../_shared/supabaseClient.ts";
@@ -24,30 +28,54 @@ Deno.serve(async (req) => {
     const service = getServiceClient();
 
     if (action === "create") {
-      const { name, items } = body;
+      const { name, items, idempotency_key } = body;
       if (!name || !Array.isArray(items) || items.length === 0) {
         return fail("VALIDATION_ERROR", "name and a non-empty items array are required");
       }
-      const { data: saved, error } = await service
-        .from("saved_meals")
-        .insert({ user_id: userId, name, description: body.description ?? null })
-        .select("id")
-        .single();
-      if (error) return fail("INTERNAL_ERROR", "Failed to create saved meal", 500);
-
-      const itemRows = items.map((i: any) => ({
-        saved_meal_id: saved.id,
-        food_id: i.food_id,
-        default_quantity: i.quantity,
-        default_unit: i.unit,
-      }));
-      const { error: itemsErr } = await service.from("saved_meal_items").insert(itemRows);
-      if (itemsErr) {
-        console.error(itemsErr);
-        return fail("INTERNAL_ERROR", "Failed to save meal items", 500);
+      if (!idempotency_key) {
+        return fail("VALIDATION_ERROR", "idempotency_key is required for template creation");
       }
 
-      return ok({ saved_meal_id: saved.id });
+      // Delegate to the atomic RPC (migration 0017).
+      // ON CONFLICT DO NOTHING inside the function means concurrent duplicate
+      // calls produce exactly one row — no TOCTOU race.
+      const { data: savedId, error } = await service.rpc("fn_save_meal_template", {
+        p_user_id:     userId,
+        p_idem_key:    idempotency_key,
+        p_name:        name,
+        p_description: body.description ?? null,
+        p_items:       items,
+      });
+
+      if (error) {
+        console.error("[save-meal-template create]", error);
+        return fail("INTERNAL_ERROR", "Failed to create saved meal template", 500);
+      }
+
+      return ok({ saved_meal_id: savedId });
+    }
+
+    if (action === "list") {
+      const pageLimit = Math.min(Math.max(1, Number(body.limit) || 10), 50);
+      const pageOffset = Math.max(0, Number(body.offset) || 0);
+
+      const { data: templates, error: listErr, count } = await service
+        .from("saved_meals")
+        .select(`
+          id, name, description, is_favorite, usage_count, last_used_at,
+          saved_meal_items(
+            id, food_id, default_quantity, default_unit,
+            foods:food_id(name, normalized_name, calories_100g, protein_100g, carbs_100g, fat_100g, fibre_100g, serving_size_g)
+          )
+        `, { count: "exact" })
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .order("is_favorite", { ascending: false })
+        .order("usage_count", { ascending: false })
+        .range(pageOffset, pageOffset + pageLimit - 1);
+
+      if (listErr) return fail("INTERNAL_ERROR", "Failed to list saved meals", 500);
+      return ok({ templates: templates ?? [], total_count: count ?? 0 });
     }
 
     if (["rename", "favourite", "archive"].includes(action)) {
