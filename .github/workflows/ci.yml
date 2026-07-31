@@ -67,8 +67,42 @@ jobs:
         run: npm test
         working-directory: supabase/tests
 
-  # ─── Playwright E2E (requires local Supabase for auth) ───────────────────
+  # ─── Playwright mocked E2E (no real Supabase required) ──────────────────
   e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web deps
+        run: npm ci
+        working-directory: web
+
+      - name: Install Playwright + Chromium
+        run: npx playwright install chromium --with-deps
+        working-directory: web
+
+      - name: Run mocked Playwright tests
+        run: npm run test:e2e:mocked
+        working-directory: web
+
+      - name: Upload Playwright report on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-mocked
+          path: web/playwright-report/
+          retention-days: 7
+
+  # ─── Playwright integration E2E (real Supabase + real edge functions) ────
+  # Requires GROQ_API_KEY and optionally FATSECRET_* secrets to be set in the
+  # repo's GitHub Actions secrets. CI fails when the full meal flow fails.
+  e2e-integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,14 +131,20 @@ jobs:
       - name: Export Supabase connection vars
         run: supabase status --output env >> $GITHUB_ENV
 
-      - name: Run Playwright E2E tests
-        run: npm run test:e2e
+      - name: Inject edge function secrets
+        run: |
+          echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> supabase/.env
+          echo "FATSECRET_CONSUMER_KEY=${{ secrets.FATSECRET_CONSUMER_KEY }}" >> supabase/.env
+          echo "FATSECRET_CONSUMER_SECRET=${{ secrets.FATSECRET_CONSUMER_SECRET }}" >> supabase/.env
+
+      - name: Run integration Playwright tests
+        run: npm run test:e2e:integration
         working-directory: web
 
       - name: Upload Playwright report on failure
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-integration
           path: web/playwright-report/
           retention-days: 7
