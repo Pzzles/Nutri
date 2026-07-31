@@ -20,6 +20,7 @@ const WEIGHT_LOG: WeightLog = {
   logged_date: "2026-07-23",
   is_official: true,
   notes: null,
+  source: "manual",
   created_at: "2026-07-23T07:00:00.000Z",
 };
 
@@ -27,7 +28,12 @@ function makeGetResponse(logs: WeightLog[] = [], latest: WeightLog | null = null
   return { logs, latest_official: latest };
 }
 
-beforeEach(() => { mockCall.mockReset(); mockGet.mockReset(); });
+beforeEach(() => {
+  mockCall.mockReset();
+  mockGet.mockReset();
+  // Default: unmocked getFunction calls reject (non-fatal — trend endpoint is caught).
+  mockGet.mockRejectedValue(new Error("not mocked"));
+});
 
 // ── Loading state ─────────────────────────────────────────────────────────────
 

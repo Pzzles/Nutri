@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { callFunction, getFunction } from "../lib/supabase";
-import { WeightLog, GetWeightLogsResponse } from "../lib/weightTypes";
+import { WeightLog, GetWeightLogsResponse, WeightTrendResult } from "../lib/weightTypes";
 import { WeightTrendChart } from "../components/charts/WeightTrendChart";
 
 const PAGE_SIZE = 10;
@@ -8,6 +8,7 @@ const PAGE_SIZE = 10;
 export default function WeightLogPage() {
   const [logs, setLogs] = useState<WeightLog[]>([]);
   const [latestOfficial, setLatestOfficial] = useState<WeightLog | null>(null);
+  const [trend, setTrend] = useState<WeightTrendResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -19,21 +20,34 @@ export default function WeightLogPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchLogs();
+    fetchAll();
   }, []);
 
-  async function fetchLogs() {
+  async function fetchAll() {
     setLoading(true);
     setError(null);
     try {
-      const result = await getFunction<GetWeightLogsResponse>("get-weight-logs", { limit: String(PAGE_SIZE + 1) });
-      setHasMore(result.logs.length > PAGE_SIZE);
-      setLogs(result.logs.slice(0, PAGE_SIZE));
-      setLatestOfficial(result.latest_official);
+      const [logsResult, trendResult] = await Promise.all([
+        getFunction<GetWeightLogsResponse>("get-weight-logs", { limit: String(PAGE_SIZE + 1) }),
+        getFunction<WeightTrendResult>("get-weight-trend").catch(() => null),
+      ]);
+      setHasMore(logsResult.logs.length > PAGE_SIZE);
+      setLogs(logsResult.logs.slice(0, PAGE_SIZE));
+      setLatestOfficial(logsResult.latest_official);
+      setTrend(trendResult);
     } catch (err: any) {
       setError(err.message ?? "Failed to load weight logs.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function refreshTrend() {
+    try {
+      const result = await getFunction<WeightTrendResult>("get-weight-trend");
+      setTrend(result);
+    } catch {
+      // non-fatal — trend is informational
     }
   }
 
@@ -47,7 +61,6 @@ export default function WeightLogPage() {
         limit: String(PAGE_SIZE + 1),
         before_date: lastLog.logged_date,
       });
-      // before_date uses lte — deduplicate ids already shown
       const seen = new Set(logs.map((l) => l.id));
       const fresh = result.logs.filter((l) => !seen.has(l.id));
       setHasMore(result.logs.length > PAGE_SIZE && fresh.length > 0);
@@ -75,13 +88,13 @@ export default function WeightLogPage() {
         weight_kg: kg,
         notes: notesInput.trim() || undefined,
       });
-      // B1: Guard against a missing/null return (e.g. in tests where the mock
-      // is not set up).  Production should never reach this branch.
       if (!newLog) throw new Error("log-weight returned no data");
       setLogs((prev) => [newLog, ...prev]);
       setLatestOfficial(newLog);
       setWeightInput("");
       setNotesInput("");
+      // Refresh trend after a new measurement.
+      void refreshTrend();
     } catch (err: any) {
       setFormError(err.message ?? "Failed to log weight.");
     } finally {
@@ -95,9 +108,10 @@ export default function WeightLogPage() {
 
       {latestOfficial && (
         <div className="mt-4 rounded-lg border border-border bg-surface px-5 py-4">
-          <p className="text-xs text-muted">Latest</p>
+          <p className="text-xs text-muted">Current weight</p>
           <p className="font-display text-3xl font-semibold text-ink">
-            {latestOfficial.weight_kg} <span className="text-lg font-normal text-muted">kg</span>
+            {latestOfficial.weight_kg}{" "}
+            <span className="text-lg font-normal text-muted">kg</span>
           </p>
           <p className="mt-0.5 text-xs text-muted">
             {formatDateTime(latestOfficial.measured_at)}
@@ -105,13 +119,33 @@ export default function WeightLogPage() {
         </div>
       )}
 
-      {/* Trend chart */}
-      {logs.length >= 2 && (
-        <div className="mt-4 rounded-lg border border-border bg-surface px-4 pt-4 pb-2">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Trend</p>
-          <WeightTrendChart
-            data={[...logs].reverse().map((l) => ({ date: l.logged_date, weight: Number(l.weight_kg) }))}
-          />
+      {/* Trend chart + stats */}
+      {trend && trend.trend_points.length >= 2 && (
+        <div className="mt-4 rounded-lg border border-border bg-surface px-4 pt-4 pb-3 space-y-3">
+          <div className="flex items-start justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Trend
+            </p>
+            <TrendBadge confidence={trend.confidence} />
+          </div>
+
+          <WeightTrendChart trendPoints={trend.trend_points} />
+
+          <TrendStats trend={trend} />
+
+          <p className="text-xs text-muted leading-relaxed">
+            The trend reduces normal daily weight fluctuations. It is an estimate
+            and may change as more measurements are recorded.
+          </p>
+        </div>
+      )}
+
+      {/* No-data empty state */}
+      {!loading && !latestOfficial && (
+        <div className="mt-4 rounded-lg border border-border bg-surface px-5 py-6 text-center">
+          <p className="text-sm text-muted">
+            Log your first weight to see your trend.
+          </p>
         </div>
       )}
 
@@ -175,7 +209,9 @@ export default function WeightLogPage() {
                     <div>
                       <p className="text-sm font-semibold text-ink">{log.weight_kg} kg</p>
                       <p className="text-xs text-muted">{formatDate(log.logged_date)}</p>
-                      {log.notes && <p className="mt-0.5 text-xs text-muted">{log.notes}</p>}
+                      {log.notes && (
+                        <p className="mt-0.5 text-xs text-muted">{log.notes}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {hasNonOfficial && log.is_official && (
@@ -204,6 +240,64 @@ export default function WeightLogPage() {
     </div>
   );
 }
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function TrendBadge({ confidence }: { confidence: "low" | "medium" | "high" }) {
+  const styles: Record<string, string> = {
+    low:    "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+    medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+    high:   "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  };
+  const labels: Record<string, string> = {
+    low: "Low confidence", medium: "Medium confidence", high: "High confidence",
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${styles[confidence]}`}>
+      {labels[confidence]}
+    </span>
+  );
+}
+
+function TrendStats({ trend }: { trend: WeightTrendResult }) {
+  const { latest_trend_weight_kg, weekly_rate_kg, measurement_count, coverage_days } = trend;
+
+  const rateLabel = (): string => {
+    if (weekly_rate_kg === null) return "—";
+    const abs = Math.abs(weekly_rate_kg);
+    const dir = weekly_rate_kg > 0.05 ? "▲" : weekly_rate_kg < -0.05 ? "▼" : "→";
+    return `${dir} ${abs.toFixed(2)} kg/week`;
+  };
+
+  const coverageLabel = (): string => {
+    const days = Math.round(coverage_days);
+    return `Based on ${measurement_count} weigh-in${measurement_count !== 1 ? "s" : ""} across ${days} day${days !== 1 ? "s" : ""}`;
+  };
+
+  return (
+    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+      {latest_trend_weight_kg !== null && (
+        <div>
+          <p className="text-xs text-muted">Trend weight</p>
+          <p className="text-sm font-semibold text-ink">
+            {latest_trend_weight_kg.toFixed(1)} kg
+          </p>
+        </div>
+      )}
+      {weekly_rate_kg !== null && (
+        <div>
+          <p className="text-xs text-muted">Estimated rate</p>
+          <p className="text-sm font-semibold text-ink">{rateLabel()}</p>
+        </div>
+      )}
+      <div className="col-span-2">
+        <p className="text-xs text-muted">{coverageLabel()}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr + "T12:00:00").toLocaleDateString("en-ZA", {
