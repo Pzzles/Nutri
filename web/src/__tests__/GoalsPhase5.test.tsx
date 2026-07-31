@@ -6,7 +6,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import Goals from "../pages/Goals";
-import { GoalPhase, EnergyCalcPreview } from "../lib/goalTypes";
+import { GoalPhase, EnergyCalcPreview, MissingField, StaleField } from "../lib/goalTypes";
 
 // Mock supabase module — component calls:
 //   callFunction: preview-energy-calc, start-goal-phase
@@ -60,8 +60,10 @@ const ACTIVE_PHASE: GoalPhase = {
 };
 
 const ELIGIBLE_PREVIEW: EnergyCalcPreview = {
-  eligible: true,
+  ready: true,
   missing_fields: [],
+  stale_fields: [],
+  data_quality: { profile_complete: true, weight_current: true, calculation_possible: true },
   calculation_timestamp: "2026-07-31T00:00:00Z",
   input_snapshot: {
     birth_date: "1990-07-31",
@@ -69,6 +71,7 @@ const ELIGIBLE_PREVIEW: EnergyCalcPreview = {
     height_cm: 175,
     official_weight_kg: 80,
     weight_log_id: "wl-001",
+    weight_measured_at: "2026-07-29T06:00:00Z",
     age_years: 36,
     activity_level: "moderate",
     activity_multiplier: 1.55,
@@ -100,10 +103,25 @@ const AGGRESSIVE_PREVIEW: EnergyCalcPreview = {
   is_aggressive_rate: true,
 };
 
+const STALE_WEIGHT_PREVIEW: EnergyCalcPreview = {
+  ...ELIGIBLE_PREVIEW,
+  stale_fields: [{
+    field: "official_weight",
+    recorded_at: "2026-05-01T06:00:00Z",
+    days_old: 61,
+    action: "log_current_weight",
+  }],
+  data_quality: { profile_complete: true, weight_current: false, calculation_possible: true },
+};
+
 const INELIGIBLE_PREVIEW: EnergyCalcPreview = {
-  eligible: false,
-  missing_fields: ["equation_sex", "height_cm"],
-  instructions: "Complete your profile: date of birth, equation sex, height, and activity level.",
+  ready: false,
+  missing_fields: [
+    { field: "equation_sex", reason: "Required for the Mifflin–St Jeor sex-specific constant", action: "complete_profile_sex" },
+    { field: "height_cm",    reason: "Required for the BMR formula", action: "complete_profile_height" },
+  ] as MissingField[],
+  stale_fields: [],
+  data_quality: { profile_complete: false, weight_current: false, calculation_possible: false },
 };
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -197,7 +215,22 @@ describe("Goals Phase 5 — preview button", () => {
     await waitFor(() => {
       expect(screen.getByText(/profile incomplete/i)).toBeInTheDocument();
     });
+    // Each missing field appears with its name and reason.
     expect(screen.getByText(/equation_sex/)).toBeInTheDocument();
+    expect(screen.getByText(/height_cm/)).toBeInTheDocument();
+  });
+
+  it("shows stale weight warning when preview returns stale_fields", async () => {
+    setupPage();
+    mockCall.mockResolvedValueOnce(STALE_WEIGHT_PREVIEW);
+    await openForm();
+
+    await userEvent.click(screen.getByRole("button", { name: /preview calorie target/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/weight reading may be outdated/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/61 day/i)).toBeInTheDocument();
   });
 });
 
