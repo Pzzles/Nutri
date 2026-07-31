@@ -37,8 +37,8 @@ export default function WeightLogPage() {
     setFormError(null);
 
     const kg = parseFloat(weightInput);
-    if (isNaN(kg) || kg < 20 || kg > 300) {
-      setFormError("Enter a weight between 20 and 300 kg.");
+    if (isNaN(kg) || kg < 1 || kg > 500) {
+      setFormError("Enter a weight between 1 and 500 kg.");
       return;
     }
 
@@ -92,8 +92,8 @@ export default function WeightLogPage() {
             <input
               type="number"
               step="0.1"
-              min="20"
-              max="300"
+              min="1"
+              max="500"
               placeholder="Weight"
               value={weightInput}
               onChange={(e) => setWeightInput(e.target.value)}
@@ -137,23 +137,26 @@ export default function WeightLogPage() {
 
         {logs.length > 0 && (
           <div className="mt-3 divide-y divide-border rounded-lg border border-border bg-surface">
-            {logs.map((log) => (
-              <div key={log.id} className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-ink">{log.weight_kg} kg</p>
-                  <p className="text-xs text-muted">{formatDate(log.logged_date)}</p>
-                  {log.notes && <p className="mt-0.5 text-xs text-muted">{log.notes}</p>}
+            {(() => {
+              const hasNonOfficial = logs.some((l) => !l.is_official);
+              return logs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{log.weight_kg} kg</p>
+                    <p className="text-xs text-muted">{formatDate(log.logged_date)}</p>
+                    {log.notes && <p className="mt-0.5 text-xs text-muted">{log.notes}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {hasNonOfficial && log.is_official && (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                        Official
+                      </span>
+                    )}
+                    <p className="text-xs text-muted">{formatTime(log.measured_at)}</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {log.is_official && (
-                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
-                      Official
-                    </span>
-                  )}
-                  <p className="text-xs text-muted">{formatTime(log.measured_at)}</p>
-                </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         )}
       </section>

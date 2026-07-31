@@ -111,7 +111,14 @@ export default function Goals() {
 
     if (form.target_weight_kg) {
       const tw = parseFloat(form.target_weight_kg);
-      if (isNaN(tw) || tw < 20 || tw > 300) return "Target weight must be between 20 and 300 kg.";
+      if (isNaN(tw) || tw < 1 || tw > 500) return "Target weight must be between 1 and 500 kg.";
+      const sw = form.starting_weight_source === "manual"
+        ? parseFloat(form.starting_weight_kg)
+        : (latestWeight ?? NaN);
+      if (!isNaN(sw)) {
+        if (form.mode === "bulk" && tw <= sw) return "Bulk target weight must be higher than your starting weight.";
+        if (form.mode === "cut" && tw >= sw) return "Cut target weight must be lower than your starting weight.";
+      }
     }
 
     if (form.target_change_kg_per_week) {
@@ -315,8 +322,8 @@ export default function Goals() {
               {form.starting_weight_source === "manual" && (
                 <input
                   type="number"
-                  min="20"
-                  max="300"
+                  min="1"
+                  max="500"
                   step="0.1"
                   placeholder="kg"
                   value={form.starting_weight_kg}

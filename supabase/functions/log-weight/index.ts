@@ -26,8 +26,8 @@ Deno.serve(async (req) => {
     // ── Validate weight_kg ───────────────────────────────────────────────────
     if (body.weight_kg == null) return fail("VALIDATION_ERROR", "weight_kg is required");
     const weightKg = Number(body.weight_kg);
-    if (isNaN(weightKg) || weightKg < 20 || weightKg > 300) {
-      return fail("VALIDATION_ERROR", "weight_kg must be between 20 and 300");
+    if (isNaN(weightKg) || weightKg < 1 || weightKg > 500) {
+      return fail("VALIDATION_ERROR", "weight_kg must be between 1 and 500");
     }
 
     // ── Resolve measured_at ──────────────────────────────────────────────────

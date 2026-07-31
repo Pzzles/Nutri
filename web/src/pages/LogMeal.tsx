@@ -47,6 +47,9 @@ export default function LogMeal() {
   const [loggedMealId, setLoggedMealId] = useState<string | null>(null);
   const [loggedDailyStatus, setLoggedDailyStatus] = useState<DailyLogStatus | null>(null);
   const [portionInputs, setPortionInputs] = useState<Record<number, string>>({});
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const minDateStr = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const [logDate, setLogDate] = useState(todayStr);
   // food_ids whose EXTREME_PORTION the user has explicitly confirmed
   const [extremeConfirmedIds, setExtremeConfirmedIds] = useState<string[]>([]);
   // gram overrides typed into the clarification panel inputs
@@ -231,7 +234,7 @@ export default function LogMeal() {
       const result = await callFunction<{ meal_id: string; meal_confidence: string; daily_log_status: DailyLogStatus }>("log-meal", {
         idempotency_key: idempotencyKey.current,
         meal_type: mealType,
-        eaten_at: new Date().toISOString(),
+        eaten_at: logDate === todayStr ? new Date().toISOString() : logDate + "T12:00:00.000Z",
         source: "draft",
         raw_input: text,
         meal_confidence: mealConfidence,
@@ -276,9 +279,22 @@ export default function LogMeal() {
       </p>
 
       {step !== "logged" && (
-        <div className="mt-4">
-          <label className="mb-1 block text-xs font-medium text-muted">Meal type</label>
-          <MealTypeDropdown value={mealType} onChange={setMealType} />
+        <div className="mt-4 flex flex-wrap items-end gap-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Meal type</label>
+            <MealTypeDropdown value={mealType} onChange={setMealType} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted">Date</label>
+            <input
+              type="date"
+              value={logDate}
+              min={minDateStr}
+              max={todayStr}
+              onChange={(e) => setLogDate(e.target.value || todayStr)}
+              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
         </div>
       )}
 

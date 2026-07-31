@@ -83,15 +83,22 @@ Deno.serve(async (req) => {
       return fail("VALIDATION_ERROR", "starting_weight_kg is required");
     }
     const swKg = Number(startingWeightKg);
-    if (swKg < 20 || swKg > 300) {
-      return fail("VALIDATION_ERROR", "starting_weight_kg must be between 20 and 300");
+    if (swKg < 1 || swKg > 500) {
+      return fail("VALIDATION_ERROR", "starting_weight_kg must be between 1 and 500");
     }
 
     // ── Validate target_weight_kg ────────────────────────────────────────────
     if (body.target_weight_kg != null) {
       const tw = Number(body.target_weight_kg);
-      if (isNaN(tw) || tw < 20 || tw > 300) {
-        return fail("VALIDATION_ERROR", "target_weight_kg must be between 20 and 300");
+      if (isNaN(tw) || tw < 1 || tw > 500) {
+        return fail("VALIDATION_ERROR", "target_weight_kg must be between 1 and 500");
+      }
+      // Direction must match mode: bulk = gaining (target > start), cut = losing (target < start).
+      if (body.mode === "bulk" && tw <= swKg) {
+        return fail("VALIDATION_ERROR", "Bulk phase target weight must be greater than starting weight.");
+      }
+      if (body.mode === "cut" && tw >= swKg) {
+        return fail("VALIDATION_ERROR", "Cut phase target weight must be less than starting weight.");
       }
     }
 

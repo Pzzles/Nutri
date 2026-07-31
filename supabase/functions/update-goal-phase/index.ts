@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
     // Verify ownership and that the phase is active.
     const { data: existing } = await service
       .from("goal_phases")
-      .select("id, user_id, status")
+      .select("id, user_id, status, mode, starting_weight_kg")
       .eq("id", phaseId)
       .maybeSingle();
 
@@ -84,11 +84,17 @@ Deno.serve(async (req) => {
         return fail("VALIDATION_ERROR", `${field} must be a number or null`);
       }
       if (field === "target_change_kg_per_week") {
-        if (n > 0) {
-          return fail("VALIDATION_ERROR", "target_change_kg_per_week must be negative or zero");
+        if (Math.abs(n) > 2.0) {
+          return fail("VALIDATION_ERROR", "target_change_kg_per_week cannot exceed 2.0 kg/week in either direction");
         }
-        if (n < -2.0) {
-          return fail("VALIDATION_ERROR", "target_change_kg_per_week cannot exceed -2.0 kg/week");
+        if (existing.mode === "cut" && n >= 0) {
+          return fail("VALIDATION_ERROR", "A cut phase requires a negative weekly change rate");
+        }
+        if (existing.mode === "maintenance" && n !== 0) {
+          return fail("VALIDATION_ERROR", "A maintenance phase requires a zero weekly change rate");
+        }
+        if (existing.mode === "bulk" && n <= 0) {
+          return fail("VALIDATION_ERROR", "A bulk phase requires a positive weekly change rate");
         }
       } else if (n < 0) {
         return fail("VALIDATION_ERROR", `${field} must be non-negative`);
@@ -96,8 +102,17 @@ Deno.serve(async (req) => {
       if (field === "target_calories" && n === 0) {
         return fail("VALIDATION_ERROR", "target_calories must be greater than 0");
       }
-      if ((field === "target_weight_kg") && (n < 20 || n > 300)) {
-        return fail("VALIDATION_ERROR", "target_weight_kg must be between 20 and 300");
+      if (field === "target_weight_kg") {
+        if (n < 1 || n > 500) {
+          return fail("VALIDATION_ERROR", "target_weight_kg must be between 1 and 500");
+        }
+        const sw = Number(existing.starting_weight_kg);
+        if (existing.mode === "bulk" && n <= sw) {
+          return fail("VALIDATION_ERROR", "Bulk phase target weight must be greater than starting weight");
+        }
+        if (existing.mode === "cut" && n >= sw) {
+          return fail("VALIDATION_ERROR", "Cut phase target weight must be less than starting weight");
+        }
       }
       updates[field] = n;
     }
