@@ -102,6 +102,27 @@ export default function LogMeal() {
     await rerunCalculation(confirmed);
   }
 
+  async function handleFoodFormSelection(index: number, rawPhrase: string, foodId: string) {
+    dismissClarification(index);
+    setLoading(true);
+    setError(null);
+    try {
+      const resolved = await callFunction<{
+        resolved_items: ResolvedFoodItem[];
+        clarification_required: ClarificationItem[];
+      }>("resolve-foods", {
+        items: [],
+        user_selections: [{ raw_phrase: rawPhrase, food_id: foodId }],
+      });
+      if (resolved.resolved_items.length > 0) {
+        await rerunCalculation(extremeConfirmedIds, resolved.resolved_items);
+      }
+    } catch (err: any) {
+      setError(err.message ?? "Failed to resolve selection.");
+      setLoading(false);
+    }
+  }
+
   async function resolveWithGrams(index: number, grams: number) {
     const n = needsAttention[index];
     if (n.reason !== "portion_clarification") return;
@@ -332,11 +353,21 @@ export default function LogMeal() {
                       <li key={i} className="flex items-start gap-2">
                         <div className="flex-1">
                           <span className="font-medium">"{n.raw_phrase}"</span> — multiple food forms with very different calorie densities. Choose the form you ate:
-                          <ul className="mt-1 ml-4 list-none space-y-0.5">
+                          <ul className="mt-1 ml-4 list-none space-y-1">
                             {n.options.map((opt, j) => (
-                              <li key={j} className="text-xs">
-                                {opt.name} — {opt.calories_100g} kcal/100g
-                                {opt.serving_size_g ? ` · ${opt.serving_size_g}g serving` : ""}
+                              <li key={j} className="flex items-center gap-2 text-xs">
+                                <span className="flex-1">
+                                  {opt.name} — {opt.calories_100g} kcal/100g
+                                  {opt.serving_size_g ? ` · ${opt.serving_size_g}g serving` : ""}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleFoodFormSelection(i, n.raw_phrase, opt.food_id)}
+                                  disabled={loading}
+                                  className="rounded bg-primary px-2 py-0.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                                >
+                                  Select
+                                </button>
                               </li>
                             ))}
                           </ul>

@@ -46,13 +46,38 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const items: ParsedFoodItem[] = body?.items ?? [];
-    if (!Array.isArray(items) || items.length === 0) {
+    const userSelections: Array<{ raw_phrase: string; food_id: string }> = body?.user_selections ?? [];
+
+    if ((!Array.isArray(items) || items.length === 0) && userSelections.length === 0) {
       return fail("VALIDATION_ERROR", "items must be a non-empty array");
     }
 
     const service = getServiceClient();
     const resolved: ResolvedFoodItem[] = [];
     const clarificationRequired: ClarificationItem[] = [];
+
+    // User-confirmed food form selections: write to per-user cache and include as resolved.
+    for (const sel of userSelections) {
+      if (!sel.raw_phrase || !sel.food_id) continue;
+      const normalized = String(sel.raw_phrase).trim().toLowerCase();
+      await service
+        .from("user_food_cache")
+        .upsert(
+          { user_id: userId, normalized_query: normalized, matched_food_id: sel.food_id, confidence: "partial" },
+          { onConflict: "user_id,normalized_query" },
+        )
+        .catch((err: any) => console.error("user_food_cache write failed:", err));
+      resolved.push({
+        raw_phrase: sel.raw_phrase,
+        normalized_query: normalized,
+        food_id: sel.food_id,
+        quantity: null,
+        unit: null,
+        match_confidence: "partial",
+        portion_confidence: "assumed_default",
+        item_confidence: computeItemConfidence("partial", "assumed_default"),
+      });
+    }
 
     for (const item of items) {
       // FR-004: ambiguous items never proceed to lookup.
@@ -154,7 +179,17 @@ async function resolveOne(
     return { kind: "match", foodId: fuzzyMatches[0].food_id, matchConfidence: "partial" };
   }
 
-  return await tryExternalLookup(service, query, rawPhrase);
+  const externalResult = await tryExternalLookup(service, query, rawPhrase);
+  if (externalResult.kind === "match" && externalResult.foodId) {
+    await service
+      .from("global_food_cache")
+      .upsert(
+        { normalized_query: query, matched_food_id: externalResult.foodId, confidence: externalResult.matchConfidence },
+        { onConflict: "normalized_query" },
+      )
+      .catch((err: any) => console.error("global_food_cache write failed:", err));
+  }
+  return externalResult;
 }
 
 async function tryExternalLookup(
