@@ -119,19 +119,27 @@ export default function WeightLogPage() {
         </div>
       )}
 
-      {/* Trend chart + stats */}
-      {trend && trend.trend_points.length >= 2 && (
+      {/* Trend chart + stats — chart renders from trend data when available,
+          falls back to raw logs so it always appears once 2+ entries exist */}
+      {(trend ? trend.trend_points.length >= 2 : logs.length >= 2) && (
         <div className="mt-4 rounded-lg border border-border bg-surface px-4 pt-4 pb-3 space-y-3">
           <div className="flex items-start justify-between">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">
               Trend
             </p>
-            <TrendBadge confidence={trend.confidence} />
+            {trend && <TrendBadge confidence={trend.confidence} />}
           </div>
 
-          <WeightTrendChart trendPoints={trend.trend_points} />
+          <WeightTrendChart
+            trendPoints={trend?.trend_points}
+            data={
+              trend
+                ? undefined
+                : [...logs].reverse().map((l) => ({ date: l.logged_date, weight: Number(l.weight_kg) }))
+            }
+          />
 
-          <TrendStats trend={trend} />
+          {trend && <TrendStats trend={trend} />}
 
           <p className="text-xs text-muted leading-relaxed">
             The trend reduces normal daily weight fluctuations. It is an estimate
