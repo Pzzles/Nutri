@@ -56,8 +56,11 @@ describe("WeightLogPage — latest weight", () => {
     await waitFor(() => expect(screen.getAllByText("85.5").length).toBeGreaterThan(0));
   });
 
-  it("shows Official badge on is_official entry", async () => {
-    mockGet.mockResolvedValueOnce(makeGetResponse([WEIGHT_LOG], WEIGHT_LOG));
+  it("shows Official badge on is_official entry when mixed official/non-official list", async () => {
+    // Badge only renders when hasNonOfficial is true (mix of official and non-official).
+    // A list of only official entries would suppress the badge (no distinction needed).
+    const nonOfficialLog: WeightLog = { ...WEIGHT_LOG, id: "wl-002", is_official: false };
+    mockGet.mockResolvedValueOnce(makeGetResponse([WEIGHT_LOG, nonOfficialLog], WEIGHT_LOG));
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText("Official")).toBeInTheDocument());
   });
@@ -80,27 +83,46 @@ describe("WeightLogPage — log form", () => {
     expect(mockCall).toHaveBeenCalledWith("log-weight", expect.objectContaining({ weight_kg: 85 }));
   });
 
-  it("shows validation error for weight below 20", async () => {
+  it("shows validation error for weight below 1 kg", async () => {
+    // The validation range was widened to 1–500 kg in Phase 3/4 to accommodate
+    // extreme but real cases (e.g. newborns, competitive athletes).
     mockGet.mockResolvedValueOnce(makeGetResponse());
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
     await waitFor(() => screen.getByRole("button", { name: /^log$/i }));
 
-    await userEvent.type(screen.getByRole("spinbutton", { name: /weight/i }), "15");
+    await userEvent.type(screen.getByRole("spinbutton", { name: /weight/i }), "0.5");
     await userEvent.click(screen.getByRole("button", { name: /^log$/i }));
 
-    expect(screen.getByText(/between 20 and 300/i)).toBeInTheDocument();
+    expect(screen.getByText(/between 1 and 500/i)).toBeInTheDocument();
     expect(mockCall).not.toHaveBeenCalled(); // log-weight must not be called on validation error
   });
 
-  it("shows validation error for weight above 300", async () => {
+  it("shows validation error for weight above 500 kg", async () => {
     mockGet.mockResolvedValueOnce(makeGetResponse());
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
     await waitFor(() => screen.getByRole("button", { name: /^log$/i }));
 
-    await userEvent.type(screen.getByRole("spinbutton", { name: /weight/i }), "350");
+    await userEvent.type(screen.getByRole("spinbutton", { name: /weight/i }), "501");
     await userEvent.click(screen.getByRole("button", { name: /^log$/i }));
 
-    expect(screen.getByText(/between 20 and 300/i)).toBeInTheDocument();
+    expect(screen.getByText(/between 1 and 500/i)).toBeInTheDocument();
+  });
+
+  it("shows API error message when log-weight returns no data", async () => {
+    // Regression: before the null-guard fix, undefined from callFunction was added
+    // to the logs array, causing TypeError on logs.some((l) => !l.is_official).
+    mockGet.mockResolvedValueOnce(makeGetResponse());
+    mockCall.mockResolvedValueOnce(undefined as any); // simulates missing response data
+    render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
+    await waitFor(() => screen.getByRole("button", { name: /^log$/i }));
+
+    await userEvent.type(screen.getByRole("spinbutton", { name: /weight/i }), "85");
+    await userEvent.click(screen.getByRole("button", { name: /^log$/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/no data|log-weight/i)).toBeInTheDocument(),
+    );
+    // The logs section must not contain undefined entries — no TypeError should occur.
   });
 
   it("appends new entry to the top of the list without refetch", async () => {
