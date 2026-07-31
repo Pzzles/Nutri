@@ -25,6 +25,7 @@ async function startPhase(userId: string, overrides: Record<string, unknown> = {
     p_target_protein_g: 150,
     p_target_carbs_g: 200,
     p_target_fat_g: 70,
+    p_target_fibre_g: null,
     p_transition: null,
     ...overrides,
   });
@@ -185,9 +186,9 @@ describe("fn_start_goal_phase — one active phase per user", () => {
 // ── DB constraint validation ───────────────────────────────────────────────────
 
 describe("fn_start_goal_phase — constraint violations", () => {
-  it("rejects starting_weight_kg below range (< 20)", async () => {
+  it("rejects starting_weight_kg below range (< 1)", async () => {
     const { error } = await startPhase(userA, {
-      p_starting_weight_kg: 10,
+      p_starting_weight_kg: 0,
       p_transition: null,
     });
     expect(error).toBeTruthy();

@@ -2,7 +2,7 @@
 // Requires: supabase start + supabase functions serve
 // All calls use real JWTs — zero mocking.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createTestUser, signInAs, deleteTestUser, svcClient, testEmail } from "./helpers.js";
+import { createTestUser, signInAs, deleteTestUser, svcClient, testEmail, ANON_KEY } from "./helpers.js";
 
 const FUNCTIONS_URL = process.env.FUNCTIONS_URL ?? "http://127.0.0.1:54421/functions/v1";
 const EMAIL = testEmail("edge-fn");
@@ -67,14 +67,14 @@ describe("log-weight", () => {
     expect(resp.data.logged_date).toBe("2026-07-20");
   });
 
-  it("rejects weight_kg below 20", async () => {
-    const resp = await callFn("log-weight", { weight_kg: 15 });
+  it("rejects weight_kg below 1", async () => {
+    const resp = await callFn("log-weight", { weight_kg: 0 });
     expect(resp.success).toBe(false);
     expect(resp.error.code).toBe("VALIDATION_ERROR");
   });
 
-  it("rejects weight_kg above 300", async () => {
-    const resp = await callFn("log-weight", { weight_kg: 310 });
+  it("rejects weight_kg above 500", async () => {
+    const resp = await callFn("log-weight", { weight_kg: 501 });
     expect(resp.success).toBe(false);
     expect(resp.error.code).toBe("VALIDATION_ERROR");
   });
@@ -82,7 +82,7 @@ describe("log-weight", () => {
   it("rejects missing Authorization header", async () => {
     const res = await fetch(`${FUNCTIONS_URL}/log-weight`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", apikey: ANON_KEY },
       body: JSON.stringify({ weight_kg: 85 }),
     });
     const resp = await res.json();
@@ -143,7 +143,10 @@ describe("get-weight-logs", () => {
   });
 
   it("rejects unauthenticated request", async () => {
-    const res = await fetch(`${FUNCTIONS_URL}/get-weight-logs`, { method: "GET" });
+    const res = await fetch(`${FUNCTIONS_URL}/get-weight-logs`, {
+      method: "GET",
+      headers: { apikey: ANON_KEY },
+    });
     const resp = await res.json();
     expect(resp.success).toBe(false);
   });
