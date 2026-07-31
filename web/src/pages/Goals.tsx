@@ -586,17 +586,33 @@ export default function Goals() {
                 </div>
               )}
 
-              {preview && !preview.eligible && (
+              {preview && !preview.ready && (
                 <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
                   <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Profile incomplete</p>
-                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{preview.instructions}</p>
-                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
-                    Missing: {preview.missing_fields.join(", ")}
-                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {preview.missing_fields.map((f) => (
+                      <li key={f.field} className="text-xs text-amber-700 dark:text-amber-400">
+                        <span className="font-medium">{f.field}</span>: {f.reason}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
-              {preview?.eligible && (
+              {/* Stale weight warning — shown even when ready=true */}
+              {preview?.stale_fields && preview.stale_fields.length > 0 && (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
+                  <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Weight reading may be outdated</p>
+                  {preview.stale_fields.map((f) => (
+                    <p key={f.field} className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                      Your last official weight was logged {f.days_old} day{f.days_old === 1 ? "" : "s"} ago.
+                      For a more accurate target, log a current weight before starting this phase.
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {preview?.ready && (
                 <div className="mt-3 space-y-3">
                   {/* Calorie breakdown */}
                   <div className="rounded-lg border border-border bg-surface/50 p-4">
@@ -917,6 +933,12 @@ function ActivePhaseDetail({
             <SnapshotRow label="Calculated at" value={new Date(snapshot.calculation_timestamp).toLocaleString("en-ZA")} />
             <SnapshotRow label="Age at calculation" value={`${snapshot.age_years} years`} />
             <SnapshotRow label="Weight used" value={`${snapshot.official_weight_kg} kg`} />
+            {snapshot.weight_measured_at && (
+              <SnapshotRow
+                label="Weight measured at"
+                value={new Date(snapshot.weight_measured_at).toLocaleString("en-ZA")}
+              />
+            )}
             <SnapshotRow label="Height" value={`${snapshot.height_cm} cm`} />
             <SnapshotRow label="Sex" value={snapshot.equation_sex} />
             <SnapshotRow label="Activity level" value={ACTIVITY_LABELS[snapshot.activity_level] ?? snapshot.activity_level} />
