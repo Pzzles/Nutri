@@ -45,13 +45,15 @@ export async function searchUsda(query: string, pageSize = 10): Promise<UsdaFood
       return [];
     }
     const json = await resp.json();
-    return (json?.foods ?? []).map((f: any) => ({
-      fdcId: f.fdcId,
-      description: f.description,
-      brandOwner: f.brandOwner ?? null,
-      servingSize: f.servingSize ?? null,
-      ...parseNutrients(f.foodNutrients ?? []),
-    }));
+    return (json?.foods ?? [])
+      .filter((f: any) => f.fdcId && f.description)
+      .map((f: any) => ({
+        fdcId: f.fdcId,
+        description: f.description,
+        brandOwner: f.brandOwner ?? null,
+        servingSize: f.servingSize ?? null,
+        ...parseNutrients(f.foodNutrients ?? []),
+      }));
   } catch (err) {
     clearTimeout(timeout);
     console.error(`[USDA] fetch error for "${query}":`, String(err));
@@ -79,6 +81,11 @@ export async function upsertUsdaFood(service: any, food: UsdaFood): Promise<stri
     .eq("source_identifier", String(food.fdcId))
     .maybeSingle();
   if (existing) return existing.id;
+
+  if (!food.description) {
+    console.error("[USDA] skipping food with no description, fdcId:", food.fdcId);
+    return null;
+  }
 
   const { data: inserted, error } = await service
     .from("foods")

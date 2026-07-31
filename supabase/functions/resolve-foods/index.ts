@@ -231,40 +231,45 @@ async function tryExternalLookup(
   }
 
   // ── Tier 2: USDA FoodData Central (fallback when FatSecret returns nothing) ─
-  const usdaCandidates = await searchUsda(searchTerm, 10);
-  if (usdaCandidates.length === 0) {
+  try {
+    const usdaCandidates = await searchUsda(searchTerm, 10);
+    if (usdaCandidates.length === 0) {
+      return { kind: "match", foodId: null, matchConfidence: "none" };
+    }
+
+    // AmbiguityCandidate requires calories100g; USDA stores nutrients as `calories`
+    // (already per-100 g for Foundation/SR Legacy datasets).
+    const usdaMapped = usdaCandidates.map((c: UsdaFood) => ({ ...c, calories100g: c.calories }));
+    const dedupedUsda = deduplicateCandidates(usdaMapped);
+
+    if (detectFoodFormAmbiguity(dedupedUsda)) {
+      const top = dedupedUsda.slice(0, 3).filter((c) => c.calories100g > 0);
+      const options = (
+        await Promise.all(
+          top.map(async (c) => {
+            const foodId = await upsertUsdaFood(service, c);
+            if (!foodId) return null;
+            return {
+              food_id: foodId,
+              name: c.description,
+              calories_100g: c.calories100g,
+              serving_size_g: c.servingSize ?? null,
+            } satisfies FoodFormOption;
+          }),
+        )
+      ).filter((o): o is FoodFormOption => o !== null);
+      if (options.length >= 2) return { kind: "ambiguous", options };
+    }
+
+    const best = pickBestMatch(usdaCandidates);
+    if (!best) return { kind: "match", foodId: null, matchConfidence: "none" };
+    const foodId = await upsertUsdaFood(service, best);
+    if (!foodId) return { kind: "match", foodId: null, matchConfidence: "none" };
+    return { kind: "match", foodId, matchConfidence: "partial" };
+  } catch (err) {
+    console.error("[USDA tier] unexpected error for query:", searchTerm, String(err));
     return { kind: "match", foodId: null, matchConfidence: "none" };
   }
-
-  // AmbiguityCandidate requires calories100g; USDA stores nutrients as `calories`
-  // (already per-100 g for Foundation/SR Legacy datasets).
-  const usdaMapped = usdaCandidates.map((c: UsdaFood) => ({ ...c, calories100g: c.calories }));
-  const dedupedUsda = deduplicateCandidates(usdaMapped);
-
-  if (detectFoodFormAmbiguity(dedupedUsda)) {
-    const top = dedupedUsda.slice(0, 3).filter((c) => c.calories100g > 0);
-    const options = (
-      await Promise.all(
-        top.map(async (c) => {
-          const foodId = await upsertUsdaFood(service, c);
-          if (!foodId) return null;
-          return {
-            food_id: foodId,
-            name: c.description,
-            calories_100g: c.calories100g,
-            serving_size_g: c.servingSize ?? null,
-          } satisfies FoodFormOption;
-        }),
-      )
-    ).filter((o): o is FoodFormOption => o !== null);
-    if (options.length >= 2) return { kind: "ambiguous", options };
-  }
-
-  const best = pickBestMatch(usdaCandidates);
-  if (!best) return { kind: "match", foodId: null, matchConfidence: "none" };
-  const foodId = await upsertUsdaFood(service, best);
-  if (!foodId) return { kind: "match", foodId: null, matchConfidence: "none" };
-  return { kind: "match", foodId, matchConfidence: "partial" };
 }
 
 function mergeDuplicates(items: ResolvedFoodItem[]): ResolvedFoodItem[] {
