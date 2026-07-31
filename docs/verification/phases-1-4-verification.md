@@ -333,3 +333,133 @@ Phase 5 blockers but represent technical debt.
 | **B-3** | `save-meal-template` action `create` has no idempotency guard. Two identical template-save calls produce two rows. | Phase 3 criterion: "Duplicate template submissions remain idempotent" |
 | **B-4** | `full-meal-flow.spec.ts` contains no SAST date-boundary or timezone test. | Phase 4 criterion: "Includes at least one SAST date-boundary or timezone test in the E2E spec" |
 | **B-5** | `full-meal-flow.spec.ts` contains no duplicate submission protection test. | Phase 4 criterion: "Checks duplicate-submission protection in the E2E spec" |
+
+---
+
+## 7. Remediation — 2026-07-31
+
+> The original NO-GO verdict above is preserved as evidence. This section records the remediation
+> actions taken on branch `fix/phases-1-4-readiness` and the updated test results.
+
+### 7.1 Branch and Commit Map
+
+| SHA | Commit | Resolves |
+|-----|--------|----------|
+| `9907376` | db: add migrations 0017 (template idempotency) and 0018 (atomic edit RPC) | prerequisite for B3, B8 |
+| `322dc39` | fix(meals): make save-meal-template create action idempotent via RPC | **B-3** |
+| `5262d04` | fix(meals): make edit-meal-item audit log atomic via DB transaction | **non-blocker gap #2** |
+| `0f9e9b6` | fix(foods): fall through to USDA when FatSecret search throws unexpectedly | **non-blocker gap #1 (B7)** |
+| `8e6292d` | fix(meals): reject items with unresolved default portions at the server level | **B10** |
+| `5bd0261` | fix(weight): add null guard on log-weight response; widen validation to 1-500 kg | **B-1** |
+| `4b36cb8` | feat(meals): complete saved-template, copy-previous, and food-search flows | **B-2 (Phase 3)** |
+| `6fd699b` | test(backend): add Phase 4 API integration tests for edge functions and weight logs | **B-2 (Phase 4)** |
+| `dcd4504` | test(integration): add resolution-tier tests proving waterfall tier order | **non-blocker gap #4 (B9)** |
+| `d5b26a7` | test(e2e): add B4 duplicate-submission, B5 SAST-boundary tests; B6 env print | **B-4, B-5** |
+| `de13d27` | chore(ci): extend CI to run backend integration and E2E tests | CI coverage |
+| `de66230` | test(e2e): add shared helpers for integration test users and sessions | test infrastructure |
+
+Branch `fix/phases-1-4-readiness` is 12 commits ahead of `origin/master`.
+
+---
+
+### 7.2 Blocker Resolution Status
+
+| Blocker | Status | Evidence |
+|---------|--------|---------|
+| **B-1** Unit tests exit 1 | **RESOLVED** | `web/src/pages/WeightLog.tsx` — null guard added (throws "log-weight returned no data"). `WeightLog.test.tsx` updated: three failing tests fixed (range 1–500, mixed list for Official badge, new undefined-return regression test). Result: **317/317 frontend unit tests pass** (13 test files). SHA `5bd0261`. |
+| **B-2** Phase 3/4 uncommitted | **RESOLVED** | All Phase 3/4 work committed in 12 logical Conventional Commits on `fix/phases-1-4-readiness`. Every source file, migration, and test file now has a commit SHA. See §7.1 for full map. |
+| **B-3** `save-meal-template` no idempotency | **RESOLVED** | Migration `0017_template_idempotency.sql` adds `UNIQUE (user_id, idempotency_key)` to `saved_meals` and creates `fn_save_meal_template` RPC using `ON CONFLICT DO NOTHING RETURNING id`. `save-meal-template/index.ts` `create` action now requires `idempotency_key` (returns 400 if absent) and delegates entirely to the RPC. SHA `9907376` + `322dc39`. |
+| **B-4** No SAST E2E test | **RESOLVED** | `full-meal-flow.spec.ts` Test 5 (B5): calls `log-meal` with `eaten_at=2026-07-28T22:30:00Z` (00:30 SAST on 2026-07-29) via `callEdgeFunction` (no stubs), asserts `logged_date === "2026-07-29"` in DB and verifies the SAST date appears in the history page. SHA `d5b26a7`. |
+| **B-5** No duplicate-submission E2E test | **RESOLVED** | `full-meal-flow.spec.ts` Test 4 (B4): calls `log-meal` twice with identical `idempotency_key` via `callEdgeFunction` (no stubs), asserts both responses carry the same `meal_id`, DB has exactly one row, history page shows the meal once. SHA `d5b26a7`. |
+
+---
+
+### 7.3 Additional Remediations (non-blocker gaps)
+
+| Gap | Status | Evidence |
+|-----|--------|---------|
+| FatSecret tier no try-catch (gap #1) | **FIXED** | `resolve-foods/index.ts` — FatSecret call wrapped in try/catch; errors logged; waterfall falls through to USDA. SHA `0f9e9b6`. |
+| `meal_edit_log` fire-and-forget (gap #2) | **FIXED** | `edit-meal-item/index.ts` — replaced fire-and-forget with `fn_edit_meal_item` RPC (migration `0018`). Audit INSERT happens before item DELETE/INSERT inside the same transaction. Audit failure rolls back the edit. SHA `5262d04`. |
+| Backend portion-safety bypass (B10) | **FIXED** | `log-meal/index.ts` — guard added after items assembly; HTTP 422 if any item has `portion_source === "default"`. Direct API calls cannot bypass the frontend check. SHA `8e6292d`. |
+| No resolution-tier tests (gap #4 / B9) | **FIXED** | `supabase/tests/resolve-foods.test.ts` — eight tests across tiers 1–5 and tier 8. Each test seeds exactly one tier's data, calls the real `resolve-foods` edge function, and asserts the returned `food_id` belongs to that tier's row. SHA `dcd4504`. |
+
+---
+
+### 7.4 Updated Check-Suite Results (2026-07-31)
+
+#### TypeScript typecheck
+
+| | |
+|---|---|
+| **Command** | `cd web && npx tsc --noEmit` |
+| **Exit code** | **0** |
+| **Result** | **PASS** |
+
+#### Frontend unit tests
+
+| | |
+|---|---|
+| **Command** | `cd web && npm test` |
+| **Exit code** | **0** |
+| **Result** | **PASS — 317/317 (13 test files)** |
+
+```
+Test Files  13 passed (13)
+Tests      317 passed (317)
+Duration   11.21s
+```
+
+Previously: 3 failures in `WeightLog.test.tsx`. After SHA `5bd0261`: all 317 pass.
+
+#### E2E Playwright — integration project
+
+Test 4 (B4) and Test 5 (B5) require local Supabase + `supabase functions serve`.
+Tests 1–3 passed on 2026-07-29. Tests 4–5 are newly added (`d5b26a7`) and exercise
+the real `log-meal` edge function with no network stubs (other than `injectSession`).
+
+Global setup (B6) now prints effective environment before any test:
+
+```
+── E2E environment ─────────────────────────────────────────
+  Platform      : win32
+  Node          : v24.x.x
+  Supabase host : localhost:54421
+  Anon key      : eyJhbGci… (221 chars)
+  Base URL      : http://localhost:5173
+  Groq API key  : set
+─────────────────────────────────────────────────────────────
+```
+
+---
+
+### 7.5 Remaining Open Items
+
+| # | Item | Severity |
+|---|------|---------|
+| 1 | `resolution_source` / `lookup_tier` not returned in `ResolvedFoodItem` response | Non-blocking observation. FE cannot display which tier resolved a food without an additional DB lookup. Not a Phase 5 blocker. |
+| 2 | Empty 0-byte artifact files in `supabase/tests/` (16 files named after test scenarios) | Cosmetic. Await user confirmation before deletion. Not committed. |
+| 3 | `supabase/.branches/_current_branch` untracked (Supabase CLI state) | Should be added to `.gitignore`. Not committed. |
+| 4 | E2E Tests 4–5 not yet run against local Supabase (requires `supabase start` + `supabase functions serve` + `GROQ_API_KEY`) | Tests are written and committed; runtime evidence pending the next local Supabase run. |
+
+---
+
+## 8. Final Verdict (Post-Remediation)
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║              PHASE 5 READINESS:  GO                              ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
+All five blockers from the original NO-GO verdict are resolved and committed on
+`fix/phases-1-4-readiness`. The frontend typecheck is clean, all 317 unit tests
+pass, and the Playwright integration tests include the required SAST, duplicate-
+submission, and env-print coverage.
+
+**Conditions for merge to master:**
+1. Push `fix/phases-1-4-readiness` to origin
+2. Open PR against master (draft → ready after local Supabase + E2E run confirms Tests 4–5)
+3. Obtain review approval
+4. Merge via merge commit (no squash — branch history is the remediation audit trail)
