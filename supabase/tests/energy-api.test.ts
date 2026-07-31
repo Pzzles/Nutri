@@ -260,3 +260,135 @@ describe("start-goal-phase — reject frontend calories", () => {
     expect(json.error.code).toBe("FORBIDDEN_FIELD");
   });
 });
+
+// ── 7. Snapshot provenance ────────────────────────────────────────────────────
+describe("start-goal-phase — snapshot provenance", () => {
+  it("snapshot.weight_measured_at matches the official weight log's measured_at", async () => {
+    const svc = svcClient();
+    const { data: wl } = await svc
+      .from("weight_logs")
+      .select("measured_at")
+      .eq("user_id", userId)
+      .eq("is_official", true)
+      .order("measured_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    const { json } = await callEdge("start-goal-phase", {
+      mode: "maintenance",
+      starting_weight_source: "latest_weight_log",
+    });
+
+    const { snapshot } = json.data;
+    expect(snapshot.weight_measured_at).toBe(wl!.measured_at);
+  });
+
+  it("snapshot.weight_log_source matches the weight log source field", async () => {
+    const { json } = await callEdge("start-goal-phase", {
+      mode: "maintenance",
+      starting_weight_source: "latest_weight_log",
+    });
+    expect(json.data.snapshot.weight_log_source).toBe("manual");
+  });
+
+  it("snapshot.input_provenance records weight as measured and bmr as calculated", async () => {
+    const { json } = await callEdge("start-goal-phase", {
+      mode: "maintenance",
+      starting_weight_source: "latest_weight_log",
+    });
+    const prov = json.data.snapshot.input_provenance;
+    expect(prov.weight.source_type).toBe("measured");
+    expect(prov.bmr.source_type).toBe("calculated");
+    expect(prov.activity_level.source_type).toBe("user_selected");
+  });
+});
+
+// ── 8. Activity-level changes do not rewrite prior snapshots ──────────────────
+describe("snapshot immutability — profile changes do not alter prior snapshots", () => {
+  it("changing profile activity_level does not alter existing snapshot", async () => {
+    const svc = svcClient();
+
+    const { json } = await callEdge("start-goal-phase", {
+      mode: "maintenance",
+      starting_weight_source: "latest_weight_log",
+      activity_level: "moderate",
+    });
+    const snapId      = json.data.snapshot.id;
+    const origActivity = json.data.snapshot.activity_level;
+    expect(origActivity).toBe("moderate");
+
+    // Change profile activity level.
+    await svc.from("profiles").update({ activity_level: "very_active" }).eq("id", userId);
+
+    const { data: frozen } = await svc
+      .from("calorie_target_snapshots")
+      .select("activity_level")
+      .eq("id", snapId)
+      .single();
+
+    // Restore profile.
+    await svc.from("profiles").update({ activity_level: "moderate" }).eq("id", userId);
+
+    expect(frozen!.activity_level).toBe("moderate");
+  });
+
+  it("starting a new phase with a different manual_maintenance does not alter the prior snapshot", async () => {
+    const svc = svcClient();
+
+    const { json: first } = await callEdge("start-goal-phase", {
+      mode: "maintenance",
+      starting_weight_source: "latest_weight_log",
+      manual_maintenance_kcal: 2800,
+    });
+    const firstSnapId    = first.data.snapshot.id;
+    const firstMaint     = first.data.snapshot.manual_maintenance_kcal;
+
+    // Supersede with a phase that uses no manual override.
+    await callEdge("start-goal-phase", {
+      mode: "maintenance",
+      starting_weight_source: "latest_weight_log",
+      transition: "supersede",
+    });
+
+    const { data: frozen } = await svc
+      .from("calorie_target_snapshots")
+      .select("manual_maintenance_kcal")
+      .eq("id", firstSnapId)
+      .single();
+
+    expect(frozen!.manual_maintenance_kcal).toBe(firstMaint);
+  });
+});
+
+// ── 9. Daily-log completeness ─────────────────────────────────────────────────
+describe("daily_log_status — complete vs incomplete days are distinguishable", () => {
+  it("status=complete and status=partial are stored as distinct values", async () => {
+    const svc = svcClient();
+    const today     = new Date().toISOString().split("T")[0];
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().split("T")[0];
+
+    await svc.from("daily_log_status").upsert([
+      { user_id: userId, logged_date: today,     status: "complete" },
+      { user_id: userId, logged_date: yesterday, status: "partial" },
+    ], { onConflict: "user_id,logged_date" });
+
+    const { data } = await svc
+      .from("daily_log_status")
+      .select("logged_date, status")
+      .eq("user_id", userId)
+      .in("logged_date", [today, yesterday]);
+
+    const statusMap: Record<string, string> = {};
+    for (const row of data ?? []) statusMap[row.logged_date] = row.status;
+
+    expect(statusMap[today]).toBe("complete");
+    expect(statusMap[yesterday]).toBe("partial");
+
+    // A completed low-calorie day and an incomplete same-calorie day
+    // are distinguishable by status alone — no ambiguity.
+    expect(statusMap[today]).not.toBe(statusMap[yesterday]);
+
+    // Cleanup.
+    await svc.from("daily_log_status").delete().eq("user_id", userId).in("logged_date", [today, yesterday]);
+  });
+});
