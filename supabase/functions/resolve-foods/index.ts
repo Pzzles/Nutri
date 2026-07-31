@@ -60,13 +60,22 @@ Deno.serve(async (req) => {
     for (const sel of userSelections) {
       if (!sel.raw_phrase || !sel.food_id) continue;
       const normalized = String(sel.raw_phrase).trim().toLowerCase();
-      await service
-        .from("user_food_cache")
-        .upsert(
-          { user_id: userId, normalized_query: normalized, matched_food_id: sel.food_id, confidence: "partial" },
-          { onConflict: "user_id,normalized_query" },
-        )
-        .catch((err: any) => console.error("user_food_cache write failed:", err));
+      try {
+        await service
+          .from("user_food_cache")
+          .upsert(
+            {
+              user_id: userId,
+              normalized_query: normalized,
+              matched_food_id: sel.food_id,
+              confidence: "partial",
+              lookup_source: "user_selection",
+            },
+            { onConflict: "user_id,normalized_query" },
+          );
+      } catch (err) {
+        console.error("[cache] user_food_cache write failed:", err);
+      }
       resolved.push({
         raw_phrase: sel.raw_phrase,
         normalized_query: normalized,
@@ -131,6 +140,25 @@ Deno.serve(async (req) => {
   }
 });
 
+async function writeGlobalCache(
+  service: any,
+  query: string,
+  foodId: string,
+  confidence: string,
+  lookupSource: string,
+): Promise<void> {
+  try {
+    await service
+      .from("global_food_cache")
+      .upsert(
+        { normalized_query: query, matched_food_id: foodId, confidence, lookup_source: lookupSource },
+        { onConflict: "normalized_query" },
+      );
+  } catch (err) {
+    console.error("[cache] global_food_cache write failed:", err);
+  }
+}
+
 async function applySynonym(service: any, name: string): Promise<string> {
   const normalized = name.trim().toLowerCase();
   const { data } = await service
@@ -179,17 +207,7 @@ async function resolveOne(
     return { kind: "match", foodId: fuzzyMatches[0].food_id, matchConfidence: "partial" };
   }
 
-  const externalResult = await tryExternalLookup(service, query, rawPhrase);
-  if (externalResult.kind === "match" && externalResult.foodId) {
-    await service
-      .from("global_food_cache")
-      .upsert(
-        { normalized_query: query, matched_food_id: externalResult.foodId, confidence: externalResult.matchConfidence },
-        { onConflict: "normalized_query" },
-      )
-      .catch((err: any) => console.error("global_food_cache write failed:", err));
-  }
-  return externalResult;
+  return await tryExternalLookup(service, query, rawPhrase);
 }
 
 async function tryExternalLookup(
@@ -227,6 +245,7 @@ async function tryExternalLookup(
       fsCandidates[0];
     const foodId = await upsertFatSecretFood(service, best);
     if (!foodId) return { kind: "match", foodId: null, matchConfidence: "none" };
+    await writeGlobalCache(service, query, foodId, "exact", "fatsecret");
     return { kind: "match", foodId, matchConfidence: "exact" };
   }
 
@@ -265,6 +284,7 @@ async function tryExternalLookup(
     if (!best) return { kind: "match", foodId: null, matchConfidence: "none" };
     const foodId = await upsertUsdaFood(service, best);
     if (!foodId) return { kind: "match", foodId: null, matchConfidence: "none" };
+    await writeGlobalCache(service, query, foodId, "partial", "usda_fdc");
     return { kind: "match", foodId, matchConfidence: "partial" };
   } catch (err) {
     console.error("[USDA tier] unexpected error for query:", searchTerm, String(err));
