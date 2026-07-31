@@ -89,13 +89,28 @@ Deno.serve(async (req) => {
     }
 
     for (const item of items) {
-      // FR-004: ambiguous items never proceed to lookup.
-      if (item.ambiguous) {
-        clarificationRequired.push({ raw_phrase: item.raw_phrase, reason: "ambiguous" });
-        continue;
+      const query = await applySynonym(service, item.normalized_name);
+
+      // FR-004: ambiguous items skip external lookup — but if the user has a match
+      // in their own food library, resolve it directly without asking for clarification.
+      // Defensive: coerce string "true"/"false" from older Groq responses.
+      const isAmbiguous = item.ambiguous === true || item.ambiguous === "true";
+      if (isAmbiguous) {
+        const { data: ownFoods } = await service
+          .from("foods")
+          .select("id")
+          .eq("owner_user_id", userId)
+          .eq("status", "active")
+          .ilike("normalized_name", `%${query}%`)
+          .limit(1);
+
+        if (!ownFoods || ownFoods.length === 0) {
+          clarificationRequired.push({ raw_phrase: item.raw_phrase, reason: "ambiguous" });
+          continue;
+        }
+        // Found in user's library — fall through to resolveOne which returns it as exact.
       }
 
-      const query = await applySynonym(service, item.normalized_name);
       const matchResult = await resolveOne(service, userId, query, item.raw_phrase);
 
       if (matchResult.kind === "ambiguous") {
@@ -184,6 +199,19 @@ async function resolveOne(
     .maybeSingle();
   if (ownFood) return { kind: "match", foodId: ownFood.id, matchConfidence: "exact" };
 
+  // Partial match: query is a substring of a user's custom food name.
+  // Handles cases where the parser drops descriptors ("lephaphathane" → "homemade lephaphathane").
+  const { data: partialOwn } = await service
+    .from("foods")
+    .select("id")
+    .eq("owner_user_id", userId)
+    .eq("status", "active")
+    .ilike("normalized_name", `%${query}%`)
+    .limit(1);
+  if (partialOwn && partialOwn.length > 0) {
+    return { kind: "match", foodId: partialOwn[0].id, matchConfidence: "partial" };
+  }
+
   const { data: userCache } = await service
     .from("user_food_cache")
     .select("matched_food_id, confidence")
@@ -218,7 +246,13 @@ async function tryExternalLookup(
   const searchTerm = rawPhrase.length > 0 ? rawPhrase : query;
 
   // ── Tier 1: FatSecret ─────────────────────────────────────────────────────
-  const fsCandidates = await searchFatSecret(searchTerm, 5);
+  let fsCandidates: FatSecretFood[] = [];
+  try {
+    fsCandidates = await searchFatSecret(searchTerm, 5);
+  } catch (fsErr) {
+    console.error("[FatSecret tier] unexpected error for query:", searchTerm, String(fsErr));
+    // Fall through to USDA tier — do not crash the whole resolution request.
+  }
   if (fsCandidates.length > 0) {
     const dedupedFs = deduplicateCandidates(fsCandidates);
     if (detectFoodFormAmbiguity(dedupedFs)) {
