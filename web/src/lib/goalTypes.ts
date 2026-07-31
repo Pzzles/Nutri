@@ -4,6 +4,25 @@ export type DailyLogStatusValue = "unknown" | "partial" | "complete";
 export type MaintenanceSource = "equation_estimate" | "manual_override";
 export type EnergyWarningCode = "aggressive_rate" | "target_below_floor" | "missing_fields";
 
+export interface MissingField {
+  field: string;
+  reason: string;
+  action: string;
+}
+
+export interface StaleField {
+  field: string;
+  recorded_at: string;
+  days_old: number;
+  action: string;
+}
+
+export interface DataQuality {
+  profile_complete: boolean;
+  weight_current: boolean;
+  calculation_possible: boolean;
+}
+
 export interface GoalPhase {
   id: string;
   user_id: string;
@@ -42,6 +61,8 @@ export interface CalorieTargetSnapshot {
   height_cm: number;
   official_weight_kg: number;
   weight_log_id: string | null;
+  weight_measured_at: string | null;
+  weight_log_source: string | null;
   age_years: number;
   activity_level: string;
   activity_multiplier: number;
@@ -58,13 +79,15 @@ export interface CalorieTargetSnapshot {
   warning_codes: EnergyWarningCode[];
   aggressive_rate_acknowledged: boolean;
   config_versions: Record<string, string>;
+  input_provenance: Record<string, unknown>;
   created_at: string;
 }
 
 export interface EnergyCalcPreview {
-  eligible: boolean;
-  missing_fields: string[];
-  instructions?: string;
+  ready: boolean;
+  missing_fields: MissingField[];
+  stale_fields?: StaleField[];
+  data_quality?: DataQuality;
   calculation_timestamp?: string;
   input_snapshot?: {
     birth_date: string;
@@ -72,6 +95,7 @@ export interface EnergyCalcPreview {
     height_cm: number;
     official_weight_kg: number;
     weight_log_id: string;
+    weight_measured_at?: string;
     age_years: number;
     activity_level: string;
     activity_multiplier: number;
@@ -79,6 +103,7 @@ export interface EnergyCalcPreview {
     target_change_kg_per_week: number;
     manual_maintenance_kcal: number | null;
   };
+  input_provenance?: Record<string, unknown>;
   estimated_bmr_kcal?: number;
   estimated_tdee_kcal?: number;
   manual_maintenance_kcal?: number | null;
