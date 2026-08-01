@@ -1,33 +1,32 @@
 -- Weight trend demo seed — 28 days of realistic daily weigh-ins.
 --
--- Paste into: Supabase dashboard → SQL Editor → New query, then Run.
+-- HOW TO USE:
+--   1. Find your user UUID:
+--        SELECT id, email FROM auth.users;
+--   2. Replace the placeholder below with your UUID.
+--   3. Paste into: Supabase dashboard → SQL Editor → New query, then Run.
+--
 -- To clean up: run the DELETE block at the bottom.
 --
--- Target user: whoever has the most recent weight log entry.
--- If no logs exist yet, falls back to the most recently signed-in user.
---
--- Uses notes='demo_seed' for idempotency (source column may not exist yet).
+-- Uses notes='demo_seed' for idempotency.
+-- Timestamps use NOW() so entries always appear "recent" for demo purposes.
 
 DO $$
 DECLARE
-  v_uid uuid;
+  -- ──────────────────────────────────────────────────────────────────────────
+  -- REPLACE THIS UUID with your own user ID before running.
+  --   Find it with:  SELECT id, email FROM auth.users;
+  -- ──────────────────────────────────────────────────────────────────────────
+  v_uid uuid := '00000000-0000-0000-0000-000000000000';
 BEGIN
-  -- Prefer the user who last logged a weight (that's the active tester).
-  SELECT user_id INTO v_uid
-  FROM weight_logs
-  ORDER BY measured_at DESC
-  LIMIT 1;
-
-  -- No weight logs yet — fall back to the most recently active auth user.
-  IF v_uid IS NULL THEN
-    SELECT id INTO v_uid
-    FROM auth.users
-    ORDER BY last_sign_in_at DESC NULLS LAST
-    LIMIT 1;
+  IF v_uid = '00000000-0000-0000-0000-000000000000' THEN
+    RAISE EXCEPTION
+      'Replace the placeholder UUID in weight_trend_demo.sql with your actual user ID before running. '
+      'Find it with: SELECT id, email FROM auth.users;';
   END IF;
 
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'No users found. Open the app first so a session is created.';
+  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = v_uid) THEN
+    RAISE EXCEPTION 'User % not found in auth.users', v_uid;
   END IF;
 
   RAISE NOTICE 'Seeding user %', v_uid;
@@ -83,12 +82,7 @@ END $$;
 
 
 -- ── To delete the demo data ───────────────────────────────────────────────────
--- Replace the DO block above with this, or run it separately:
+-- Replace YOUR_USER_UUID with the same UUID you used above, then run:
 --
--- DO $$
--- DECLARE v_uid uuid;
--- BEGIN
---   SELECT user_id INTO v_uid FROM weight_logs ORDER BY measured_at DESC LIMIT 1;
---   DELETE FROM weight_logs WHERE user_id = v_uid AND notes = 'demo_seed';
---   RAISE NOTICE 'Deleted demo rows for user %', v_uid;
--- END $$;
+-- DELETE FROM weight_logs
+-- WHERE user_id = 'YOUR_USER_UUID' AND notes = 'demo_seed';
