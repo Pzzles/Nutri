@@ -1,0 +1,1235 @@
+{
+  "input": {
+    "raw_entries": [
+      {
+        "id": "i01a",
+        "measured_at": "2026-07-01T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i02a",
+        "measured_at": "2026-07-02T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i03a",
+        "measured_at": "2026-07-03T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i04a",
+        "measured_at": "2026-07-04T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i05a",
+        "measured_at": "2026-07-05T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i06a",
+        "measured_at": "2026-07-06T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i07a",
+        "measured_at": "2026-07-07T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i08a",
+        "measured_at": "2026-07-08T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i09a",
+        "measured_at": "2026-07-09T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i10a",
+        "measured_at": "2026-07-10T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i11a",
+        "measured_at": "2026-07-11T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i12a",
+        "measured_at": "2026-07-12T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i13a",
+        "measured_at": "2026-07-13T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i14a",
+        "measured_at": "2026-07-14T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i15a",
+        "measured_at": "2026-07-15T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i16a",
+        "measured_at": "2026-07-16T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i17a",
+        "measured_at": "2026-07-17T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i18a",
+        "measured_at": "2026-07-18T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i19a",
+        "measured_at": "2026-07-19T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i20a",
+        "measured_at": "2026-07-20T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i21a",
+        "measured_at": "2026-07-21T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i22a",
+        "measured_at": "2026-07-22T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i23a",
+        "measured_at": "2026-07-23T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i24a",
+        "measured_at": "2026-07-24T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i25a",
+        "measured_at": "2026-07-25T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i26a",
+        "measured_at": "2026-07-26T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i27a",
+        "measured_at": "2026-07-27T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i28a",
+        "measured_at": "2026-07-28T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i29a",
+        "measured_at": "2026-07-29T05:00:00Z",
+        "weight_kg": 110.0,
+        "is_official": true
+      },
+      {
+        "id": "i30b",
+        "measured_at": "2026-07-30T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i31b",
+        "measured_at": "2026-07-31T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i01b",
+        "measured_at": "2026-08-01T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i02b",
+        "measured_at": "2026-08-02T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i03b",
+        "measured_at": "2026-08-03T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i04b",
+        "measured_at": "2026-08-04T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i05b",
+        "measured_at": "2026-08-05T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i06b",
+        "measured_at": "2026-08-06T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i07b",
+        "measured_at": "2026-08-07T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i08b",
+        "measured_at": "2026-08-08T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i09b",
+        "measured_at": "2026-08-09T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i10b",
+        "measured_at": "2026-08-10T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i11b",
+        "measured_at": "2026-08-11T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i12b",
+        "measured_at": "2026-08-12T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i13b",
+        "measured_at": "2026-08-13T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i14b",
+        "measured_at": "2026-08-14T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i15b",
+        "measured_at": "2026-08-15T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i16b",
+        "measured_at": "2026-08-16T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i17b",
+        "measured_at": "2026-08-17T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i18b",
+        "measured_at": "2026-08-18T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i19b",
+        "measured_at": "2026-08-19T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i20b",
+        "measured_at": "2026-08-20T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i21b",
+        "measured_at": "2026-08-21T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i22b",
+        "measured_at": "2026-08-22T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i23b",
+        "measured_at": "2026-08-23T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i24b",
+        "measured_at": "2026-08-24T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i25b",
+        "measured_at": "2026-08-25T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i26b",
+        "measured_at": "2026-08-26T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "i27b",
+        "measured_at": "2026-08-27T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      }
+    ],
+    "now_iso": "2026-08-28T05:00:00Z",
+    "timezone": "Africa/Johannesburg"
+  },
+  "expected": {
+    "status": "usable",
+    "algorithm_versions": {
+      "daily_representative": "weight_daily_representative_v1",
+      "smoothing": "weight_time_ewma_v3",
+      "rate": "weight_rate_theil_sen_v1",
+      "interval": "weight_rate_interval_sen_v1",
+      "confidence": "weight_trend_confidence_v1"
+    },
+    "timezone": "Africa/Johannesburg",
+    "window": {
+      "start": "2026-07-31T05:00:00Z",
+      "end": "2026-08-27T05:00:00Z",
+      "elapsed_days": 27.0,
+      "inclusive_calendar_days": 28
+    },
+    "measurements": {
+      "raw_count": 58,
+      "valid_count": 58,
+      "distinct_modelling_days": 28,
+      "excluded_count": 0,
+      "latest_measured_at": "2026-08-27T05:00:00Z",
+      "largest_gap_days": 1.0,
+      "selected_rate_window_days": 28
+    },
+    "latest_raw_weight_kg": 105.0,
+    "latest_trend_weight_kg": 105.283039,
+    "weekly_rate": {
+      "estimate_kg": 0.0,
+      "lower_kg": 0.0,
+      "upper_kg": 0.0,
+      "bootstrap_lower_kg": 0.0,
+      "bootstrap_upper_kg": 0.0
+    },
+    "confidence": "high",
+    "warnings": [],
+    "daily_representatives": [
+      {
+        "local_date": "2026-07-01",
+        "measured_at": "2026-07-01T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i01a"
+        ]
+      },
+      {
+        "local_date": "2026-07-02",
+        "measured_at": "2026-07-02T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i02a"
+        ]
+      },
+      {
+        "local_date": "2026-07-03",
+        "measured_at": "2026-07-03T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i03a"
+        ]
+      },
+      {
+        "local_date": "2026-07-04",
+        "measured_at": "2026-07-04T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i04a"
+        ]
+      },
+      {
+        "local_date": "2026-07-05",
+        "measured_at": "2026-07-05T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i05a"
+        ]
+      },
+      {
+        "local_date": "2026-07-06",
+        "measured_at": "2026-07-06T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i06a"
+        ]
+      },
+      {
+        "local_date": "2026-07-07",
+        "measured_at": "2026-07-07T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i07a"
+        ]
+      },
+      {
+        "local_date": "2026-07-08",
+        "measured_at": "2026-07-08T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i08a"
+        ]
+      },
+      {
+        "local_date": "2026-07-09",
+        "measured_at": "2026-07-09T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i09a"
+        ]
+      },
+      {
+        "local_date": "2026-07-10",
+        "measured_at": "2026-07-10T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i10a"
+        ]
+      },
+      {
+        "local_date": "2026-07-11",
+        "measured_at": "2026-07-11T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i11a"
+        ]
+      },
+      {
+        "local_date": "2026-07-12",
+        "measured_at": "2026-07-12T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i12a"
+        ]
+      },
+      {
+        "local_date": "2026-07-13",
+        "measured_at": "2026-07-13T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i13a"
+        ]
+      },
+      {
+        "local_date": "2026-07-14",
+        "measured_at": "2026-07-14T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i14a"
+        ]
+      },
+      {
+        "local_date": "2026-07-15",
+        "measured_at": "2026-07-15T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i15a"
+        ]
+      },
+      {
+        "local_date": "2026-07-16",
+        "measured_at": "2026-07-16T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i16a"
+        ]
+      },
+      {
+        "local_date": "2026-07-17",
+        "measured_at": "2026-07-17T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i17a"
+        ]
+      },
+      {
+        "local_date": "2026-07-18",
+        "measured_at": "2026-07-18T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i18a"
+        ]
+      },
+      {
+        "local_date": "2026-07-19",
+        "measured_at": "2026-07-19T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i19a"
+        ]
+      },
+      {
+        "local_date": "2026-07-20",
+        "measured_at": "2026-07-20T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i20a"
+        ]
+      },
+      {
+        "local_date": "2026-07-21",
+        "measured_at": "2026-07-21T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i21a"
+        ]
+      },
+      {
+        "local_date": "2026-07-22",
+        "measured_at": "2026-07-22T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i22a"
+        ]
+      },
+      {
+        "local_date": "2026-07-23",
+        "measured_at": "2026-07-23T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i23a"
+        ]
+      },
+      {
+        "local_date": "2026-07-24",
+        "measured_at": "2026-07-24T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i24a"
+        ]
+      },
+      {
+        "local_date": "2026-07-25",
+        "measured_at": "2026-07-25T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i25a"
+        ]
+      },
+      {
+        "local_date": "2026-07-26",
+        "measured_at": "2026-07-26T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i26a"
+        ]
+      },
+      {
+        "local_date": "2026-07-27",
+        "measured_at": "2026-07-27T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i27a"
+        ]
+      },
+      {
+        "local_date": "2026-07-28",
+        "measured_at": "2026-07-28T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i28a"
+        ]
+      },
+      {
+        "local_date": "2026-07-29",
+        "measured_at": "2026-07-29T05:00:00Z",
+        "weight_kg": 110.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i29a"
+        ]
+      },
+      {
+        "local_date": "2026-07-30",
+        "measured_at": "2026-07-30T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i30b"
+        ]
+      },
+      {
+        "local_date": "2026-07-31",
+        "measured_at": "2026-07-31T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i31b"
+        ]
+      },
+      {
+        "local_date": "2026-08-01",
+        "measured_at": "2026-08-01T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i01b"
+        ]
+      },
+      {
+        "local_date": "2026-08-02",
+        "measured_at": "2026-08-02T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i02b"
+        ]
+      },
+      {
+        "local_date": "2026-08-03",
+        "measured_at": "2026-08-03T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i03b"
+        ]
+      },
+      {
+        "local_date": "2026-08-04",
+        "measured_at": "2026-08-04T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i04b"
+        ]
+      },
+      {
+        "local_date": "2026-08-05",
+        "measured_at": "2026-08-05T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i05b"
+        ]
+      },
+      {
+        "local_date": "2026-08-06",
+        "measured_at": "2026-08-06T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i06b"
+        ]
+      },
+      {
+        "local_date": "2026-08-07",
+        "measured_at": "2026-08-07T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i07b"
+        ]
+      },
+      {
+        "local_date": "2026-08-08",
+        "measured_at": "2026-08-08T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i08b"
+        ]
+      },
+      {
+        "local_date": "2026-08-09",
+        "measured_at": "2026-08-09T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i09b"
+        ]
+      },
+      {
+        "local_date": "2026-08-10",
+        "measured_at": "2026-08-10T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i10b"
+        ]
+      },
+      {
+        "local_date": "2026-08-11",
+        "measured_at": "2026-08-11T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i11b"
+        ]
+      },
+      {
+        "local_date": "2026-08-12",
+        "measured_at": "2026-08-12T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i12b"
+        ]
+      },
+      {
+        "local_date": "2026-08-13",
+        "measured_at": "2026-08-13T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i13b"
+        ]
+      },
+      {
+        "local_date": "2026-08-14",
+        "measured_at": "2026-08-14T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i14b"
+        ]
+      },
+      {
+        "local_date": "2026-08-15",
+        "measured_at": "2026-08-15T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i15b"
+        ]
+      },
+      {
+        "local_date": "2026-08-16",
+        "measured_at": "2026-08-16T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i16b"
+        ]
+      },
+      {
+        "local_date": "2026-08-17",
+        "measured_at": "2026-08-17T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i17b"
+        ]
+      },
+      {
+        "local_date": "2026-08-18",
+        "measured_at": "2026-08-18T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i18b"
+        ]
+      },
+      {
+        "local_date": "2026-08-19",
+        "measured_at": "2026-08-19T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i19b"
+        ]
+      },
+      {
+        "local_date": "2026-08-20",
+        "measured_at": "2026-08-20T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i20b"
+        ]
+      },
+      {
+        "local_date": "2026-08-21",
+        "measured_at": "2026-08-21T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i21b"
+        ]
+      },
+      {
+        "local_date": "2026-08-22",
+        "measured_at": "2026-08-22T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i22b"
+        ]
+      },
+      {
+        "local_date": "2026-08-23",
+        "measured_at": "2026-08-23T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i23b"
+        ]
+      },
+      {
+        "local_date": "2026-08-24",
+        "measured_at": "2026-08-24T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i24b"
+        ]
+      },
+      {
+        "local_date": "2026-08-25",
+        "measured_at": "2026-08-25T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i25b"
+        ]
+      },
+      {
+        "local_date": "2026-08-26",
+        "measured_at": "2026-08-26T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i26b"
+        ]
+      },
+      {
+        "local_date": "2026-08-27",
+        "measured_at": "2026-08-27T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "i27b"
+        ]
+      }
+    ],
+    "trend_points": [
+      {
+        "local_date": "2026-07-31",
+        "measured_at": "2026-07-31T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 109.10167678,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-01",
+        "measured_at": "2026-08-01T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 108.71498572,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-02",
+        "measured_at": "2026-08-02T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 108.36475048,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-03",
+        "measured_at": "2026-08-03T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 108.04753414,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-04",
+        "measured_at": "2026-08-04T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 107.76022378,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-05",
+        "measured_at": "2026-08-05T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 107.5,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-06",
+        "measured_at": "2026-08-06T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 107.26430916,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-07",
+        "measured_at": "2026-08-07T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 107.05083839,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-08",
+        "measured_at": "2026-08-08T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 106.85749286,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-09",
+        "measured_at": "2026-08-09T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 106.68237524,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-10",
+        "measured_at": "2026-08-10T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 106.52376707,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-11",
+        "measured_at": "2026-08-11T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 106.38011189,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-12",
+        "measured_at": "2026-08-12T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 106.25,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-13",
+        "measured_at": "2026-08-13T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 106.13215458,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-14",
+        "measured_at": "2026-08-14T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 106.0254192,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-15",
+        "measured_at": "2026-08-15T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.92874643,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-16",
+        "measured_at": "2026-08-16T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.84118762,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-17",
+        "measured_at": "2026-08-17T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.76188353,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-18",
+        "measured_at": "2026-08-18T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.69005595,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-19",
+        "measured_at": "2026-08-19T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.625,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-20",
+        "measured_at": "2026-08-20T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.56607729,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-21",
+        "measured_at": "2026-08-21T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.5127096,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-22",
+        "measured_at": "2026-08-22T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.46437322,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-23",
+        "measured_at": "2026-08-23T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.42059381,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-24",
+        "measured_at": "2026-08-24T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.38094177,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-25",
+        "measured_at": "2026-08-25T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.34502797,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-26",
+        "measured_at": "2026-08-26T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.3125,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-27",
+        "measured_at": "2026-08-27T05:00:00Z",
+        "raw_weight_kg": 105.0,
+        "trend_weight_kg": 105.28303865,
+        "alpha": 0.09427634,
+        "delta_t_days": 1.0,
+        "huber_capped": false
+      }
+    ],
+    "flagged_measurements": [],
+    "ols_diagnostic": {
+      "slope_per_day": 0.0,
+      "weekly_rate_kg": 0.0,
+      "r_squared": 1.0
+    }
+  }
+}
