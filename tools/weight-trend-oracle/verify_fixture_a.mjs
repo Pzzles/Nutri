@@ -104,6 +104,43 @@ function ols(points) {
   return { slope, intercept, r_squared: r2 };
 }
 
+// ── Sen/Kendall deterministic CI ─────────────────────────────────────────────
+// Authoritative v1 interval per Gate 1B §3.
+// Formula: Gilbert (1987) "Statistical Methods for Environmental Pollution Monitoring"
+//   N = n(n-1)/2 sorted pairwise slopes
+//   c_alpha = z_{alpha/2} * sqrt(n*(n-1)*(2n+5)/18)
+//   lo_idx = floor((N - c_alpha) / 2)        [0-indexed in sorted slopes]
+//   hi_idx = ceil( (N + c_alpha) / 2)        [0-indexed in sorted slopes]
+// Assumption: roughly i.i.d. observations. Serial correlation reduces actual coverage.
+// Returns null when lo_idx <= 0 or hi_idx >= N (insufficient data for informative CI).
+
+function senKendallCI(points, zAlpha2 = 1.959963985) {
+  const n = points.length;
+  const slopes = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx = points[j].x - points[i].x;
+      const dy = points[j].y - points[i].y;
+      if (dx > 0) slopes.push(dy / dx);
+    }
+  }
+  if (!slopes.length) return null;
+  slopes.sort((a, b) => a - b);
+  const N = slopes.length;
+  const cAlpha = zAlpha2 * Math.sqrt(n * (n - 1) * (2 * n + 5) / 18);
+  const loIdx = Math.floor((N - cAlpha) / 2);
+  const hiIdx = Math.ceil((N + cAlpha) / 2);
+  if (loIdx < 0 || hiIdx >= N) return null;
+  return {
+    lower_per_day: slopes[loIdx],
+    upper_per_day: slopes[hiIdx],
+    lo_idx: loIdx,
+    hi_idx: hiIdx,
+    n_pairs: N,
+    c_alpha: cAlpha,
+  };
+}
+
 // ── Bootstrap CI for Theil-Sen ────────────────────────────────────────────────
 
 function seededRandom(seed) {
@@ -157,10 +194,11 @@ const modPoints = REPS.map(r => ({
   y: r.w,
 }));
 
-const ts   = theilSen(modPoints);
-const olsr = ols(modPoints);
-const ci   = bootstrapCI(modPoints);
-const gaps = gapAnalysis(REPS);
+const ts      = theilSen(modPoints);
+const olsr    = ols(modPoints);
+const ci      = bootstrapCI(modPoints);
+const senCi   = senKendallCI(modPoints);
+const gaps    = gapAnalysis(REPS);
 
 console.log("=== Fixture A — Independent Verification ===\n");
 console.log(`Modelling days:          ${REPS.length}`);
@@ -185,7 +223,20 @@ console.log(`Pairs computed:          ${ts.n_pairs}`);
 console.log(`Median slope (per day):  ${ts.median_slope_per_day.toFixed(8)} kg/day`);
 console.log(`Weekly rate (×7):        ${(ts.median_slope_per_day * 7).toFixed(8)} kg/week`);
 console.log();
-console.log("--- Bootstrap CI (95%, seed=42, n=999) ---");
+console.log("--- Sen/Kendall CI (95%, deterministic) — AUTHORITATIVE v1 ---");
+if (senCi) {
+  console.log(`n_pairs (N):             ${senCi.n_pairs}`);
+  console.log(`c_alpha:                 ${senCi.c_alpha.toFixed(6)}`);
+  console.log(`lo_idx (0-based):        ${senCi.lo_idx}`);
+  console.log(`hi_idx (0-based):        ${senCi.hi_idx}`);
+  console.log(`Lower (per day):         ${senCi.lower_per_day.toFixed(8)} kg/day`);
+  console.log(`Upper (per day):         ${senCi.upper_per_day.toFixed(8)} kg/day`);
+  console.log(`Weekly CI:               [${(senCi.lower_per_day * 7).toFixed(6)}, ${(senCi.upper_per_day * 7).toFixed(6)}] kg/week`);
+} else {
+  console.log("  (insufficient data for Sen/Kendall CI)");
+}
+console.log();
+console.log("--- Bootstrap CI (95%, seed=42, n=999) — RESEARCH REFERENCE ONLY ---");
 console.log(`Lower (per day):         ${ci.lower_per_day.toFixed(8)} kg/day`);
 console.log(`Upper (per day):         ${ci.upper_per_day.toFixed(8)} kg/day`);
 console.log(`Weekly CI:               [${(ci.lower_per_day * 7).toFixed(4)}, ${(ci.upper_per_day * 7).toFixed(4)}] kg/week`);

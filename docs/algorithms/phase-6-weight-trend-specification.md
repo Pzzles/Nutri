@@ -1,8 +1,9 @@
 # Phase 6 — Weight Trend Modelling: Mathematical Specification
 
-**Version:** weight_trend_spec_v1  
-**Status:** Gate 1 frozen  
+**Version:** weight_trend_spec_v1 (Gate 1B corrections applied)
+**Status:** Gate 1B frozen
 **Supersedes:** Simple EWMA α=0.25 + OLS implemented in feat/weight-trend-modelling (Gate 2 will replace those with the algorithms defined here)
+**Baseline SHA:** `6bb6927` (Gate 1 commit — Gate 1B corrections begin from this point)
 
 ---
 
@@ -22,19 +23,29 @@ Both quantities must work correctly for all realistic logging cadences: daily, s
 | Component | Version identifier |
 |---|---|
 | Daily representative selection | `weight_daily_representative_v1` |
-| Time-aware EWMA smoother | `weight_time_ewma_v1` |
+| Time-aware EWMA smoother | `weight_time_ewma_v2` |
 | Theil-Sen rate estimator | `weight_rate_theil_sen_v1` |
+| Rate interval (authoritative) | `weight_rate_interval_sen_v1` |
+| Rate interval (research reference) | `weight_rate_interval_bootstrap_v1` |
 | Confidence scoring | `weight_trend_confidence_v1` |
+
+`weight_time_ewma_v2` replaces `weight_time_ewma_v1` (Gate 1 draft):
+- v1 computed EWMA only over the rolling window; v2 uses full history.
+- v2 adds Huber-capped innovations (see §5.4).
+
+`weight_rate_interval_sen_v1` replaces bootstrap as the authoritative interval:
+- Fully deterministic (no random seed, no sampling).
+- Degrades under serial correlation; see §6.6 for UI labelling consequences.
 
 All version identifiers are included in every calculation result.
 
 ---
 
-## 3. Input Data and Window
+## 3. Input Data
 
 ### 3.1 Source data
 
-Raw `weight_logs` rows are the immutable input. They are never modified, averaged, or deleted by the trend pipeline.
+Raw `weight_logs` rows are the immutable input. They are never modified or deleted by the trend pipeline.
 
 Required fields per row:
 - `id` — unique identifier (string)
@@ -42,30 +53,14 @@ Required fields per row:
 - `weight_kg` — numeric, must satisfy `isFinite(v) && v > 0`
 - `is_official` — boolean flag set by `fn_log_weight`
 
-### 3.2 Analysis window
-
-**Authoritative window for current rolling trend: 28 calendar days.**
-
-Justification:
-- Matches the standard four-week fitness review cycle.
-- For daily users (28 modelling days): Theil-Sen has 378 pairs — excellent statistical power.
-- For weekly users (4 modelling days): bootstrap CI will be wide; confidence system reflects this honestly by returning `low` or `provisional`. This is the correct behaviour — it does not hide poor-quality data.
-- For sporadic users: the window correctly captures whatever data exists in the last four weeks.
-
-The window is measured from `now` in calendar time, not from the last N measurements.
-
-Additional windows:
-- **Goal-phase trend:** from `goal_phase.start_date` to `now` (separate calculation, not mixed with rolling window)
-- **Long-term history:** all available data, EWMA line displayed but no single slope claimed
-
-### 3.3 Validity filtering
+### 3.2 Validity filtering
 
 Entries are excluded from modelling if:
 - `weight_kg` is not finite
 - `weight_kg ≤ 0`
 - `measured_at` cannot be parsed as a valid timestamp
 
-Excluded entries are returned in `flagged_measurements` with their `id`. They remain in raw history and are never deleted automatically.
+Excluded entries are returned in `flagged_measurements` with their `id`. They remain in raw history.
 
 ---
 
@@ -93,34 +88,49 @@ At most one representative value is produced per local calendar day.
 
 | Case | Condition | Action |
 |---|---|---|
-| A | One entry, official | Use it |
+| A | Exactly one entry (official or not) | Use it |
 | B | Multiple entries, exactly one official | Use the official entry |
-| C | Multiple entries, none official | Use the **median** of valid `weight_kg` values |
-| D | Multiple entries, more than one official | Use the **latest by `measured_at`**, emit `multiple_official_entries` warning |
+| C | Multiple entries, none official | Median weight; median timestamp (see below) |
+| D | Multiple entries, more than one official | Latest by `measured_at` wins; emit `multiple_official_entries` warning |
 | E | All entries invalid | Emit `no_valid_entries` warning; no representative for this day |
 
-Case D is a data-integrity anomaly. The behaviour is deterministic: latest official wins. The warning is surfaced in the result; it is not silently ignored.
+**Case C — median weight:**
+Sort valid `weight_kg` values. For odd count `n`, use `values[floor(n/2)]`. For even count `n`, use the average of `values[n/2−1]` and `values[n/2]`. The result may be a non-observed value (average of two entries).
 
-**Consequence for measurement bursts:** seven readings on one calendar day produce exactly one modelling point (the official one, or the median). Confidence metrics use distinct modelling days, not raw row count.
+**Case C — median timestamp (frozen in Gate 1B):**
+Sort entries by `measured_at`. For odd count `n`, use the entry at index `floor(n/2)` (middle entry). For even count `n`, use the entry at index `n/2 − 1` (lower-middle entry). The representative `measured_at` is always the timestamp of a specific observed entry — never an interpolated midpoint.
+
+This rule ensures the representative timestamp is deterministic regardless of count parity.
+
+**Return `source_measurement_ids`:** every result includes the `id`(s) of the entry or entries that contributed to the representative. For Cases A, B, D: one ID. For Case C: all IDs from that day.
+
+**Consequence for measurement bursts:** seven readings on one calendar day produce exactly one modelling point. Confidence metrics use distinct modelling days, not raw row count.
 
 ---
 
-## 5. Pipeline A — Time-Aware EWMA (`weight_time_ewma_v1`)
+## 5. Pipeline A — Time-Aware EWMA (`weight_time_ewma_v2`)
 
 ### 5.1 Formula
 
 ```
 alpha(delta_t) = 1 − 2^(−delta_t / half_life_days)
 
-trend_i = alpha(delta_t_i) × w_i + (1 − alpha(delta_t_i)) × trend_(i−1)
+innovation_i = w_i − trend_{i−1}
+cap_i        = max(trend_{i−1} × huber_fraction, huber_min_kg)
+
+effective_innovation_i = clamp(innovation_i, −cap_i, +cap_i)
+
+trend_i = trend_{i−1} + alpha(delta_t_i) × effective_innovation_i
 ```
 
 Where:
-- `delta_t_i` — elapsed time in fractional days between the previous representative's `measured_at` and the current one's `measured_at`
+- `delta_t_i` — elapsed fractional days from previous representative's `measured_at` to current
 - `w_i` — daily representative weight in kg
-- `half_life_days = 7` (versioned; changing it requires a new version identifier)
+- `half_life_days = 7` (product configuration; changing requires new version)
+- `huber_fraction = 0.05` (5% of current trend weight; product configuration)
+- `huber_min_kg = 5.0` (minimum cap in kg; product configuration)
 
-Timestamps are not rounded to integer days. Fractional elapsed time is used throughout.
+Timestamps are not rounded to integer days.
 
 ### 5.2 Initialisation
 
@@ -128,42 +138,53 @@ Timestamps are not rounded to integer days. Fractional elapsed time is used thro
 trend_0 = w_0
 ```
 
-The first daily representative in the calculation window initialises the trend. All intermediate calculations retain full floating-point precision. The final result is rounded to six decimal places for output.
+The first-ever daily representative initialises the trend (alpha=None, huber_capped=False). **The EWMA is computed from the first available representative across all history, not from the start of the display window.**
 
-**Consequences of this initialisation:**
-- If the first measurement is an outlier, the trend starts from that outlier and will converge toward the true weight over subsequent measurements. The convergence rate depends on how many measurements follow and their timing.
-- The trend is therefore biased toward the first measurement early in the window. This resolves naturally as more data accumulates.
-- Alternative (e.g., average of first N values) would reduce this sensitivity but adds complexity. Version 1 uses single-point initialisation.
+### 5.3 Full-history stateful EWMA
 
-### 5.3 Half-life analysis
+The EWMA processes **all** historical representatives in chronological order. The rolling display window (28 calendar days) is applied only when filtering `trend_points` for output — it does not restart the EWMA computation.
+
+**Consequence:** if a user has 60 days of history and the display window covers only the last 28 days, the trend value at the start of the display window correctly reflects the prior 32 days of history. This prevents the trend from appearing to reset on each page load or window shift.
+
+**Example (Fixture I):** 29 days stable at 110.0 kg, then 29 days at 105.0 kg. The first displayed trend point (day 30 of history) is ≈ 109.1 kg — not 105.0 kg, which a window-reset EWMA would incorrectly give.
+
+### 5.4 Huber-capped innovations
+
+**Rationale:** without innovation capping, a single extreme reading (e.g., 130 kg against a 103 kg trend) after a long gap produces an alpha close to 1, moving the trend to near 130 kg immediately. A subsequent return to 103 kg then over-corrects downward. The trend oscillates visually in a way that confuses users without providing information about true weight.
+
+**Mechanism:** the innovation `w_i − trend_{i−1}` is clamped to `±cap_i` before being applied. This prevents any single measurement from moving the trend by more than `cap_i` kg.
+
+**Cap formula:** `cap_i = max(trend_{i−1} × 0.05, 5.0)`
+
+For a 100 kg user: `cap = max(5.0, 5.0) = 5.0 kg`
+For a 103 kg user: `cap = max(5.15, 5.0) = 5.15 kg`
+For a 150 kg user: `cap = max(7.5, 5.0) = 7.5 kg`
+
+**Boundary case:** `|innovation| > cap` triggers capping (strict inequality). Equal-to-cap does not trigger capping. This means a genuine +5.0 kg shift from a 100 kg trend is **not capped** — the normal EWMA applies.
+
+**Confirmed in Fixture K:** 14 days at 100 kg followed by 14 days at 105 kg. First innovation on shift day = 5.0, cap = 5.0. `5.0 > 5.0` is False → not capped. Trend converges correctly toward 105 kg.
+
+**Confirmed in Fixture J:** 130 kg spike from 103 kg trend after 22-day gap. Innovation = 27, cap = 5.15. `27 > 5.15` → capped. Trend moves to ≈ 104.43 kg, not close to 130 kg.
+
+**`huber_capped` flag:** each trend point includes `huber_capped: bool`. When true, the output value was computed from a capped innovation. This is visible in the data contract and can be used for diagnostic UI overlays.
+
+### 5.5 Half-life analysis
 
 | delta_t | alpha | Effect |
 |---|---|---|
-| 0 days | 0 | No update — impossible in practice (same-day entries are consolidated) |
-| 1 day | ≈ 0.0943 | Daily user: each new measurement contributes ~9.4% weight |
-| 7 days | 0.5 | Weekly user: each measurement contributes 50% weight |
-| 14 days | 0.75 | Two-week gap: new measurement dominates (75%) — appropriate after long absence |
+| 0 days | 0 | No update — impossible in practice |
+| 1 day | ≈ 0.0943 | Daily user: ~9.4% weight to new measurement |
+| 7 days | 0.5 | Weekly user: 50% weight to new measurement |
+| 14 days | 0.75 | Two-week gap: new measurement dominates |
 | 21 days | ≈ 0.875 | Three-week gap: near-full replacement |
 
-**Effective lookback (centre of mass):** `half_life / ln(2) ≈ 10.1 days` for any cadence.
+**Effective lookback (centre of mass):** `half_life / ln(2) ≈ 10.1 days`.
 
-**Convergence across cadences:** time-aware EWMA converges to the same stable value regardless of measurement frequency. At stable weight W with any cadence, each step moves `alpha × (W − trend)` toward W. This is a mathematical property of the formula, not an assumption.
+**Comparison with simple EWMA (α=0.25):** simple EWMA treats a daily measurement and a monthly measurement identically. Time-aware EWMA correctly gives more weight to a measurement arriving after a long gap.
 
-**Comparison with simple EWMA (α=0.25):**
-Simple EWMA with α=0.25 treats a daily measurement and a monthly measurement identically. Time-aware EWMA correctly gives more weight to a measurement that arrives after a long gap, as it represents more accumulated elapsed time.
+### 5.6 Missing periods
 
-### 5.4 Missing periods
-
-No synthetic values are invented for days with no measurements. The smoother simply skips to the next observed representative, applying the full elapsed-time decay. A three-week gap results in alpha≈0.875; the new measurement heavily dominates, which is the correct mathematical response.
-
-### 5.5 Outlier policy for Pipeline A
-
-All valid daily representatives are included in the EWMA — including statistical outliers. The time-aware formula partially self-corrects because each outlier's influence decays with half-life of 7 days.
-
-**Trade-off documented:**
-- Smoothing every valid measurement preserves responsiveness to genuine weight changes.
-- A robust pre-smoother (e.g., Winsorise before EWMA) would reduce outlier impact further but introduces additional model decisions (threshold selection, definition of "outlier" pre-smoothing vs post-smoothing).
-- **Version 1 decision: no pre-smoother.** Outliers are flagged in `flagged_measurements` and visible to the user. The Theil-Sen rate estimator in Pipeline B is robust to outliers independently.
+No synthetic values are invented for days with no measurements. The smoother skips to the next observed representative, applying full elapsed-time decay.
 
 ---
 
@@ -171,12 +192,27 @@ All valid daily representatives are included in the EWMA — including statistic
 
 ### 6.1 Input
 
-Daily representatives (not EWMA points). The rate pipeline uses raw representative weights to avoid circularity between the smoother and the rate estimate.
+Daily representatives within the **adaptive rate window** (see §6.2). Rate uses raw representative weights to avoid circularity between the smoother and the rate estimate.
 
-### 6.2 Theil-Sen slope
+### 6.2 Adaptive rate window
+
+The rate window is selected dynamically to ensure at least 6 distinct modelling days:
+
+1. Try 28 calendar days: if ≥ 6 distinct modelling days → use 28
+2. Try 56 calendar days: if ≥ 6 distinct modelling days → use 56
+3. Try 84 calendar days: if ≥ 6 distinct modelling days → use 84
+4. If no candidate qualifies → no rate (`selected_rate_window_days: null`)
+
+The selected window is included in output as `measurements.selected_rate_window_days`.
+
+**Rationale:** a fixed 28-day window fails weekly users. With 4 measurements in 28 days, no CI is possible. The adaptive window gives weekly users a meaningful rate at 56 days (8 measurements), and very sparse users at 84 days (≥ 6 measurements).
+
+**EWMA is not affected by the rate window.** The EWMA uses full history regardless of which rate window is selected (see §5.3).
+
+### 6.3 Theil-Sen slope
 
 ```
-x_i = elapsed days from first modelling date (fractional)
+x_i = elapsed days from first representative in rate window (fractional)
 y_i = representative weight in kg
 
 slope = median of all pairwise slopes (y_j − y_i) / (x_j − x_i) for j > i
@@ -184,76 +220,109 @@ slope = median of all pairwise slopes (y_j − y_i) / (x_j − x_i) for j > i
 weekly_rate_kg = slope × 7
 ```
 
-All pairs with `x_j > x_i` are included. Duplicate timestamps (same `x`) are excluded from slope pairs to avoid division by zero; such cases are also caught by the daily-representative consolidation step.
+All pairs with `x_j > x_i` are included. Pairs with `x_j = x_i` (same timestamp — not possible after daily consolidation) are excluded.
 
-### 6.3 Why Theil-Sen over OLS
+### 6.4 Why Theil-Sen over OLS
 
-OLS minimises squared residuals and is sensitive to outliers — one extreme reading can shift the slope significantly. Theil-Sen uses the median of pairwise slopes, which has a breakdown point of ~29% (i.e., up to 29% of data points can be outliers without corrupting the estimate). For a 28-day window with up to 28 measurements, this means several outlier days have minimal effect.
+Theil-Sen breakdown point ≈ 29%: up to 29% of data points can be outliers without corrupting the estimate. OLS is sensitive to a single extreme reading.
 
-OLS is retained as a diagnostic output (`ols_diagnostic`) for reference and verification. It is not the authoritative rate estimate.
+OLS is retained as `ols_diagnostic` for reference. It is not the authoritative rate estimate.
 
-### 6.4 Computational cost
+### 6.5 Computational cost
 
-For n modelling days, Theil-Sen requires `n(n-1)/2` pairwise slopes.
+For n modelling days: `n(n−1)/2` pairwise slopes.
 
-| Window | Max modelling days | Pairs |
+| Rate window | Typical modelling days | Pairs |
 |---|---|---|
-| 28 days | 28 | 378 |
-| 42 days | 42 | 861 |
-| 2 years | 730 | 266,085 |
+| 28 days | ≤ 28 | ≤ 378 |
+| 56 days | ≤ 56 | ≤ 1,540 |
+| 84 days | ≤ 84 | ≤ 3,486 |
 
-For the 28-day rolling window, computation is negligible (<1ms). Even multi-year history is feasible.
+All feasible in < 5ms.
 
-### 6.5 Behaviour with special data patterns
+### 6.6 Authoritative uncertainty interval — Sen/Kendall (`weight_rate_interval_sen_v1`)
 
-| Pattern | Behaviour |
-|---|---|
-| Duplicate timestamps | Excluded from slope pairs (no zero-divisor crash) |
-| Sparse data (4 points) | 6 pairs — rate calculated, CI is wide |
-| Clustered at one end | All pairwise slopes include cross-cluster pairs; rate is still computed |
-| Long window with phase changes | Rate reflects the overall window slope; user should use goal-phase isolation |
+**Method:** Gilbert (1987) ordered-slope interval derived from Kendall's distribution. Fully deterministic — no random seed, no resampling.
 
-### 6.6 Uncertainty interval
-
-**Method: Percentile bootstrap CI.**
-
-- `n_boot = 999` resample iterations
-- Fixed seed `42` for deterministic output
-- 95% CI (`alpha = 0.05`)
-- Minimum 6 distinct modelling days required; below this threshold, CI is omitted (`null`)
-
-**Statistical defensibility:**
-Bootstrap CI is non-parametric and makes no distributional assumptions. It is valid for Theil-Sen and correctly propagates to wider intervals when data is sparse. The percentile method is appropriate here; BCa (bias-corrected accelerated) bootstrap would be marginally more accurate for skewed distributions but adds implementation complexity without meaningful practical benefit given typical weight noise distributions.
-
-**Minimum data requirement for CI:** 6 modelling days. With n=6, the bootstrap has 6^6 = 46,656 possible resamples with replacement — sufficient for stable percentile estimates. With n<6 the interval is unreliable and is omitted.
-
-### 6.7 Output
+**Formula:**
 
 ```
-weekly_rate: {
-  estimate_kg:  -0.700426   // Theil-Sen × 7
-  lower_kg:     -0.858090   // bootstrap 2.5th percentile × 7
-  upper_kg:     -0.583333   // bootstrap 97.5th percentile × 7
+N      = n(n−1)/2   (number of sorted pairwise slopes)
+c_α    = 1.959963985 × √(n(n−1)(2n+5)/18)
+lo_idx = floor((N − c_α) / 2)     [0-based index into sorted slopes]
+hi_idx = ceil( (N + c_α) / 2)     [0-based index into sorted slopes]
+CI     = (slopes[lo_idx], slopes[hi_idx])
+```
+
+Returns `null` if `lo_idx < 0` or `hi_idx ≥ N` (interval spans full range — insufficient data). Minimum 6 modelling days required.
+
+**Serial-correlation assumption and UI labelling:**
+
+This interval assumes roughly i.i.d. observations. Daily weight measurements exhibit positive AR(1) correlation. Empirical coverage simulation (Gate 1B §7, 2000 replicates per scenario, LCG seed 20260801):
+
+| Noise model | φ | n | Empirical coverage |
+|---|---|---|---|
+| Independent normal | 0.00 | 24 | 95.5% ✓ |
+| AR(1) mild | 0.30 | 24 | 88.4% |
+| AR(1) moderate | 0.60 | 24 | 71.5% |
+| AR(1) strong | 0.85 | 24 | 52.9% |
+| Independent weekly | 0.00 | 8 | 95.3% ✓ |
+| Independent minimal | 0.00 | 6 | 96.5% ✓ |
+| Stable (slope=0, φ=0.60) | 0.60 | 24 | 71.5% |
+
+**Conclusion:** coverage drops severely under realistic serial correlation (φ=0.3–0.6 typical for daily weight). The interval must **NOT** be labelled "95% confidence interval" in the UI.
+
+**Required UI label:** "uncertainty range" (not "95% confidence interval" or "95% CI").
+
+**Rate of correlation decay:** the actual correlation structure of a user's weight depends on their diet consistency, water intake patterns, and measurement conditions. The φ = 0.3–0.6 range is a plausible assumption; φ = 0.85 is likely an upper bound.
+
+**Tie handling:** identical pairwise slopes are handled naturally by the median selection. Identical x-values (same timestamp) are excluded. The normal approximation to Kendall's distribution does not include a tie correction; this introduces negligible error for floating-point weight measurements.
+
+### 6.7 Research reference — Bootstrap CI (`weight_rate_interval_bootstrap_v1`)
+
+The bootstrap CI (percentile bootstrap, n=999, seed=42) is retained in the oracle output for comparison and research purposes only. It is **not** the authoritative v1 interval and must not be surfaced in the user-facing UI.
+
+Bootstrap results appear in the oracle output under `weekly_rate.bootstrap_lower_kg` and `weekly_rate.bootstrap_upper_kg`.
+
+**Why bootstrap was rejected as v1:**
+1. Not deterministic — the bootstrap seed is an arbitrary implementation choice, not a mathematical property.
+2. Makes implicit independence assumption (resamples are drawn independently), which is no better than Sen/Kendall for correlated data.
+3. Results from different oracle implementations may differ even with the same seed if they use different RNG implementations.
+
+### 6.8 Output
+
+```json
+"weekly_rate": {
+  "estimate_kg":        -0.700426,
+  "lower_kg":           -0.816667,
+  "upper_kg":           -0.612500,
+  "bootstrap_lower_kg": -0.855061,
+  "bootstrap_upper_kg": -0.592308
 }
 ```
+
+`lower_kg` and `upper_kg` are the Sen/Kendall authoritative interval.
+`bootstrap_*` are research reference only.
 
 ---
 
 ## 7. Analysis Windows
 
-### 7.1 Current rolling trend (v1)
+### 7.1 Rate window (adaptive)
 
-**28 calendar days** (see §3.2 for justification).
+28 / 56 / 84 calendar days — see §6.2.
 
-### 7.2 Goal-phase trend (future)
+### 7.2 Display window (fixed)
 
-Calculated over `[goal_phase.start_date, now]`. Uses the same pipeline. Does not mix measurements from before the current phase. Not implemented in Phase 6; defined here for completeness.
+28 calendar days for `trend_points`. The EWMA is computed over full history; only the last 28 days are included in the output array. The `window` block in the output reflects the display window, not the rate window.
 
-### 7.3 Long-term history
+### 7.3 Goal-phase trend (future)
 
-Display raw dots + EWMA trend line over all available data. Do not report a single slope across multiple behavioural phases as the current rate. The rolling 28-day window produces a rate at any point in time; the long-term view shows how that rate moved over history.
+Calculated over `[goal_phase.start_date, now]`. Uses the same pipeline. Not implemented in Phase 6.
 
-Phase transitions (loss → maintenance → regain) are visible as slope changes in the historical EWMA line, not as a single confusing average.
+### 7.4 Long-term history
+
+EWMA trend over all available data. Rate displayed only for the adaptive rate window; no single slope is reported across multi-year history. Phase transitions are visible as slope changes in the historical EWMA line.
 
 ---
 
@@ -261,13 +330,13 @@ Phase transitions (loss → maintenance → regain) are visible as slope changes
 
 | Status | Condition |
 |---|---|
-| `insufficient_measurements` | distinct modelling days < 4 |
-| `insufficient_coverage` | coverage < 7 days |
+| `insufficient_measurements` | distinct modelling days in rate window < 4 |
+| `insufficient_coverage` | elapsed coverage in rate window < 7 days |
 | `provisional` | 4–5 modelling days OR 7–13 days coverage |
-| `usable` | ≥ 6 modelling days AND ≥ 14 days coverage AND ≤ 14 days recency |
+| `usable` | ≥ 6 days AND ≥ 14 days coverage AND ≤ 14 days recency |
 | `stale` | latest measurement > 14 days ago |
 
-These are the same thresholds applied regardless of cadence. A weekly user reaches `usable` after five weeks; a daily user reaches it after two weeks.
+A daily user reaches `usable` after ≥ 14 days. A weekly user (4 per month) has ≥ 6 measurements in the 56-day window after two months of consistent logging.
 
 ---
 
@@ -281,27 +350,29 @@ Confidence is `low | medium | high`. It is not a probability.
 - Distinct modelling days < 6
 - Coverage days < 14
 - Days since latest measurement > 14
-- Bootstrap CI width (weekly) > 1.0 kg/week
+- Sen/Kendall CI width (weekly) > 1.0 kg/week
 
 **High** if all of:
 - Distinct modelling days ≥ 10
 - Coverage days ≥ 21
 - Days since latest measurement ≤ 7
 - Largest gap ≤ 7 days
-- Bootstrap CI width (weekly) ≤ 0.50 kg/week
+- Sen/Kendall CI width (weekly) ≤ 0.50 kg/week
 
 **Medium** otherwise.
 
 ### 9.2 Example user-facing display
 
 ```
-Estimated rate:  −0.70 kg/week
-Likely range:    −0.86 to −0.58 kg/week
-Confidence:      Medium
+Estimated rate:   −0.70 kg/week
+Uncertainty range: −0.82 to −0.61 kg/week
+Confidence:        High
 Based on 24 measurement days across 28 days
-Largest gap:     2 days
-Latest:          1 day ago
+Largest gap:       2 days
+Latest:            1 day ago
 ```
+
+Label: "uncertainty range" (not "95% CI"). See §6.6.
 
 Do not display: `Accuracy: 87%`. No probability calibration has been performed.
 
@@ -311,10 +382,10 @@ Do not display: `Accuracy: 87%`. No probability calibration has been performed.
 
 ### 10.1 Default view
 
-1. **Raw measurement dots** — all valid measurements in the window, one dot per raw entry
-2. **Smoothed trend line** — EWMA trend weight connected across modelling days
+1. **Raw measurement dots** — all valid measurements in the display window
+2. **Smoothed trend line** — EWMA trend weight connected across modelling days (full-history EWMA)
 
-The weekly rate is displayed numerically alongside the chart, not as a second line.
+The weekly rate is displayed numerically alongside the chart.
 
 ### 10.2 Point styling
 
@@ -322,54 +393,51 @@ The weekly rate is displayed numerically alongside the chart, not as a second li
 |---|---|
 | Official entry | Hollow circle, brand colour |
 | Non-official entry | Smaller hollow circle, muted colour |
-| Flagged (statistical outlier) | Orange/amber circle |
-
-Same-day raw points are all displayed. Only the official one feeds the modelling pipeline.
+| Huber-capped EWMA point | Small indicator (design to be determined in Gate 2) |
 
 ### 10.3 Gap behaviour
 
-Long gaps must not imply continuity. The EWMA trend line:
-- **Stops at the last observed modelling point** (preferred for version 1)
-- Resumes at the next modelling point when a new measurement arrives
-
-Connecting across gaps with a dashed line is an acceptable v2 option but is not the default, as it may be misread as interpolation.
+Long gaps must not imply continuity. The EWMA trend line stops at the last observed modelling point and resumes at the next.
 
 ### 10.4 Tooltip contents
 
 ```
-Raw weight:   103.0 kg        (measured value)
-Trend weight: 103.55 kg       (EWMA, if available)
+Raw weight:   103.0 kg
+Trend weight: 103.55 kg
 Date:         30 Jul 2026
 Time:         07:30 (SAST)
-Outlier:      ⚠ flagged       (if is_outlier)
 ```
 
 ---
 
 ## 11. Known Limitations
 
-1. **Initialisation bias.** The EWMA starts from the first measurement in the window. An outlier in the first position biases the trend for several subsequent measurements. Mitigated by the 28-day window (the first point's influence decays after ~3 half-lives ≈ 21 days).
+1. **Initialisation bias (first-ever measurement).** The EWMA starts from the first-ever representative. An extreme first measurement biases the trend for several subsequent measurements. Mitigated by the large alpha(t) for long elapsed times.
 
-2. **Bootstrap CI stability at n<10.** With fewer than 10 modelling days the bootstrap CI may be asymmetric or wide. The confidence scoring accounts for this, but the interval itself should be interpreted cautiously.
+2. **Sen/Kendall CI coverage under correlated noise.** See §6.6. Nominal 95% but actual coverage ~70–90% under realistic daily AR(1) correlation. The "uncertainty range" UI label correctly does not promise 95% coverage.
 
 3. **Goal-phase isolation not implemented.** Phase 6 does not separate phases. A user who transitioned from loss to maintenance will have a rolling rate that blends both.
 
-4. **No biological plausibility filter.** A 10 kg overnight swing that passes database validation (1–500 kg) will be included in the EWMA. The flag system identifies it but does not exclude it from Pipeline A.
+4. **Huber parameters are product configuration, not clinical constants.** `huber_fraction=0.05`, `huber_min_kg=5.0` are reasonable defaults but have not been validated against clinical weight-loss data. They may need tuning based on user feedback.
 
-5. **No adaptive window.** Weekly users with only 4 modelling days in 28 days will receive `provisional` status. A future version could dynamically extend the window to 42–56 days for such users.
+5. **Sparse users below 84-day threshold.** A user with fewer than 6 modelling days across their entire history gets no rate. No further fallback is implemented. Status: `insufficient_measurements`.
 
 ---
 
-## 12. Unresolved Decisions
+## 12. Resolved Decisions (Gate 1B)
 
-The following are open for Gate 2 and beyond:
+The following decisions were unresolved at Gate 1 and are now frozen:
 
-1. **Dynamic window extension.** Should the system automatically extend from 28 to 42 days for users with <6 modelling days in the default window?
-2. **OLS residual as outlier detection.** Should measurements with OLS residual > 2.5σ be flagged as statistical outliers in `flagged_measurements`?
-3. **Non-official entries when no official exists.** Case C uses median of non-official entries for a day's representative. Should such days count toward modelling days for confidence scoring?
-4. **Chart gap visual.** Version 1 stops the trend line at the last observation. Version 2 may draw a dashed connector. Decision deferred to UI review.
-5. **Goal-phase isolation.** Requires goal-phase start/end dates from the goals system. Not available in Phase 6.
-6. **Bootstrap CI method.** BCa bootstrap is marginally more accurate than percentile for skewed data. Deferred pending evidence that percentile CI is meaningfully biased in practice.
+1. **Adaptive rate window:** 28/56/84 days based on ≥6 modelling days. Implemented.
+2. **Uncertainty interval method:** Sen/Kendall deterministic interval. Bootstrap retained as research reference.
+3. **EWMA window behaviour:** full-history stateful (v2). Does not restart at display window boundary.
+4. **Case C median timestamp:** lower-middle entry by `measured_at` for even count. Implemented.
+5. **Outlier protection for Pipeline A:** Huber-capped innovation with `cap = max(trend × 0.05, 5.0)`. Implemented as part of `weight_time_ewma_v2`.
+
+Remaining open for Gate 2:
+- Chart gap visual (dashed connector vs. break)
+- Goal-phase isolation (requires goals system)
+- OLS residual as secondary outlier flag
 
 ---
 
@@ -377,58 +445,55 @@ The following are open for Gate 2 and beyond:
 
 ### 13.1 Does seven-day half-life create acceptable lag?
 
-**Yes.** Centre-of-mass lookback is `7/ln(2) ≈ 10.1 days` for any cadence. For a user detecting ~0.5 kg/week change against ~1 kg daily noise, the 7-day half-life smooths approximately one week of fluctuation while remaining responsive to genuine trends. A shorter half-life (e.g., 3–4 days) would be noisier; a longer half-life (e.g., 14 days) would lag genuine changes by two weeks. This is a product configuration choice, not a clinically validated constant.
+**Yes.** Centre-of-mass lookback is `7/ln(2) ≈ 10.1 days`. For ~0.5 kg/week genuine change against ~1 kg daily noise, 7-day half-life provides appropriate smoothing while remaining responsive. Product configuration, not clinically validated.
 
 ### 13.2 Does time-aware EWMA converge across cadences?
 
-**Yes.** Mathematical fact: when the true weight is constant at W, each step moves the trend `alpha(delta_t) × (W − trend)` toward W regardless of delta_t. The convergence is slower for infrequent users (fewer updates per calendar period) but the limiting value is identical.
+**Yes.** Mathematical fact: for constant true weight W, each step moves trend `alpha(delta_t) × (W − trend)` toward W regardless of cadence.
 
 ### 13.3 Is Theil-Sen computationally practical?
 
-**Yes.** Maximum 378 pairwise slopes for 28 daily measurements. Even 2 years of daily data (730 points) requires 266,085 comparisons — well within the capacity of any modern device in under 5ms.
+**Yes.** Maximum 3,486 pairwise slopes for the 84-day rate window (84 daily measurements). Well within < 5ms on any modern device.
 
-### 13.4 What exact uncertainty method will be used?
+### 13.4 What exact uncertainty method is used?
 
-Percentile bootstrap, n=999, seed=42, 95% CI. See §6.6.
+Sen/Kendall deterministic ordered-slope interval, nominal 95%, `z=1.959963985`. See §6.6. **Not** bootstrap. Percentile bootstrap retained as research reference only.
 
 ### 13.5 How does it behave with sparse data?
 
-With n=6 points, the CI exists but is wide. The confidence system caps at `low` when CI width > 1.0 kg/week. Below n=6 modelling days, CI is omitted entirely.
+With the 84-day adaptive window, a user with ≥ 6 modelling days in 84 days gets a rate and CI. Below 6 days: rate is null. Status: `insufficient_measurements`.
 
 ### 13.6 Minimum modelling days for interval?
 
-6 distinct modelling days. See §6.6.
+6 distinct modelling days. Verified algebraically: at n=6, `lo_idx=2, hi_idx=13` (out of 15 slopes) — a non-trivial interval. At n=5, `hi_idx ≥ N` → no interval.
 
 ### 13.7 Should confidence depend directly on interval width?
 
-**Yes.** Wide CI (> 1.0 kg/week) → `low`. Medium CI (0.5–1.0 kg/week) → caps at `medium`. Narrow CI (≤ 0.5 kg/week) is one of the conditions for `high`. The interval width is an empirical measure of rate reliability and should directly influence the confidence label.
+**Yes.** CI width > 1.0 kg/week → `low`. 0.5–1.0 → caps at `medium`. ≤ 0.5 → one of the `high` conditions. CI width directly measures rate reliability.
 
 ### 13.8 Is daily consolidation sufficient to prevent bursts?
 
-**Yes.** After daily consolidation, the maximum contribution of any calendar day is one modelling point. Seven readings on one day = one modelling point. No additional density weighting is necessary.
+**Yes.** Seven readings on one calendar day → one modelling point. No density weighting needed.
 
-### 13.9 Rolling window: 28, 42, or 56 days?
+### 13.9 Rate window: why adaptive?
 
-**28 days.** See §3.2 for full justification. The confidence system honestly communicates when 28 days is insufficient (weekly users early in their tracking history).
+Fixed 28-day window fails weekly users (4 measurements → no CI). Adaptive 28/56/84 gives weekly users a rate at 56 days with ≥ 8 measurements. Very sparse users at 84 days with ≥ 6 measurements. Users with < 6 across all history get an honest "insufficient" status rather than a misleading narrow-window result.
 
 ### 13.10 How are goal-phase trends separated?
 
-Goal-phase trend: calculated from `goal_phase.start_date` to `now`, same pipeline, different window bounds. Not implemented in Phase 6.
+Not implemented in Phase 6. Requires goal-phase start/end dates from the goals system.
 
-### 13.11 How are long-term charts calculated?
-
-EWMA over all available data (no window cap). Rate displayed only for the 28-day rolling window; the long-term chart does not report a single slope. See §7.3.
-
-### 13.12 What is product choice vs validated constant?
+### 13.11 What is product choice vs validated constant?
 
 | Item | Classification |
 |---|---|
 | `half_life_days = 7` | Product configuration |
-| Rolling window = 28 days | Product configuration |
-| Bootstrap CI 95% | Statistical convention |
-| Bootstrap seed = 42 | Implementation choice (reproducibility) |
-| Minimum 6 days for CI | Statistical guideline |
+| Rate window candidates [28, 56, 84] | Product configuration |
+| `huber_fraction = 0.05` | Product configuration |
+| `huber_min_kg = 5.0` | Product configuration |
+| Sen/Kendall 95% nominal | Statistical convention |
+| Minimum 6 days for CI | Statistical guideline (algebraic requirement) |
 | Theil-Sen as estimator | Statistical fact (more robust than OLS) |
-| Convergence of time-aware EWMA | Mathematical fact |
 | CI width → confidence cap | Product policy |
-| 1–500 kg database validity range | Product / clinical convention |
+| UI label "uncertainty range" | Required by §6.6 coverage results |
+| Convergence of time-aware EWMA | Mathematical fact |
