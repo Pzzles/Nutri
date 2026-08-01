@@ -1,8 +1,9 @@
 import { useState } from "react";
 import Goals from "./Goals";
 import WeightLogPage from "./WeightLog";
+import { AdaptiveMaintenanceCard } from "../components/AdaptiveMaintenanceCard";
 
-type Tab = "goals" | "weight";
+type Tab = "goals" | "weight" | "maintenance";
 
 export default function Progress() {
   const [tab, setTab] = useState<Tab>("goals");
@@ -11,8 +12,9 @@ export default function Progress() {
     <div>
       {/* Tab bar */}
       <div className="flex border-b border-border bg-surface">
-        <TabButton label="Goals" active={tab === "goals"} onClick={() => setTab("goals")} />
-        <TabButton label="Weight" active={tab === "weight"} onClick={() => setTab("weight")} />
+        <TabButton label="Goals"       active={tab === "goals"}       onClick={() => setTab("goals")} />
+        <TabButton label="Weight"      active={tab === "weight"}      onClick={() => setTab("weight")} />
+        <TabButton label="Maintenance" active={tab === "maintenance"} onClick={() => setTab("maintenance")} />
       </div>
 
       {/* Content */}
@@ -21,6 +23,9 @@ export default function Progress() {
       </div>
       <div className={tab === "weight" ? "" : "hidden"}>
         <WeightLogPage />
+      </div>
+      <div className={tab === "maintenance" ? "p-4 max-w-xl mx-auto" : "hidden"}>
+        <AdaptiveMaintenanceCard />
       </div>
     </div>
   );
