@@ -40,3 +40,8 @@ desktop.ini
 web/coverage/
 web/playwright-report/
 web/test-results/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo

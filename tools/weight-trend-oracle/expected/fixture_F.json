@@ -1,0 +1,276 @@
+{
+  "input": {
+    "raw_entries": [
+      {
+        "id": "f01",
+        "measured_at": "2026-06-06T05:00:00Z",
+        "weight_kg": 105.0,
+        "is_official": true
+      },
+      {
+        "id": "f02",
+        "measured_at": "2026-06-13T05:00:00Z",
+        "weight_kg": 104.3,
+        "is_official": true
+      },
+      {
+        "id": "f03",
+        "measured_at": "2026-06-20T05:00:00Z",
+        "weight_kg": 103.6,
+        "is_official": true
+      },
+      {
+        "id": "f04",
+        "measured_at": "2026-06-27T05:00:00Z",
+        "weight_kg": 103.0,
+        "is_official": true
+      },
+      {
+        "id": "f05",
+        "measured_at": "2026-07-04T05:00:00Z",
+        "weight_kg": 103.1,
+        "is_official": true
+      },
+      {
+        "id": "f06",
+        "measured_at": "2026-07-11T05:00:00Z",
+        "weight_kg": 102.9,
+        "is_official": true
+      },
+      {
+        "id": "f07",
+        "measured_at": "2026-07-18T05:00:00Z",
+        "weight_kg": 103.0,
+        "is_official": true
+      },
+      {
+        "id": "f08",
+        "measured_at": "2026-07-25T05:00:00Z",
+        "weight_kg": 103.1,
+        "is_official": true
+      },
+      {
+        "id": "f09",
+        "measured_at": "2026-08-01T05:00:00Z",
+        "weight_kg": 103.5,
+        "is_official": true
+      },
+      {
+        "id": "f10",
+        "measured_at": "2026-08-08T05:00:00Z",
+        "weight_kg": 103.9,
+        "is_official": true
+      },
+      {
+        "id": "f11",
+        "measured_at": "2026-08-15T05:00:00Z",
+        "weight_kg": 104.2,
+        "is_official": true
+      }
+    ],
+    "now_iso": "2026-08-15T05:00:00Z",
+    "timezone": "Africa/Johannesburg"
+  },
+  "expected": {
+    "status": "usable",
+    "algorithm_versions": {
+      "daily_representative": "weight_daily_representative_v1",
+      "smoothing": "weight_time_ewma_v3",
+      "rate": "weight_rate_theil_sen_v1",
+      "interval": "weight_rate_interval_sen_v1",
+      "confidence": "weight_trend_confidence_v1"
+    },
+    "timezone": "Africa/Johannesburg",
+    "window": {
+      "start": "2026-07-18T05:00:00Z",
+      "end": "2026-08-15T05:00:00Z",
+      "elapsed_days": 28.0,
+      "inclusive_calendar_days": 29
+    },
+    "measurements": {
+      "raw_count": 11,
+      "valid_count": 11,
+      "distinct_modelling_days": 9,
+      "excluded_count": 0,
+      "latest_measured_at": "2026-08-15T05:00:00Z",
+      "largest_gap_days": 7.0,
+      "selected_rate_window_days": 56
+    },
+    "latest_raw_weight_kg": 104.2,
+    "latest_trend_weight_kg": 103.897363,
+    "weekly_rate": {
+      "estimate_kg": 0.1,
+      "lower_kg": -0.016667,
+      "upper_kg": 0.3,
+      "bootstrap_lower_kg": -0.15,
+      "bootstrap_upper_kg": 0.35
+    },
+    "confidence": "medium",
+    "warnings": [],
+    "daily_representatives": [
+      {
+        "local_date": "2026-06-06",
+        "measured_at": "2026-06-06T05:00:00Z",
+        "weight_kg": 105.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f01"
+        ]
+      },
+      {
+        "local_date": "2026-06-13",
+        "measured_at": "2026-06-13T05:00:00Z",
+        "weight_kg": 104.3,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f02"
+        ]
+      },
+      {
+        "local_date": "2026-06-20",
+        "measured_at": "2026-06-20T05:00:00Z",
+        "weight_kg": 103.6,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f03"
+        ]
+      },
+      {
+        "local_date": "2026-06-27",
+        "measured_at": "2026-06-27T05:00:00Z",
+        "weight_kg": 103.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f04"
+        ]
+      },
+      {
+        "local_date": "2026-07-04",
+        "measured_at": "2026-07-04T05:00:00Z",
+        "weight_kg": 103.1,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f05"
+        ]
+      },
+      {
+        "local_date": "2026-07-11",
+        "measured_at": "2026-07-11T05:00:00Z",
+        "weight_kg": 102.9,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f06"
+        ]
+      },
+      {
+        "local_date": "2026-07-18",
+        "measured_at": "2026-07-18T05:00:00Z",
+        "weight_kg": 103.0,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f07"
+        ]
+      },
+      {
+        "local_date": "2026-07-25",
+        "measured_at": "2026-07-25T05:00:00Z",
+        "weight_kg": 103.1,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f08"
+        ]
+      },
+      {
+        "local_date": "2026-08-01",
+        "measured_at": "2026-08-01T05:00:00Z",
+        "weight_kg": 103.5,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f09"
+        ]
+      },
+      {
+        "local_date": "2026-08-08",
+        "measured_at": "2026-08-08T05:00:00Z",
+        "weight_kg": 103.9,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f10"
+        ]
+      },
+      {
+        "local_date": "2026-08-15",
+        "measured_at": "2026-08-15T05:00:00Z",
+        "weight_kg": 104.2,
+        "source": "official",
+        "warnings": [],
+        "source_measurement_ids": [
+          "f11"
+        ]
+      }
+    ],
+    "trend_points": [
+      {
+        "local_date": "2026-07-18",
+        "measured_at": "2026-07-18T05:00:00Z",
+        "raw_weight_kg": 103.0,
+        "trend_weight_kg": 103.0578125,
+        "alpha": 0.5,
+        "delta_t_days": 7.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-07-25",
+        "measured_at": "2026-07-25T05:00:00Z",
+        "raw_weight_kg": 103.1,
+        "trend_weight_kg": 103.07890625,
+        "alpha": 0.5,
+        "delta_t_days": 7.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-01",
+        "measured_at": "2026-08-01T05:00:00Z",
+        "raw_weight_kg": 103.5,
+        "trend_weight_kg": 103.28945312,
+        "alpha": 0.5,
+        "delta_t_days": 7.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-08",
+        "measured_at": "2026-08-08T05:00:00Z",
+        "raw_weight_kg": 103.9,
+        "trend_weight_kg": 103.59472656,
+        "alpha": 0.5,
+        "delta_t_days": 7.0,
+        "huber_capped": false
+      },
+      {
+        "local_date": "2026-08-15",
+        "measured_at": "2026-08-15T05:00:00Z",
+        "raw_weight_kg": 104.2,
+        "trend_weight_kg": 103.89736328,
+        "alpha": 0.5,
+        "delta_t_days": 7.0,
+        "huber_capped": false
+      }
+    ],
+    "flagged_measurements": [],
+    "ols_diagnostic": {
+      "slope_per_day": 0.01452381,
+      "weekly_rate_kg": 0.10166667,
+      "r_squared": 0.369147
+    }
+  }
+}

@@ -1,3 +1,6 @@
+// Shared types for the weight-logging feature.
+// Trend response types live in weightTrend.ts — import from there.
+
 export interface WeightLog {
   id: string;
   user_id: string;
@@ -6,6 +9,7 @@ export interface WeightLog {
   logged_date: string;
   is_official: boolean;
   notes: string | null;
+  source: string | null;
   created_at: string;
 }
 

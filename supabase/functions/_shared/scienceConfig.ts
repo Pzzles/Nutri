@@ -49,3 +49,40 @@ export const CONFIG_VERSIONS = {
 // Weight freshness threshold: weight older than this many days appears in
 // stale_fields on the preview response (a warning, not a hard rejection).
 export const WEIGHT_FRESHNESS_WARNING_DAYS = 30 as const;
+
+// ── Phase 6: Weight Trend & Weekly Rate ──────────────────────────────────────
+
+export const WEIGHT_TREND_VERSION = "weight_trend_v1" as const;
+
+// EWMA smoothing factor. Bump version string if this changes.
+export const EWMA_VERSION = "weight_ewma_v1" as const;
+export const EWMA_ALPHA = 0.25 as const;
+
+// Regression window (days of trend points used for slope calculation).
+export const TREND_REGRESSION_WINDOW_DAYS = 28 as const;
+
+// How far back to fetch weight logs to seed the EWMA (warm-up period).
+export const TREND_FETCH_WINDOW_DAYS = 90 as const;
+
+// Minimum data requirements for reporting a weekly rate.
+export const TREND_MIN_MEASUREMENTS_FOR_RATE = 3 as const;
+export const TREND_MIN_COVERAGE_DAYS_FOR_RATE = 7 as const;
+
+// Confidence thresholds — LOW is the default; upgrade path is sequential.
+export const CONF_MEDIUM_MIN_MEASUREMENTS = 4 as const;
+export const CONF_MEDIUM_MIN_COVERAGE_DAYS = 10 as const;
+export const CONF_MEDIUM_MAX_RECENCY_DAYS  = 14 as const;
+
+export const CONF_HIGH_MIN_MEASUREMENTS   = 5 as const;
+export const CONF_HIGH_MIN_COVERAGE_DAYS  = 21 as const;
+export const CONF_HIGH_MAX_RECENCY_DAYS   = 7 as const;
+export const CONF_HIGH_MAX_GAP_DAYS       = 14 as const;
+export const CONF_HIGH_MIN_R_SQUARED      = 0.5 as const;
+
+// Outlier detection — flag measurements whose residual from the EWMA trend
+// exceeds this many standard deviations. They are never deleted, only flagged.
+export const OUTLIER_RESIDUAL_SIGMA = 2.5 as const;
+
+// Hard biological plausibility cap: a single measurement may not differ from
+// the preceding official measurement by more than this fraction of body weight.
+export const OUTLIER_MAX_SINGLE_DAY_FRACTION = 0.10 as const; // 10% of body weight

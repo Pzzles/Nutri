@@ -1,0 +1,81 @@
+{
+  "input": {
+    "raw_entries": [
+      {
+        "id": "h01",
+        "measured_at": "2026-07-04T05:00:00Z",
+        "weight_kg": 102.0,
+        "is_official": true
+      },
+      {
+        "id": "h02",
+        "measured_at": "2026-07-04T07:00:00Z",
+        "weight_kg": 104.0,
+        "is_official": true
+      }
+    ],
+    "now_iso": "2026-07-05T05:00:00Z",
+    "timezone": "Africa/Johannesburg"
+  },
+  "expected": {
+    "status": "insufficient_measurements",
+    "algorithm_versions": {
+      "daily_representative": "weight_daily_representative_v1",
+      "smoothing": "weight_time_ewma_v3",
+      "rate": "weight_rate_theil_sen_v1",
+      "interval": "weight_rate_interval_sen_v1",
+      "confidence": "weight_trend_confidence_v1"
+    },
+    "timezone": "Africa/Johannesburg",
+    "window": {
+      "start": "2026-07-04T07:00:00Z",
+      "end": "2026-07-04T07:00:00Z",
+      "elapsed_days": 0.0,
+      "inclusive_calendar_days": 1
+    },
+    "measurements": {
+      "raw_count": 2,
+      "valid_count": 2,
+      "distinct_modelling_days": 0,
+      "excluded_count": 0,
+      "latest_measured_at": "2026-07-04T07:00:00Z",
+      "largest_gap_days": 0.0,
+      "selected_rate_window_days": null
+    },
+    "latest_raw_weight_kg": 104.0,
+    "latest_trend_weight_kg": 104.0,
+    "weekly_rate": null,
+    "confidence": "low",
+    "warnings": [
+      "2026-07-04: multiple_official_entries",
+      "insufficient_measurements"
+    ],
+    "daily_representatives": [
+      {
+        "local_date": "2026-07-04",
+        "measured_at": "2026-07-04T07:00:00Z",
+        "weight_kg": 104.0,
+        "source": "latest_official_of_multiple",
+        "warnings": [
+          "multiple_official_entries"
+        ],
+        "source_measurement_ids": [
+          "h02"
+        ]
+      }
+    ],
+    "trend_points": [
+      {
+        "local_date": "2026-07-04",
+        "measured_at": "2026-07-04T07:00:00Z",
+        "raw_weight_kg": 104.0,
+        "trend_weight_kg": 104.0,
+        "alpha": null,
+        "delta_t_days": null,
+        "huber_capped": false
+      }
+    ],
+    "flagged_measurements": [],
+    "ols_diagnostic": null
+  }
+}
