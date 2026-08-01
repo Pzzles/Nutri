@@ -119,27 +119,29 @@ export default function WeightLogPage() {
         </div>
       )}
 
-      {/* Trend chart + stats — chart renders from trend data when available,
-          falls back to raw logs so it always appears once 2+ entries exist */}
-      {(trend ? trend.trend_points.length >= 2 : logs.length >= 2) && (
+      {/* Trend chart + stats.
+          Shows whenever there are 2+ logs. Uses EWMA points when the trend
+          endpoint returns 2+ official measurements; falls back to raw logs
+          otherwise (e.g. all entries on the same calendar day). */}
+      {logs.length >= 2 && (
         <div className="mt-4 rounded-lg border border-border bg-surface px-4 pt-4 pb-3 space-y-3">
           <div className="flex items-start justify-between">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">
               Trend
             </p>
-            {trend && <TrendBadge confidence={trend.confidence} />}
+            {trend && trend.trend_points.length >= 2 && <TrendBadge confidence={trend.confidence} />}
           </div>
 
           <WeightTrendChart
-            trendPoints={trend?.trend_points}
+            trendPoints={trend && trend.trend_points.length >= 2 ? trend.trend_points : undefined}
             data={
-              trend
-                ? undefined
-                : [...logs].reverse().map((l) => ({ date: l.logged_date, weight: Number(l.weight_kg) }))
+              (!trend || trend.trend_points.length < 2)
+                ? [...logs].reverse().map((l) => ({ date: l.logged_date, weight: Number(l.weight_kg) }))
+                : undefined
             }
           />
 
-          {trend && <TrendStats trend={trend} />}
+          {trend && trend.trend_points.length >= 2 && <TrendStats trend={trend} />}
 
           <p className="text-xs text-muted leading-relaxed">
             The trend reduces normal daily weight fluctuations. It is an estimate
