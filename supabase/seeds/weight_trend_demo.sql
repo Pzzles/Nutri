@@ -6,9 +6,7 @@
 -- Target user: whoever has the most recent weight log entry.
 -- If no logs exist yet, falls back to the most recently signed-in user.
 --
--- Pattern: starts ~105 kg, drifts down ~0.5 kg/week with realistic noise.
--- Two days have a non-official entry alongside the official morning weigh-in.
--- All rows use source='demo_seed' for easy cleanup.
+-- Uses notes='demo_seed' for idempotency (source column may not exist yet).
 
 DO $$
 DECLARE
@@ -29,18 +27,18 @@ BEGIN
   END IF;
 
   IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'No users found in auth.users. Open the app first so a session is created.';
+    RAISE EXCEPTION 'No users found. Open the app first so a session is created.';
   END IF;
 
   RAISE NOTICE 'Seeding user %', v_uid;
 
   -- Guard: do not double-insert.
-  IF EXISTS (SELECT 1 FROM weight_logs WHERE user_id = v_uid AND source = 'demo_seed') THEN
-    RAISE NOTICE 'Demo seed already present for this user — nothing inserted. Run the DELETE block first to reset.';
+  IF EXISTS (SELECT 1 FROM weight_logs WHERE user_id = v_uid AND notes = 'demo_seed') THEN
+    RAISE NOTICE 'Demo seed already present — nothing inserted. Run the DELETE block first to reset.';
     RETURN;
   END IF;
 
-  INSERT INTO weight_logs (user_id, weight_kg, measured_at, logged_date, is_official, source) VALUES
+  INSERT INTO weight_logs (user_id, weight_kg, measured_at, logged_date, is_official, notes) VALUES
 
   -- Week 1 (28–22 days ago) — ~105 kg range
   (v_uid, 105.4, (NOW() - INTERVAL '28 days')::date + TIME '07:00:00', (NOW() - INTERVAL '28 days')::date, true,  'demo_seed'),
@@ -91,6 +89,6 @@ END $$;
 -- DECLARE v_uid uuid;
 -- BEGIN
 --   SELECT user_id INTO v_uid FROM weight_logs ORDER BY measured_at DESC LIMIT 1;
---   DELETE FROM weight_logs WHERE user_id = v_uid AND source = 'demo_seed';
+--   DELETE FROM weight_logs WHERE user_id = v_uid AND notes = 'demo_seed';
 --   RAISE NOTICE 'Deleted demo rows for user %', v_uid;
 -- END $$;
