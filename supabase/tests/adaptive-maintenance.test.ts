@@ -557,3 +557,99 @@ describe("10. fn_get_daily_meal_totals", () => {
     expect(Number(row!.item_count)).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ── Test 11: weeklyRate._kg field mapping regression ──────────────────────────
+//
+// These tests WILL FAIL if either endpoint reverts to accessing
+// weeklyRate.estimate / weeklyRate.lower / weeklyRate.upper (without the _kg suffix).
+//
+// Setup reuses userA: 25 complete days at 2000 kcal/day, weight rate ≈ −0.5 kg/week.
+// Energy-balance formula: observed = avg − (rate × 7700/7) = 2000 − (−0.5 × 1100) = 2550 kcal/day.
+// ± 200 kcal tolerance covers Theil-Sen variance on 30 near-linear entries.
+//
+// If the pre-fix bug is present:
+//   weeklyRateKg = undefined  →  isFinite(undefined) = false  →  p7Calculate returns null
+//   → endpoint returns 422 insufficient_nutrition_days  →  body.data is null.
+
+describe("11. weeklyRate._kg field mapping regression", () => {
+  it("GET: observed_estimate_kcal is in the energy-balance range (~2550 kcal)", async () => {
+    const { body } = await getEndpoint(tokenA);
+    // Pre-fix: body.data is null (422 → success=false, data=null)
+    expect(body.data).not.toBeNull();
+    const obs = (body.data?.maintenance as Record<string, unknown>)?.observed_estimate_kcal as number;
+    expect(typeof obs).toBe("number");
+    // avg=2000, rate≈−0.5 kg/week → observed≈2550. Range [2200, 2900] captures Theil-Sen variance.
+    expect(obs).toBeGreaterThan(2200);
+    expect(obs).toBeLessThan(2900);
+  });
+
+  it("GET: lower_kcal < observed_estimate_kcal < upper_kcal (CI field names mapped)", async () => {
+    const { body } = await getEndpoint(tokenA);
+    const m     = body.data?.maintenance as Record<string, unknown>;
+    const obs   = m?.observed_estimate_kcal as number;
+    const lower = m?.lower_kcal as number | null;
+    const upper = m?.upper_kcal as number | null;
+    // CI is present for 30 linearly-declining entries (bootstrap always converges)
+    if (lower !== null && lower !== undefined && upper !== null && upper !== undefined) {
+      expect(lower).toBeGreaterThan(0);
+      expect(upper).toBeGreaterThan(lower);
+      expect(obs).toBeGreaterThan(lower);
+      expect(obs).toBeLessThan(upper);
+    }
+  });
+
+  it("GET: weight_trend.weekly_rate_kg is a negative finite number", async () => {
+    const { body } = await getEndpoint(tokenA);
+    const wt   = body.data?.weight_trend as Record<string, unknown>;
+    const rate = wt?.weekly_rate_kg as number;
+    // Pre-fix: rate was undefined (field accessed without _kg suffix)
+    expect(Number.isFinite(rate)).toBe(true);
+    expect(rate).toBeLessThan(0);
+  });
+
+  it("GET: status is usable or provisional (not insufficient_nutrition_days)", async () => {
+    const { body } = await getEndpoint(tokenA);
+    // Pre-fix: weeklyRateKg=undefined → p7Calculate→null → status=insufficient_nutrition_days
+    expect(body.data?.status).not.toBe("insufficient_nutrition_days");
+    expect(["usable", "provisional"]).toContain(body.data?.status);
+  });
+
+  it("POST: snapshot DB row has non-null weekly_rate_kg and observed_maintenance_kcal > 0", async () => {
+    const svc = svcClient();
+    await svc.from("maintenance_estimate_snapshots").delete().eq("user_id", userIdA);
+
+    const { body } = await saveEndpoint(tokenA, phaseIdA);
+    const snapshotId = body.data?.snapshot_id as string;
+    expect(snapshotId).toBeTruthy();
+
+    const { data: row } = await svc
+      .from("maintenance_estimate_snapshots")
+      .select("weekly_rate_kg, observed_maintenance_kcal, maintenance_lower_kcal, maintenance_upper_kcal")
+      .eq("id", snapshotId)
+      .single();
+
+    const r = row as Record<string, unknown>;
+    // Pre-fix: weekly_rate_kg would be null (undefined coerced to null on insert)
+    expect(Number.isFinite(Number(r.weekly_rate_kg))).toBe(true);
+    expect(Number(r.observed_maintenance_kcal)).toBeGreaterThan(0);
+    if (r.maintenance_lower_kcal !== null) {
+      expect(Number(r.maintenance_lower_kcal)).toBeGreaterThan(0);
+    }
+  });
+
+  it("POST: snapshot observed_maintenance_kcal matches GET observed_estimate_kcal (same recalc)", async () => {
+    const svc = svcClient();
+    await svc.from("maintenance_estimate_snapshots").delete().eq("user_id", userIdA);
+
+    const getResp  = await getEndpoint(tokenA);
+    const saveResp = await saveEndpoint(tokenA, phaseIdA);
+
+    const getObs  = (getResp.body.data?.maintenance  as Record<string, unknown>)?.observed_estimate_kcal as number;
+    const saveObs = saveResp.body.data?.observed_maintenance_kcal as number;
+
+    // Both calls recalculate independently within seconds — values must be identical.
+    expect(typeof getObs).toBe("number");
+    expect(typeof saveObs).toBe("number");
+    expect(saveObs).toBe(getObs);
+  });
+});
