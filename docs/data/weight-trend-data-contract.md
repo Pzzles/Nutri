@@ -1,7 +1,7 @@
 # Weight Trend Data Contract
 
 **Version:** weight_trend_spec_v1  
-**Status:** Gate 1B frozen
+**Status:** Gate 1C frozen
 
 ---
 
@@ -36,7 +36,7 @@
 
   "algorithm_versions": {
     "daily_representative": "weight_daily_representative_v1",
-    "smoothing":            "weight_time_ewma_v2",
+    "smoothing":            "weight_time_ewma_v3",
     "rate":                 "weight_rate_theil_sen_v1",
     "interval":             "weight_rate_interval_sen_v1",
     "confidence":           "weight_trend_confidence_v1"

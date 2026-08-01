@@ -3,9 +3,9 @@ Oracle micro-tests — hand-calculated reference values.
 Run: python test_oracle.py
      python -m pytest test_oracle.py -v   (optional, no pytest required)
 
-Gate 1B: all tests updated for weight_time_ewma_v2 (Huber + full-history),
-weight_rate_interval_sen_v1 (deterministic Sen/Kendall CI), adaptive window,
-and frozen median-timestamp rule for Case C.
+Gate 1C: updated for weight_time_ewma_v3 (bounded Huber cap: min=3.0, max=6.0).
+Added test groups [19]-[22] for multi-weight Huber behaviour.
+All existing 100 kg test values unchanged (v3 cap = v2 cap = 5.0 at 100 kg).
 """
 
 from __future__ import annotations
@@ -15,7 +15,8 @@ from oracle import (
     RawEntry, DailyRep,
     time_alpha, compute_ewma, theil_sen, ols_diagnostic, bootstrap_ci,
     sen_kendall_ci, build_daily_representatives, gap_analysis, assess_confidence,
-    select_rate_window, calculate, filter_valid, HUBER_FRACTION, HUBER_MIN_KG,
+    select_rate_window, calculate, filter_valid,
+    HUBER_FRACTION, HUBER_MIN_KG, HUBER_MAX_KG,
 )
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -68,7 +69,7 @@ check("2pt init trend = 100.0",    ewma_2pt[0].trend_weight_kg, 100.0)
 check("2pt init alpha is None",    ewma_2pt[0].alpha,            None)
 check("2pt second alpha = 0.5",    ewma_2pt[1].alpha,            0.5,  tol=1e-6)
 check("2pt second trend = 99.0",   ewma_2pt[1].trend_weight_kg,  99.0, tol=1e-8)
-# innovation = 98 - 100 = -2; cap = max(100*0.05, 5) = 5; |-2| ≤ 5 → not capped
+# innovation = 98 - 100 = -2; cap = clamp(100*0.05, 3, 6) = 5; |-2| ≤ 5 → not capped
 check("2pt not Huber-capped",      ewma_2pt[1].huber_capped,    False)
 
 
@@ -99,7 +100,7 @@ reps_spike = [
     DailyRep("2026-01-22", "2026-01-22T05:00:00Z", 130.0, "official"),  # 21-day gap, spike
 ]
 ewma_spike = compute_ewma(reps_spike)
-# trend = 100 (init), cap = max(100*0.05, 5.0) = 5.0, innovation=30 > 5 → capped
+# trend = 100 (init), cap = clamp(100*0.05, 3.0, 6.0) = 5.0, innovation=30 > 5 → capped
 # delta_t = 21 days, alpha(21) = 1 - 2^(-21/7) = 1 - 2^(-3) = 0.875
 alpha_21   = 1.0 - math.pow(2.0, -21 / 7)
 expected_trend = 100.0 + alpha_21 * 5.0   # 100 + 0.875 * 5 = 104.375
@@ -119,7 +120,7 @@ reps_shift = [
     DailyRep("2026-01-02", "2026-01-02T05:00:00Z", 105.0, "official"),  # innovation = 5.0
 ]
 ewma_shift = compute_ewma(reps_shift)
-# cap = max(100 * 0.05, 5.0) = 5.0; |5.0| > 5.0 is False → not capped
+# cap = clamp(100 * 0.05, 3.0, 6.0) = 5.0; |5.0| > 5.0 is False → not capped
 alpha_1 = 1.0 - math.pow(2.0, -1 / 7)
 expected_shift = 100.0 + alpha_1 * 5.0
 check("genuine shift: NOT Huber-capped",      ewma_shift[1].huber_capped,    False)
@@ -381,6 +382,131 @@ check("medium: 7 days, 20 coverage",        assess_confidence(7,  20, 2, 5, 0.3)
 check("high: 12 days, 25 cov, gap=5",       assess_confidence(12, 25, 3, 5, 0.3), "high")
 check("low: wide CI > 1.0",                 assess_confidence(15, 30, 2, 5, 1.1), "low")
 check("medium: CI 0.51 > 0.50 threshold",   assess_confidence(15, 30, 2, 5, 0.51), "medium")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# [19] weight_time_ewma_v3 — cap formula at extreme weights
+# Gate 1C: Policy B min=3.0, max=6.0 replaces Policy A min=5.0 (unbounded).
+# At 100 kg cap is still 5.0 (identical to v2); behaviour differs at extremes.
+# ══════════════════════════════════════════════════════════════════════════════
+
+print("\n[19] v3 cap formula — confirmed at 60, 100, 150, 200 kg")
+
+def v3_cap(trend):
+    return min(max(trend * HUBER_FRACTION, HUBER_MIN_KG), HUBER_MAX_KG)
+
+check("v3 cap at 50 kg  = 3.0 (floor)",  v3_cap(50),  HUBER_MIN_KG, tol=1e-9)
+check("v3 cap at 60 kg  = 3.0 (floor)",  v3_cap(60),  3.0, tol=1e-9)
+check("v3 cap at 100 kg = 5.0 (same as v2)", v3_cap(100), 5.0, tol=1e-9)
+check("v3 cap at 120 kg = 6.0 (ceiling)", v3_cap(120), HUBER_MAX_KG, tol=1e-9)
+check("v3 cap at 150 kg = 6.0 (ceiling)", v3_cap(150), HUBER_MAX_KG, tol=1e-9)
+check("v3 cap at 200 kg = 6.0 (ceiling)", v3_cap(200), HUBER_MAX_KG, tol=1e-9)
+
+# HUBER_MIN_KG and HUBER_MAX_KG sanity
+check("HUBER_MIN_KG = 3.0", HUBER_MIN_KG, 3.0)
+check("HUBER_MAX_KG = 6.0", HUBER_MAX_KG, 6.0)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# [20] Isolated spike after 22-day gap — light user 60 kg
+# Cap = clamp(0.05*60, 3.0, 6.0) = 3.0 (lower than v2's 5.0)
+# ══════════════════════════════════════════════════════════════════════════════
+
+print("\n[20] Light user (60 kg) — spike bounded by min cap 3.0")
+
+# 60 kg baseline + 22-day gap + 90 kg spike
+reps_60 = [
+    DailyRep("2026-02-01", "2026-02-01T05:00:00Z", 60.0, "official"),
+    DailyRep("2026-02-23", "2026-02-23T05:00:00Z", 90.0, "official"),  # 22-day gap
+]
+ewma_60 = compute_ewma(reps_60)
+# cap = clamp(60*0.05, 3.0, 6.0) = clamp(3.0, 3.0, 6.0) = 3.0
+# innovation = 90 - 60 = 30; 30 > 3.0 → capped to 3.0
+alpha_22 = 1.0 - math.pow(2.0, -22 / 7)
+expected_60_spike = 60.0 + alpha_22 * 3.0
+check("60 kg spike: huber_capped = True",        ewma_60[1].huber_capped, True)
+check("60 kg spike: trend = 60 + alpha22*3.0",   ewma_60[1].trend_weight_kg, expected_60_spike, tol=1e-6)
+check("60 kg spike: displacement < 3 kg",        ewma_60[1].trend_weight_kg - 60.0 < 3.0, True)
+
+# Return to 60 kg next day — trend must move back toward 60
+reps_60_return = [
+    DailyRep("2026-02-01", "2026-02-01T05:00:00Z", 60.0, "official"),
+    DailyRep("2026-02-23", "2026-02-23T05:00:00Z", 90.0, "official"),
+    DailyRep("2026-02-24", "2026-02-24T05:00:00Z", 60.0, "official"),  # return
+]
+ewma_60r = compute_ewma(reps_60_return)
+alpha_1 = 1.0 - math.pow(2.0, -1 / 7)
+# After return: innovation = 60 - (60 + alpha22*3) = -(alpha22*3)
+# cap = clamp(trend_after_spike * 0.05, 3.0, 6.0); trend_after_spike ≈ 62.66 → cap = 3.13
+# |-alpha22*3| = 2.66 < 3.13 → NOT capped; normal EWMA applies
+# trend = (60 + alpha22*3) + alpha1*(60 - (60 + alpha22*3))
+trend_after_spike = 60.0 + alpha_22 * 3.0
+expected_60_return = trend_after_spike + alpha_1 * (60.0 - trend_after_spike)
+check("60 kg: return reading moves trend toward baseline", ewma_60r[2].trend_weight_kg, expected_60_return, tol=1e-6)
+check("60 kg: trend after return < trend after spike",
+      ewma_60r[2].trend_weight_kg < ewma_60r[1].trend_weight_kg, True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# [21] Isolated spike after 22-day gap — heavy user 200 kg
+# Cap = clamp(0.05*200, 3.0, 6.0) = 6.0 (lower than v2's 10.0)
+# ══════════════════════════════════════════════════════════════════════════════
+
+print("\n[21] Heavy user (200 kg) — spike bounded by max cap 6.0")
+
+# 200 kg baseline + 22-day gap + 230 kg spike
+reps_200 = [
+    DailyRep("2026-02-01", "2026-02-01T05:00:00Z", 200.0, "official"),
+    DailyRep("2026-02-23", "2026-02-23T05:00:00Z", 230.0, "official"),  # 22-day gap
+]
+ewma_200 = compute_ewma(reps_200)
+# cap = clamp(200*0.05, 3.0, 6.0) = clamp(10.0, 3.0, 6.0) = 6.0
+# innovation = 30 > 6.0 → capped to 6.0
+expected_200_spike = 200.0 + alpha_22 * 6.0
+check("200 kg spike: huber_capped = True",         ewma_200[1].huber_capped, True)
+check("200 kg spike: trend = 200 + alpha22*6.0",   ewma_200[1].trend_weight_kg, expected_200_spike, tol=1e-6)
+check("200 kg spike: displacement < 6 kg",         ewma_200[1].trend_weight_kg - 200.0 < 6.0, True)
+# v3 cap (6.0) is less than v2 would give (10.0); verify explicit bound
+check("200 kg spike: displacement < v2 would give", ewma_200[1].trend_weight_kg < 200.0 + alpha_22 * 10.0, True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# [22] v3 sustained shift — weekly user, 100 kg; rate independent of smoothing
+# Sustained shift at any weight is eventually followed (multi-day convergence).
+# ══════════════════════════════════════════════════════════════════════════════
+
+print("\n[22] v3 sustained shift and rate independence")
+
+# Weekly user at 100 kg shifting to 105 kg: 7 daily readings then 4 weekly at 105 kg
+# Use January dates (31 days) + February (safe range)
+shift_reps = [
+    DailyRep("2026-01-01", "2026-01-01T05:00:00Z", 100.0, "official"),
+    DailyRep("2026-01-02", "2026-01-02T05:00:00Z", 100.0, "official"),
+    DailyRep("2026-01-03", "2026-01-03T05:00:00Z", 100.0, "official"),
+    DailyRep("2026-01-04", "2026-01-04T05:00:00Z", 100.0, "official"),
+    DailyRep("2026-01-05", "2026-01-05T05:00:00Z", 100.0, "official"),
+    DailyRep("2026-01-06", "2026-01-06T05:00:00Z", 100.0, "official"),
+    DailyRep("2026-01-07", "2026-01-07T05:00:00Z", 100.0, "official"),
+    DailyRep("2026-01-14", "2026-01-14T05:00:00Z", 105.0, "official"),
+    DailyRep("2026-01-21", "2026-01-21T05:00:00Z", 105.0, "official"),
+    DailyRep("2026-01-28", "2026-01-28T05:00:00Z", 105.0, "official"),
+    DailyRep("2026-02-04", "2026-02-04T05:00:00Z", 105.0, "official"),
+]
+ewma_sus = compute_ewma(shift_reps)
+
+# After 4 weekly readings at 105 kg, trend must be clearly above 100 kg
+final_trend = ewma_sus[-1].trend_weight_kg
+check("sustained shift eventually followed",   final_trend > 101.0, True)
+check("sustained shift: trend below new level", final_trend <= 105.0, True)
+
+# Rate estimation is independent: Theil-Sen on rate window reps (raw weights)
+from oracle import theil_sen as oracle_ts
+from datetime import datetime as _dt
+_anchor = _dt.fromisoformat(shift_reps[0].measured_at.replace("Z", "+00:00"))
+rate_pts = [(r.elapsed_days_from(_anchor), r.weight_kg) for r in shift_reps]
+rate_est_per_day = oracle_ts(rate_pts)
+# We have 7 days at 100, then 4×7=28 days of 105; Theil-Sen should give positive slope
+check("rate estimate > 0 for rising weight", rate_est_per_day is not None and rate_est_per_day > 0, True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

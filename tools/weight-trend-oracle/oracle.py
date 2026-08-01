@@ -1,12 +1,12 @@
 """
-Weight Trend Oracle — Phase 6 Gate 1B Reference Implementation
+Weight Trend Oracle — Phase 6 Gate 1C Reference Implementation
 =============================================================
 Independent Python oracle for verifying application trend calculations.
 Shares NO code with the TypeScript application.
 
 Algorithm versions implemented:
   weight_daily_representative_v1  (median timestamp: lower-middle entry for Case C even count)
-  weight_time_ewma_v2             (full-history stateful; Huber-capped innovations)
+  weight_time_ewma_v3             (full-history stateful; bounded Huber-capped innovations)
   weight_rate_theil_sen_v1
   weight_rate_interval_sen_v1    (Sen/Kendall deterministic ordered-slope CI — authoritative)
   weight_rate_interval_bootstrap_v1  (percentile bootstrap — research reference only)
@@ -41,7 +41,7 @@ from zoneinfo import ZoneInfo
 SAST = ZoneInfo("Africa/Johannesburg")
 
 DAILY_REP_VERSION   = "weight_daily_representative_v1"
-SMOOTHING_VERSION   = "weight_time_ewma_v2"
+SMOOTHING_VERSION   = "weight_time_ewma_v3"
 RATE_VERSION        = "weight_rate_theil_sen_v1"
 INTERVAL_VERSION    = "weight_rate_interval_sen_v1"
 CONFIDENCE_VERSION  = "weight_trend_confidence_v1"
@@ -50,9 +50,14 @@ HALF_LIFE_DAYS          = 7.0
 DISPLAY_WINDOW_DAYS     = 28
 
 # Huber-capped EWMA parameters (product configuration; not clinically derived)
-# Innovations exceeding max(trend*HUBER_FRACTION, HUBER_MIN_KG) are clamped.
+# Cap = clamp(trend*HUBER_FRACTION, HUBER_MIN_KG, HUBER_MAX_KG).
+# v2→v3: HUBER_MIN_KG reduced from 5.0 to 3.0 (protects low-weight users);
+#        HUBER_MAX_KG added at 6.0 (prevents excessive displacement for heavy users).
+# At 100 kg the cap is 5.0 — identical to v2.  Behaviour differs only below 100 kg
+# (reduced minimum) and above 120 kg (maximum ceiling applied).
 HUBER_FRACTION          = 0.05      # 5% of current trend weight
-HUBER_MIN_KG            = 5.0       # minimum cap in kg (protects lighter users)
+HUBER_MIN_KG            = 3.0       # minimum cap in kg (floor: protects lighter users)
+HUBER_MAX_KG            = 6.0       # maximum cap in kg (ceiling: protects heavier users)
 
 # Sen/Kendall deterministic CI
 SEN_CI_Z                = 1.959963985   # z_{0.025} for 95% two-sided CI
@@ -249,13 +254,14 @@ def time_alpha(delta_days: float, half_life: float = HALF_LIFE_DAYS) -> float:
 
 def compute_ewma(reps: list[DailyRep]) -> list[EWMAPoint]:
     """
-    Full-history time-aware EWMA (weight_time_ewma_v2).
+    Full-history time-aware EWMA (weight_time_ewma_v3).
 
     - Processes ALL reps in chronological order; does NOT reset at any rolling window boundary.
-    - Huber protection: cap = max(trend * HUBER_FRACTION, HUBER_MIN_KG).
+    - Huber protection: cap = clamp(trend * HUBER_FRACTION, HUBER_MIN_KG, HUBER_MAX_KG).
       If |innovation| > cap, innovation is clamped to ±cap before applying alpha.
       Protects against extreme single readings (e.g. 27 kg above trend after long gap)
       without blocking genuine sustained shifts (whose per-step innovations stay < cap).
+      The max ceiling prevents outsized displacement for users above 120 kg.
     - First rep initialises trend; no alpha applied (huber_capped=False, alpha=None).
     """
     if not reps:
@@ -282,7 +288,7 @@ def compute_ewma(reps: list[DailyRep]) -> list[EWMAPoint]:
         alpha    = time_alpha(delta_t)
 
         innovation = reps_sorted[i].weight_kg - trend
-        cap        = max(trend * HUBER_FRACTION, HUBER_MIN_KG)
+        cap        = min(max(trend * HUBER_FRACTION, HUBER_MIN_KG), HUBER_MAX_KG)
         capped     = abs(innovation) > cap
         if capped:
             innovation = math.copysign(cap, innovation)

@@ -1,7 +1,7 @@
 # Phase 6 — Fixture and Oracle Reference
 
-**Version:** weight_trend_spec_v1 (Gate 1B corrections applied)
-**Status:** Gate 1B frozen
+**Version:** weight_trend_spec_v1 (Gate 1C corrections applied)
+**Status:** Gate 1C frozen
 **Oracle:** `tools/weight-trend-oracle/oracle.py`
 **Verification script:** `tools/weight-trend-oracle/verify_fixture_a.mjs` (Node.js)
 
@@ -282,7 +282,7 @@ Expected:
 
 ## Oracle Micro-Test Inventory
 
-`test_oracle.py` contains **18 test groups, 69 assertions**. All pass against the Gate 1B oracle.
+`test_oracle.py` contains **22 test groups, 89 assertions**. All pass against the Gate 1C oracle.
 
 | Group | Coverage |
 |---|---|
@@ -305,6 +305,10 @@ Expected:
 | [16] SAST rollover | UTC 22:00 = SAST midnight (next calendar day) |
 | [17] Gap analysis | 8-day gap detection |
 | [18] Confidence rules | Low/medium/high scoring |
+| [19] v3 cap formula | Cap values at 50, 60, 100, 120, 150, 200 kg; HUBER_MIN=3.0, HUBER_MAX=6.0 |
+| [20] Light user 60 kg | Spike bounded by min cap 3.0; return reading reverses effect |
+| [21] Heavy user 200 kg | Spike bounded by max cap 6.0; less than v2 would give |
+| [22] Sustained shift + rate independence | Weekly shift eventually followed; rate > 0 confirmed |
 
 All 69 assertions are hand-calculated or derived from algebraic invariants. The oracle must pass all of them; any regression surfaces immediately.
 
@@ -325,18 +329,42 @@ All 69 assertions are hand-calculated or derived from algebraic invariants. The 
 
 ---
 
-## Coverage Simulation Results (Gate 1B §7)
+## Coverage Simulation Results (Gate 1C)
 
-File: `tools/weight-trend-oracle/sen_ci_coverage.mjs` (run: `node sen_ci_coverage.mjs`)
+File: `tools/weight-trend-oracle/gate1c_coverage.py` (run: `python gate1c_coverage.py`)
 
-| Scenario | φ | n | Empirical coverage |
+3000 replicates per scenario. Independent Python implementation — does not import oracle.py.
+
+| Scenario | φ | n | Coverage | Med. CI width |
+|---|---|---|---|---|
+| Stable, independent, daily | 0.00 | 24 | 95.3% ✓ | 0.446 kg/wk |
+| Declining −0.7 kg/wk, independent | 0.00 | 24 | 95.2% ✓ | 0.445 |
+| Stable, AR(1) φ=0.30 | 0.30 | 24 | 87.8% | 0.431 |
+| Declining, AR(1) φ=0.30 | 0.30 | 24 | 87.3% | 0.433 |
+| Stable, AR(1) φ=0.60 | 0.60 | 24 | 73.3% | 0.396 |
+| Declining, AR(1) φ=0.60 | 0.60 | 24 | 72.2% | 0.393 |
+| Stable, AR(1) φ=0.85 | 0.85 | 24 | 53.5% | 0.300 |
+| Weekly, independent (n=8) | 0.00 | 8 | 95.2% ✓ | 0.400 |
+| Weekly, AR(1) φ=0.30 (n=8) | 0.30 | 8 | 90.1% | 0.360 |
+| Sporadic, independent (n=10) | 0.00 | 10 | 96.7% ✓ | 0.420 |
+| Sporadic, AR(1) φ=0.30 (n=10) | 0.30 | 10 | 91.6% | 0.382 |
+| Isolated outlier at midpoint | 0.00 | 24 | 96.4% ✓ | 0.480 |
+| Minimal sample (n=6) | 0.00 | 6 | 96.1% ✓ | 1.112 |
+| Dense, high noise, AR(1) φ=0.45 | 0.45 | 28 | 81.0% | 0.656 |
+
+**Conclusion:** The Sen/Kendall interval must be labelled "estimated uncertainty range" in the UI. "95% confidence interval" is inaccurate for daily users; actual coverage under realistic AR(1) correlation is ~70–90%.
+
+## Policy Selection (Gate 1C)
+
+File: `tools/weight-trend-oracle/gate1c_huber_policy.py` (run: `python gate1c_huber_policy.py`)
+
+**Selected: Policy B → `weight_time_ewma_v3`** with parameters `fraction=0.05, min_kg=3.0, max_kg=6.0`.
+
+| Baseline | Cap (v3) | Max displacement (22-day gap) | Recovery <1 kg |
 |---|---|---|---|
-| Independent, daily (n=24) | 0.00 | 24 | 95.5% |
-| AR(1) mild, daily | 0.30 | 24 | 88.4% |
-| AR(1) moderate, daily | 0.60 | 24 | 71.5% |
-| AR(1) strong, daily | 0.85 | 24 | 52.9% |
-| Independent, weekly (n=8) | 0.00 | 8 | 95.3% |
-| Independent, minimal (n=6) | 0.00 | 6 | 96.5% |
-| Stable weight, φ=0.60 (n=24) | 0.60 | 24 | 71.5% |
+| 60 kg | 3.0 kg | 2.66 kg | 10 days |
+| 100 kg | 5.0 kg | 4.43 kg | 16 days |
+| 150 kg | 6.0 kg | 5.32 kg | 17 days |
+| 200 kg | 6.0 kg | 5.32 kg | 17 days |
 
-**Conclusion:** The Sen/Kendall interval must be labelled "uncertainty range" in the UI, not "95% confidence interval". Actual coverage under realistic daily weight correlation is ~70–90%.
+v2 at 200 kg would give: cap=10.0, displacement=8.87 kg, recovery in 23 days. The ceiling prevents disproportionate trend corruption for heavy users. At 100 kg the v3 cap is identical to v2 — no impact on existing Fixture J/K expected values.

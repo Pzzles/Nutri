@@ -1,7 +1,7 @@
 # Phase 6 — Weight Trend Modelling: Mathematical Specification
 
-**Version:** weight_trend_spec_v1 (Gate 1B corrections applied)
-**Status:** Gate 1B frozen
+**Version:** weight_trend_spec_v1 (Gate 1C corrections applied)
+**Status:** Gate 1C frozen
 **Supersedes:** Simple EWMA α=0.25 + OLS implemented in feat/weight-trend-modelling (Gate 2 will replace those with the algorithms defined here)
 **Baseline SHA:** `6bb6927` (Gate 1 commit — Gate 1B corrections begin from this point)
 
@@ -23,15 +23,18 @@ Both quantities must work correctly for all realistic logging cadences: daily, s
 | Component | Version identifier |
 |---|---|
 | Daily representative selection | `weight_daily_representative_v1` |
-| Time-aware EWMA smoother | `weight_time_ewma_v2` |
+| Time-aware EWMA smoother | `weight_time_ewma_v3` |
 | Theil-Sen rate estimator | `weight_rate_theil_sen_v1` |
 | Rate interval (authoritative) | `weight_rate_interval_sen_v1` |
 | Rate interval (research reference) | `weight_rate_interval_bootstrap_v1` |
 | Confidence scoring | `weight_trend_confidence_v1` |
 
-`weight_time_ewma_v2` replaces `weight_time_ewma_v1` (Gate 1 draft):
-- v1 computed EWMA only over the rolling window; v2 uses full history.
-- v2 adds Huber-capped innovations (see §5.4).
+`weight_time_ewma_v3` replaces `weight_time_ewma_v2` (Gate 1B):
+- v2 introduced full-history EWMA and Huber-capped innovations.
+- v3 changes the Huber cap formula to a bounded proportional cap (see §5.4):
+  `HUBER_MIN_KG` reduced from 5.0 to 3.0; `HUBER_MAX_KG` added at 6.0.
+  Behaviour at 100 kg is identical to v2. Differences apply below 100 kg (reduced minimum)
+  and above 120 kg (ceiling applied instead of unbounded proportional cap).
 
 `weight_rate_interval_sen_v1` replaces bootstrap as the authoritative interval:
 - Fully deterministic (no random seed, no sampling).
@@ -128,7 +131,8 @@ Where:
 - `w_i` — daily representative weight in kg
 - `half_life_days = 7` (product configuration; changing requires new version)
 - `huber_fraction = 0.05` (5% of current trend weight; product configuration)
-- `huber_min_kg = 5.0` (minimum cap in kg; product configuration)
+- `huber_min_kg = 3.0` (minimum cap in kg; product configuration)
+- `huber_max_kg = 6.0` (maximum cap in kg; product configuration)
 
 Timestamps are not rounded to integer days.
 
@@ -154,17 +158,26 @@ The EWMA processes **all** historical representatives in chronological order. Th
 
 **Mechanism:** the innovation `w_i − trend_{i−1}` is clamped to `±cap_i` before being applied. This prevents any single measurement from moving the trend by more than `cap_i` kg.
 
-**Cap formula:** `cap_i = max(trend_{i−1} × 0.05, 5.0)`
+**Cap formula (v3):** `cap_i = clamp(trend_{i−1} × 0.05, 3.0, 6.0)` — i.e. `min(max(trend × 0.05, 3.0), 6.0)`
 
-For a 100 kg user: `cap = max(5.0, 5.0) = 5.0 kg`
-For a 103 kg user: `cap = max(5.15, 5.0) = 5.15 kg`
-For a 150 kg user: `cap = max(7.5, 5.0) = 7.5 kg`
+| Baseline weight | cap (v3) | cap (v2 for comparison) |
+|---|---|---|
+| 50 kg | 3.0 kg | 5.0 kg |
+| 60 kg | 3.0 kg | 5.0 kg |
+| 100 kg | 5.0 kg | 5.0 kg (unchanged) |
+| 120 kg | 6.0 kg | 6.0 kg (unchanged) |
+| 150 kg | 6.0 kg | 7.5 kg |
+| 200 kg | 6.0 kg | 10.0 kg |
+
+The cap is in the proportional zone (5% × trend) for weights 60–120 kg. Below 60 kg the floor applies; above 120 kg the ceiling applies.
 
 **Boundary case:** `|innovation| > cap` triggers capping (strict inequality). Equal-to-cap does not trigger capping. This means a genuine +5.0 kg shift from a 100 kg trend is **not capped** — the normal EWMA applies.
 
 **Confirmed in Fixture K:** 14 days at 100 kg followed by 14 days at 105 kg. First innovation on shift day = 5.0, cap = 5.0. `5.0 > 5.0` is False → not capped. Trend converges correctly toward 105 kg.
 
-**Confirmed in Fixture J:** 130 kg spike from 103 kg trend after 22-day gap. Innovation = 27, cap = 5.15. `27 > 5.15` → capped. Trend moves to ≈ 104.43 kg, not close to 130 kg.
+**Confirmed in Fixture J:** 130 kg spike from 100 kg trend after 22-day gap. Innovation = 30, cap = clamp(5.0, 3.0, 6.0) = 5.0. `30 > 5.0` → capped. Trend moves to ≈ 104.43 kg, not close to 130 kg. (100 kg baseline: cap unchanged at 5.0 vs v2.)
+
+**At 200 kg:** spike of same magnitude (230 kg from 200 kg), cap = clamp(10.0, 3.0, 6.0) = 6.0. Max displacement ≈ 5.3 kg (vs 8.9 kg under v2). Recovery within 1 kg: 17 days (vs 23 days). The ceiling prevents disproportionate displacement for heavier users.
 
 **`huber_capped` flag:** each trend point includes `huber_capped: bool`. When true, the output value was computed from a capped innovation. This is visible in the data contract and can be used for diagnostic UI overlays.
 
@@ -258,21 +271,30 @@ Returns `null` if `lo_idx < 0` or `hi_idx ≥ N` (interval spans full range — 
 
 **Serial-correlation assumption and UI labelling:**
 
-This interval assumes roughly i.i.d. observations. Daily weight measurements exhibit positive AR(1) correlation. Empirical coverage simulation (Gate 1B §7, 2000 replicates per scenario, LCG seed 20260801):
+This interval assumes roughly i.i.d. observations. Daily weight measurements exhibit positive AR(1) correlation. Empirical coverage simulation (Gate 1C, 3000 replicates per scenario, Python random, seeded per-scenario from 20260802):
 
-| Noise model | φ | n | Empirical coverage |
-|---|---|---|---|
-| Independent normal | 0.00 | 24 | 95.5% ✓ |
-| AR(1) mild | 0.30 | 24 | 88.4% |
-| AR(1) moderate | 0.60 | 24 | 71.5% |
-| AR(1) strong | 0.85 | 24 | 52.9% |
-| Independent weekly | 0.00 | 8 | 95.3% ✓ |
-| Independent minimal | 0.00 | 6 | 96.5% ✓ |
-| Stable (slope=0, φ=0.60) | 0.60 | 24 | 71.5% |
+| Noise model | φ | n | Coverage | Med. CI width | Bias | MAE |
+|---|---|---|---|---|---|---|
+| Stable, independent, daily | 0.00 | 24 | 95.3% ✓ | 0.446 kg/wk | −0.004 | 0.086 |
+| Declining −0.7 kg/wk, independent | 0.00 | 24 | 95.2% ✓ | 0.445 | +0.005 | 0.086 |
+| Stable, AR(1) φ=0.30 | 0.30 | 24 | 87.8% | 0.431 | +0.001 | 0.109 |
+| Declining, AR(1) φ=0.30 | 0.30 | 24 | 87.3% | 0.433 | +0.002 | 0.112 |
+| Stable, AR(1) φ=0.60 | 0.60 | 24 | 73.3% | 0.396 | +0.004 | 0.140 |
+| Declining, AR(1) φ=0.60 | 0.60 | 24 | 72.2% | 0.393 | +0.003 | 0.143 |
+| Stable, AR(1) φ=0.85 | 0.85 | 24 | 53.5% | 0.300 | +0.001 | 0.166 |
+| Weekly, independent (n=8) | 0.00 | 8 | 95.2% ✓ | 0.400 | −0.001 | 0.066 |
+| Weekly, AR(1) φ=0.30 (n=8) | 0.30 | 8 | 90.1% | 0.360 | −0.002 | 0.078 |
+| Sporadic, independent (n=10) | 0.00 | 10 | 96.7% ✓ | 0.420 | −0.001 | 0.067 |
+| Sporadic, AR(1) φ=0.30 (n=10) | 0.30 | 10 | 91.6% | 0.382 | −0.001 | 0.078 |
+| Isolated outlier at midpoint | 0.00 | 24 | 96.4% ✓ | 0.480 | −0.000 | 0.086 |
+| Minimal sample (n=6) | 0.00 | 6 | 96.1% ✓ | 1.112 | +0.005 | 0.147 |
+| Dense, high noise, AR(1) φ=0.45 | 0.45 | 28 | 81.0% | 0.656 | +0.007 | 0.199 |
+
+6 of 14 scenarios fall below 90%. The Theil-Sen estimator is nearly unbiased (|bias| < 0.01 kg/wk across all scenarios). Weekly and sporadic users with independent measurements achieve nominal coverage; daily users with AR(1) φ=0.30 drop to 87–88%.
 
 **Conclusion:** coverage drops severely under realistic serial correlation (φ=0.3–0.6 typical for daily weight). The interval must **NOT** be labelled "95% confidence interval" in the UI.
 
-**Required UI label:** "uncertainty range" (not "95% confidence interval" or "95% CI").
+**Required UI label:** "estimated uncertainty range" (not "95% confidence interval" or "95% CI").
 
 **Rate of correlation decay:** the actual correlation structure of a user's weight depends on their diet consistency, water intake patterns, and measurement conditions. The φ = 0.3–0.6 range is a plausible assumption; φ = 0.85 is likely an upper bound.
 
