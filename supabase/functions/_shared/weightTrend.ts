@@ -635,9 +635,16 @@ export function calculate(
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// LEGACY — pre-Gate-2 implementation
-// Kept for backward compatibility with get-weight-trend edge function.
-// Remove in Gate 2 wiring when the endpoint is updated to call calculate().
+// LEGACY — pre-Gate-2 implementation  @deprecated
+//
+// These exports are retained ONLY so that:
+//   • web/src/__tests__/WeightTrend.test.ts continues to pass unchanged
+//   • web/src/lib/weightTypes.ts (EWMAPoint, TrendConfidence, TrendWarning types)
+//     compiles without modification until Prompt 4 wires the frontend.
+//
+// The get-weight-trend Edge Function no longer calls calculateWeightTrend().
+// No production API path reaches this code.
+// All functions below will be removed in Gate 2 frontend wiring (Prompt 4).
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface WeightMeasurement {
@@ -691,6 +698,7 @@ function legacyStddev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+/** @deprecated Use calculate() instead. Will be removed in Prompt 4. */
 export function applyEWMA(
   measurements: WeightMeasurement[],
   alpha: number = EWMA_ALPHA,
@@ -712,6 +720,7 @@ export function applyEWMA(
   return points;
 }
 
+/** @deprecated Will be removed in Prompt 4. */
 export function detectOutliers(points: EWMAPoint[]): EWMAPoint[] {
   if (points.length < 2) return points;
 
@@ -740,6 +749,7 @@ interface LegacyRegressionResult {
   r_squared: number;
 }
 
+/** @deprecated Will be removed in Prompt 4. */
 export function linearRegression(
   points: EWMAPoint[],
   windowDays: number = TREND_REGRESSION_WINDOW_DAYS,
@@ -783,6 +793,7 @@ interface LegacyConfidenceInputs {
   rSquared: number | null;
 }
 
+/** @deprecated Will be removed in Prompt 4. */
 export function assessConfidence(inputs: LegacyConfidenceInputs): TrendConfidence {
   const { measurementCount, coverageDays, daysSinceLatest, maxGapDays, rSquared } = inputs;
 
@@ -803,6 +814,11 @@ export function assessConfidence(inputs: LegacyConfidenceInputs): TrendConfidenc
   return "medium";
 }
 
+/**
+ * @deprecated Not reachable through any production API path.
+ * The get-weight-trend Edge Function now calls calculate() directly.
+ * Retained only for WeightTrend.test.ts. Will be removed in Prompt 4.
+ */
 export function calculateWeightTrend(
   measurements: WeightMeasurement[],
   nowIso: string = new Date().toISOString(),
