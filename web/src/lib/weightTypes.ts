@@ -1,4 +1,5 @@
-import type { TrendConfidence, TrendWarning, EWMAPoint } from "./weightTrend";
+// Shared types for the weight-logging feature.
+// Trend response types live in weightTrend.ts — import from there.
 
 export interface WeightLog {
   id: string;
@@ -15,21 +16,4 @@ export interface WeightLog {
 export interface GetWeightLogsResponse {
   logs: WeightLog[];
   latest_official: WeightLog | null;
-}
-
-export interface WeightTrendResult {
-  algorithm_version: string;
-  ewma_version: string;
-  window_start: string | null;
-  window_end: string | null;
-  measurement_count: number;
-  coverage_days: number;
-  latest_raw_weight_kg: number | null;
-  latest_trend_weight_kg: number | null;
-  weekly_rate_kg: number | null;
-  r_squared: number | null;
-  confidence: TrendConfidence;
-  warnings: TrendWarning[];
-  trend_points: EWMAPoint[];
-  outlier_ids: string[];
 }
