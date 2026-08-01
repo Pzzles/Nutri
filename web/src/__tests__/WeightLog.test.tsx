@@ -1,16 +1,24 @@
 // Component tests for WeightLogPage.
-// All edge function calls mocked at the callFunction boundary.
+// callFunction / getFunction are mocked at the supabase boundary.
+// getWeightTrend is mocked at the weightTrend boundary.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import WeightLogPage from "../pages/WeightLog";
-import { WeightLog } from "../lib/weightTypes";
+import type { WeightLog } from "../lib/weightTypes";
 
 vi.mock("../lib/supabase", () => ({ callFunction: vi.fn(), getFunction: vi.fn() }));
+vi.mock("../lib/weightTrend", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/weightTrend")>();
+  return { ...actual, getWeightTrend: vi.fn() };
+});
+
 import { callFunction, getFunction } from "../lib/supabase";
+import { getWeightTrend } from "../lib/weightTrend";
 const mockCall = vi.mocked(callFunction);
 const mockGet = vi.mocked(getFunction);
+const mockGetTrend = vi.mocked(getWeightTrend);
 
 const WEIGHT_LOG: WeightLog = {
   id: "wl-001",
@@ -31,8 +39,9 @@ function makeGetResponse(logs: WeightLog[] = [], latest: WeightLog | null = null
 beforeEach(() => {
   mockCall.mockReset();
   mockGet.mockReset();
-  // Default: unmocked getFunction calls reject (non-fatal — trend endpoint is caught).
-  mockGet.mockRejectedValue(new Error("not mocked"));
+  mockGetTrend.mockReset();
+  // Default: trend API rejects non-fatally — component shows no trend section error.
+  mockGetTrend.mockRejectedValue(new Error("trend not mocked"));
 });
 
 // ── Loading state ─────────────────────────────────────────────────────────────
@@ -43,13 +52,14 @@ describe("WeightLogPage — loading", () => {
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
     // Synchronously before the promise resolves, the component shows loading
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText(/loading/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/^Loading…$/)).not.toBeInTheDocument());
   });
 
   it("shows empty state when no logs exist", async () => {
     mockGet.mockResolvedValueOnce(makeGetResponse());
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
-    await waitFor(() => expect(screen.getByText(/no weight entries yet/i)).toBeInTheDocument());
+    // Text appears in both the empty-state card and the history section.
+    await waitFor(() => expect(screen.getAllByText(/no weight entries yet/i).length).toBeGreaterThanOrEqual(1));
   });
 });
 
@@ -63,8 +73,6 @@ describe("WeightLogPage — latest weight", () => {
   });
 
   it("shows Official badge on is_official entry when mixed official/non-official list", async () => {
-    // Badge only renders when hasNonOfficial is true (mix of official and non-official).
-    // A list of only official entries would suppress the badge (no distinction needed).
     const nonOfficialLog: WeightLog = { ...WEIGHT_LOG, id: "wl-002", is_official: false };
     mockGet.mockResolvedValueOnce(makeGetResponse([WEIGHT_LOG, nonOfficialLog], WEIGHT_LOG));
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
@@ -75,10 +83,18 @@ describe("WeightLogPage — latest weight", () => {
 // ── Log form ──────────────────────────────────────────────────────────────────
 
 describe("WeightLogPage — log form", () => {
-  it("calls log-weight then get-weight-logs after successful submission", async () => {
+  it("calls log-weight then refreshes trend after successful submission", async () => {
     const newLog: WeightLog = { ...WEIGHT_LOG, id: "wl-002", weight_kg: 85.0 };
     mockGet.mockResolvedValueOnce(makeGetResponse()); // initial load
     mockCall.mockResolvedValueOnce(newLog);           // log-weight response
+    mockGetTrend.mockResolvedValue({
+      status: "usable", confidence: "low", timezone: "UTC",
+      window: { start: null, end: null, elapsed_days: 0, inclusive_calendar_days: 0 },
+      measurements: { raw_count: 0, valid_count: 0, distinct_modelling_days: 0, excluded_count: 0, latest_measured_at: null, largest_gap_days: 0, selected_rate_window_days: null },
+      latest_raw_weight_kg: null, latest_trend_weight_kg: null, weekly_rate: null,
+      warnings: [], daily_representatives: [], trend_points: [], flagged_measurements: [], ols_diagnostic: null,
+      algorithm_versions: { daily_representative: "", smoothing: "", rate: "", interval: "", confidence: "" },
+    } as import("../lib/weightTrend").WeightTrendResponse); // trend refresh
 
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
     await waitFor(() => screen.getByRole("button", { name: /^log$/i }));
@@ -87,11 +103,11 @@ describe("WeightLogPage — log form", () => {
     await userEvent.click(screen.getByRole("button", { name: /^log$/i }));
 
     expect(mockCall).toHaveBeenCalledWith("log-weight", expect.objectContaining({ weight_kg: 85 }));
+    // getWeightTrend called once on mount + once after successful log
+    await waitFor(() => expect(mockGetTrend).toHaveBeenCalledTimes(2));
   });
 
   it("shows validation error for weight below 1 kg", async () => {
-    // The validation range was widened to 1–500 kg in Phase 3/4 to accommodate
-    // extreme but real cases (e.g. newborns, competitive athletes).
     mockGet.mockResolvedValueOnce(makeGetResponse());
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
     await waitFor(() => screen.getByRole("button", { name: /^log$/i }));
@@ -100,7 +116,7 @@ describe("WeightLogPage — log form", () => {
     await userEvent.click(screen.getByRole("button", { name: /^log$/i }));
 
     expect(screen.getByText(/between 1 and 500/i)).toBeInTheDocument();
-    expect(mockCall).not.toHaveBeenCalled(); // log-weight must not be called on validation error
+    expect(mockCall).not.toHaveBeenCalled();
   });
 
   it("shows validation error for weight above 500 kg", async () => {
@@ -115,10 +131,8 @@ describe("WeightLogPage — log form", () => {
   });
 
   it("shows API error message when log-weight returns no data", async () => {
-    // Regression: before the null-guard fix, undefined from callFunction was added
-    // to the logs array, causing TypeError on logs.some((l) => !l.is_official).
     mockGet.mockResolvedValueOnce(makeGetResponse());
-    mockCall.mockResolvedValueOnce(undefined as any); // simulates missing response data
+    mockCall.mockResolvedValueOnce(undefined as never);
     render(<MemoryRouter><WeightLogPage /></MemoryRouter>);
     await waitFor(() => screen.getByRole("button", { name: /^log$/i }));
 
@@ -128,7 +142,6 @@ describe("WeightLogPage — log form", () => {
     await waitFor(() =>
       expect(screen.getByText(/no data|log-weight/i)).toBeInTheDocument(),
     );
-    // The logs section must not contain undefined entries — no TypeError should occur.
   });
 
   it("appends new entry to the top of the list without refetch", async () => {
