@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { callFunction, getFunction, supabase } from "../lib/supabase";
 import {
   GoalPhase, GoalPhaseMode, GoalPhaseStatus, PhaseTransition,
@@ -82,6 +83,7 @@ const ACTIVITY_LEVEL_OPTIONS = [
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Goals() {
+  const navigate = useNavigate();
   const [active, setActive] = useState<GoalPhase | null>(null);
   const [history, setHistory] = useState<GoalPhase[]>([]);
   const [visibleHistory, setVisibleHistory] = useState(5);
@@ -190,6 +192,13 @@ export default function Goals() {
       goal_mode: form.mode,
       target_change_kg_per_week: finalRate,
     };
+    if (form.starting_weight_source === "manual" && form.starting_weight_kg) {
+      previewBody.starting_weight_kg = parseFloat(form.starting_weight_kg);
+    } else if (form.starting_weight_source === "latest_weight_log" && latestWeight != null) {
+      // Use the same resolved value displayed by this form. This keeps preview
+      // eligibility consistent with the starting weight the user is reviewing.
+      previewBody.starting_weight_kg = latestWeight;
+    }
     if (form.activity_level) previewBody.activity_level = form.activity_level;
     if (form.use_manual_maintenance && form.manual_maintenance_kcal) {
       previewBody.manual_maintenance_kcal = parseFloat(form.manual_maintenance_kcal);
@@ -302,7 +311,7 @@ export default function Goals() {
       setForm(INITIAL_FORM);
       setPreview(null);
       setAggressiveAcknowledged(false);
-      await fetchPhases();
+      navigate("/");
     } catch (err: any) {
       if (err.message?.includes("ACTIVE_PHASE_EXISTS")) {
         setNeedsTransition(true);
@@ -691,9 +700,14 @@ export default function Goals() {
             <button
               type="submit"
               disabled={submitting}
+              aria-label="Start phase"
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
             >
-              {submitting ? "Starting…" : "Start phase"}
+              {submitting
+                ? "Starting…"
+                : preview?.ready && preview.recommended_target_kcal != null
+                  ? `Start phase with ${preview.recommended_target_kcal} kcal target`
+                  : "Start phase"}
             </button>
           </form>
         </section>

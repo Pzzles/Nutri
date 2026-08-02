@@ -135,6 +135,20 @@ describe("preview-energy-calc — male BMR", () => {
     expect(typeof ts).toBe("string");
     expect(new Date(ts).getTime()).toBeGreaterThan(0);
   });
+
+  it("uses a manual starting weight supplied by the goals form", async () => {
+    const { status, json } = await callPreview({
+      goal_mode: "maintenance",
+      target_change_kg_per_week: 0,
+      starting_weight_kg: 75.5,
+    });
+
+    expect(status).toBe(200);
+    expect(json.data.ready).toBe(true);
+    expect(json.data.input_snapshot.official_weight_kg).toBe(75.5);
+    expect(json.data.input_snapshot.weight_log_id).toBeNull();
+    expect(json.data.input_provenance.weight.log_source).toBe("goals_form");
+  });
 });
 
 describe("preview-energy-calc — female BMR", () => {

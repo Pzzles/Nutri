@@ -57,7 +57,16 @@ export function WeekCalorieChart({
   const dark = useDarkMode();
   const today = new Date().toISOString().slice(0, 10);
   const axisColor = dark ? "#8B92A5" : "#6B7280";
-  const gridColor = dark ? "#2D2D44" : "#DCDFE A";
+  const targetColor = dark ? "#60A5FA" : "#0077CC";
+  const numericTarget = target == null ? null : Number(target);
+  const visibleTarget = numericTarget != null && Number.isFinite(numericTarget) && numericTarget > 0
+    ? numericTarget
+    : null;
+  const chartMaximum = Math.max(
+    1,
+    ...data.map((day) => Number(day.calories) || 0),
+    visibleTarget != null ? visibleTarget * 1.18 : 0,
+  );
 
   return (
     <ResponsiveContainer width="100%" height={130}>
@@ -69,16 +78,7 @@ export function WeekCalorieChart({
           axisLine={false}
           tickLine={false}
         />
-        <YAxis hide domain={[0, target ? Math.max(target * 1.15, ...(data.map((d) => d.calories))) : "auto"]} />
-        {target && (
-          <ReferenceLine
-            y={target}
-            stroke="#0094FF"
-            strokeDasharray="5 3"
-            strokeOpacity={0.5}
-            strokeWidth={1.5}
-          />
-        )}
+        <YAxis hide domain={[0, chartMaximum]} />
         <Tooltip
           content={(props) => <CustomTooltip {...props} dark={dark} />}
           cursor={{ fill: dark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)", radius: 4 }}
@@ -99,6 +99,22 @@ export function WeekCalorieChart({
             />
           ))}
         </Bar>
+        {visibleTarget != null && (
+          <ReferenceLine
+            y={visibleTarget}
+            stroke={targetColor}
+            strokeDasharray="7 4"
+            strokeOpacity={1}
+            strokeWidth={1.5}
+            label={{
+              value: `${Math.round(visibleTarget)} kcal goal`,
+              position: "insideTopRight",
+              fill: targetColor,
+              fontSize: 11,
+              fontWeight: 600,
+            }}
+          />
+        )}
       </BarChart>
     </ResponsiveContainer>
   );
