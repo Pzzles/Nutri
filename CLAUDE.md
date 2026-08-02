@@ -22,6 +22,17 @@ Supabase edge functions. The only permitted `page.route()` usages are:
 1. `injectSession` — intercepts `/auth/v1/token?grant_type=anonymous` to inject a real user session
 2. Deliberate error-path stubs — e.g., forcing `parse-meal` to return 500 to test error UI
 
+### Re-propose authenticated persona testing when authentication is ready
+The anonymous SQL persona workflow is a temporary backend/UI inspection tool, not the desired
+end-to-end product test. As soon as real sign-in and account switching are implemented, explicitly
+propose replacing it with the authenticated persona suite described in
+`docs/testing/authenticated-persona-testing.md` -- even if the user does not remember to ask.
+
+Use three non-anonymous test accounts created through the supported Auth flow or Admin API. Test
+real login, logout, session restoration, data isolation, and feature behavior through real Edge
+Functions. Never commit test passwords, OTPs, service-role keys, or personal email addresses. Seed
+and cleanup must be repeatable, narrowly tagged, and must refuse real user accounts.
+
 ---
 
 ## Git Workflow Rules (enforced by hooks in `.claude/settings.json`)
