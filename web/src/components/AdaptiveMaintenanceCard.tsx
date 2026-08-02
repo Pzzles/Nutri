@@ -39,9 +39,11 @@ function SectionRow({ label, value, sub }: { label: string; value: string; sub?:
 interface AdaptiveMaintenanceCardProps {
   /** Called after a snapshot is successfully saved. */
   onSnapshotSaved?: (snapshotId: string) => void;
+  /** Opens the weight-log view from an incomplete estimate state. */
+  onLogWeight?: () => void;
 }
 
-export function AdaptiveMaintenanceCard({ onSnapshotSaved }: AdaptiveMaintenanceCardProps) {
+export function AdaptiveMaintenanceCard({ onSnapshotSaved, onLogWeight }: AdaptiveMaintenanceCardProps) {
   const [data, setData]       = useState<AdaptiveMaintenanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
@@ -128,9 +130,11 @@ export function AdaptiveMaintenanceCard({ onSnapshotSaved }: AdaptiveMaintenance
 
   // ── Insufficient or stale weight data ────────────────────────────────────
   if (data.status === "insufficient_weight_data" || data.status === "stale_weight_data") {
+    const isStale = data.status === "stale_weight_data";
+
     return (
       <div
-        className="rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 p-6"
+        className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6"
         data-testid="maintenance-card-weight-gap"
       >
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Observed Maintenance</h2>
@@ -139,9 +143,42 @@ export function AdaptiveMaintenanceCard({ onSnapshotSaved }: AdaptiveMaintenance
             {formatGoalMode(data.goal_phase.mode)} phase active
           </p>
         )}
-        <p className="mt-3 text-sm text-amber-700 dark:text-amber-400">
-          {data.message ?? "More weight measurements are needed."}
+        <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+          This will estimate how many calories would keep your weight stable, using your completed
+          food logs and your actual weight trend.
         </p>
+
+        <div className="mt-5 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 p-4">
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+            {isStale ? "Log a current weight to continue" : "Building your weight trend"}
+          </p>
+          <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+            {isStale
+              ? "Your latest weight is more than 14 days old."
+              : "Your phase is too new to calculate a weekly weight-change rate yet."}
+          </p>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-200">What to do next</p>
+          <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-gray-600 dark:text-gray-400">
+            <li>Log your weight on at least 4 different days across at least 7 days.</li>
+            <li>Mark food-log days complete. The first estimate needs at least 14 complete days and 50% coverage.</li>
+          </ol>
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            The estimate becomes more reliable after 14+ days and at least 6 weigh-in days.
+          </p>
+        </div>
+
+        {onLogWeight && (
+          <button
+            type="button"
+            onClick={onLogWeight}
+            className="mt-5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            Log weight
+          </button>
+        )}
       </div>
     );
   }

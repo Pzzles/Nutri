@@ -27,7 +27,7 @@ export default function Progress() {
         <WeightLogPage />
       </div>
       <div className={tab === "maintenance" ? "p-4 max-w-xl mx-auto" : "hidden"}>
-        <AdaptiveMaintenanceCard />
+        <AdaptiveMaintenanceCard onLogWeight={() => setTab("weight")} />
       </div>
       <div className={tab === "feedback" ? "p-4 max-w-xl mx-auto" : "hidden"}>
         <GoalFeedbackCard />

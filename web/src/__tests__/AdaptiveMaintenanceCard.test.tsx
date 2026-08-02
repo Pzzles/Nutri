@@ -145,7 +145,9 @@ describe("Weight gap states", () => {
     await waitFor(() => {
       expect(screen.getByTestId("maintenance-card-weight-gap")).toBeInTheDocument();
     });
-    expect(screen.getByText(/Weigh yourself more regularly/i)).toBeInTheDocument();
+    expect(screen.getByText(/how many calories would keep your weight stable/i)).toBeInTheDocument();
+    expect(screen.getByText(/Building your weight trend/i)).toBeInTheDocument();
+    expect(screen.getByText(/at least 4 different days across at least 7 days/i)).toBeInTheDocument();
   });
 
   it("shows weight-gap card for stale_weight_data", async () => {
@@ -156,6 +158,8 @@ describe("Weight gap states", () => {
     await waitFor(() => {
       expect(screen.getByTestId("maintenance-card-weight-gap")).toBeInTheDocument();
     });
+    expect(screen.getByText(/Log a current weight to continue/i)).toBeInTheDocument();
+    expect(screen.getByText(/more than 14 days old/i)).toBeInTheDocument();
   });
 });
 
