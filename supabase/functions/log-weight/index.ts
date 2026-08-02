@@ -60,6 +60,7 @@ Deno.serve(async (req) => {
       p_measured_at: measuredAt.toISOString(),
       p_logged_date: loggedDate,
       p_notes: notes,
+      p_source: "manual",
     });
 
     if (rpcErr) {
