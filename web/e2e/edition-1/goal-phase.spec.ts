@@ -107,12 +107,12 @@ test("dashboard displays active phase card with calorie target and weight change
 test("user can start a new cut phase with manual starting weight", async ({ page }) => {
   await stubAuth(page);
 
-  // Goals page initially shows no active phase.
-  await page.route("**/functions/v1/get-goal-phases**", (route) =>
-    fulfill(route, { active_phase: null, phases: [], total_count: 0 }),
-  );
-
   let startCalled = false;
+  await page.route("**/functions/v1/get-goal-phases**", (route) =>
+    fulfill(route, startCalled
+      ? { active_phase: ACTIVE_PHASE, phases: [ACTIVE_PHASE], total_count: 1 }
+      : { active_phase: null, phases: [], total_count: 0 }),
+  );
   await page.route("**/functions/v1/start-goal-phase", async (route) => {
     const body = JSON.parse(route.request().postData() ?? "{}");
     startCalled = true;
@@ -121,17 +121,11 @@ test("user can start a new cut phase with manual starting weight", async ({ page
     await fulfill(route, ACTIVE_PHASE);
   });
 
-  // After start, fetch returns the new active phase.
-  await page.route("**/functions/v1/get-goal-phases**", (route) =>
-    fulfill(route, { active_phase: ACTIVE_PHASE, phases: [ACTIVE_PHASE], total_count: 1 }),
-  );
-
   await page.goto(`${BASE}/goals`);
 
   await page.getByRole("button", { name: /start new phase/i }).click();
   await page.getByRole("button", { name: /enter manually/i }).click();
-  await page.getByPlaceholder("kg").fill("90");
-  await page.getByPlaceholder(/optional.*kcal|target calories/i).first().fill("2000");
+  await page.locator('input[placeholder="kg"]').first().fill("90");
   await page.getByRole("button", { name: /start phase/i }).click();
 
   await expect(page.getByText("Cut")).toBeVisible();
@@ -203,7 +197,7 @@ test("reopen banner appears when logging a meal on a completed day", async ({ pa
 
   await page.goto(`${BASE}/log`);
 
-  await page.getByPlaceholder(/e.g./i).fill("1 banana");
+  await page.locator("textarea").fill("1 banana");
   await page.getByRole("button", { name: /parse meal/i }).click();
   await page.getByRole("button", { name: /confirm & log/i }).click();
 

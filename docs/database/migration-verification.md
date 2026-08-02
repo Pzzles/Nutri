@@ -89,6 +89,10 @@ Migrations `0030`–`0032` were applied to the local PostgreSQL 15 stack. The re
 
 ---
 
+### Phase 10 final clean-apply verification
+
+On 2026-08-02, `npx supabase db reset --local` recreated the database and applied every repository migration from `0001` through `0032` without error. A subsequent `npx supabase migration list --local` reported identical local and applied versions for all 31 migration entries. The 404-test backend regression then passed against this clean database, including all anthropometry RLS, representative, lifecycle, API, pagination, idempotency, export, and non-interference coverage.
+
 ## Known clean-apply result
 
 ```
