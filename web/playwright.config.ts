@@ -25,7 +25,7 @@ export default defineConfig({
     // ── Mocked tests: network-intercepted, no real Supabase needed ─────────────
     {
       name: "mocked",
-      testMatch: ["edition-1/**/*.spec.ts", "weight-logging.spec.ts", "anthropometry-measurement.spec.ts"],
+      testMatch: ["edition-1/**/*.spec.ts", "weight-logging.spec.ts", "anthropometry-measurement.spec.ts", "anthropometry-trends.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
     },
     // ── Integration tests: real Supabase + real edge functions ─────────────────

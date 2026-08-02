@@ -113,10 +113,164 @@ describe("anthropometry endpoint authentication", () => {
     ["save-anthropometric-session", "POST"],
     ["finalize-anthropometric-session", "POST"],
     ["get-anthropometric-sessions", "GET"],
+    ["get-anthropometric-progress", "GET"],
     ["delete-anthropometric-session", "DELETE"],
   ] as const)("rejects an unauthenticated %s request", async (name, method) => {
     const result = await callFunction(name, null, method);
     expect(result.status).toBe(401);
+  });
+});
+
+describe("longitudinal progress and Phase 6 comparison", () => {
+  beforeAll(async () => {
+    await save(tokenA, finalBody(
+      `progress-start-${Date.now()}`,
+      "2026-06-01T06:00:00Z",
+      [{ site_code: "waist", readings_cm: [91.8, 92.2] }],
+    ));
+    await save(tokenA, finalBody(
+      `progress-end-${Date.now()}`,
+      "2026-08-01T06:00:00Z",
+      [{ site_code: "waist", readings_cm: [88.4, 88.8] }],
+    ));
+
+    const service = svcClient();
+    const dates = [
+      "2026-06-01", "2026-06-08", "2026-06-15", "2026-06-22",
+      "2026-06-29", "2026-07-06", "2026-07-13", "2026-07-20",
+      "2026-07-24", "2026-07-27", "2026-07-30", "2026-08-01",
+    ];
+    for (const [index, date] of dates.entries()) {
+      const { error } = await service.rpc("fn_log_weight", {
+        p_user_id: userIdA,
+        p_weight_kg: 80 + (index % 2) * 0.1,
+        p_measured_at: `${date}T06:00:00Z`,
+        p_logged_date: date,
+        p_notes: "phase-10-gate-5",
+      });
+      if (error) throw error;
+    }
+  });
+
+  it("returns chronological real points with previous and first-baseline changes", async () => {
+    type ProgressResponse = {
+      series: Array<{
+        site_code: string;
+        points: Array<{ measured_at: string; representative_cm: number }>;
+        previous_change: { change_cm: number; elapsed_days: number } | null;
+        since_first_change: { change_cm: number; elapsed_days: number } | null;
+      }>;
+      weight_comparison: {
+        eligible: boolean;
+        description: string | null;
+      } | null;
+      algorithm_versions: Record<string, string>;
+    };
+    const result = await callFunction<ProgressResponse>(
+      "get-anthropometric-progress",
+      tokenA,
+      "GET",
+      undefined,
+      "?from=2026-06-01T00%3A00%3A00Z&to=2026-08-02T00%3A00%3A00Z",
+    );
+    expect(result.status).toBe(200);
+    const waist = result.body.data!.series.find((series) => series.site_code === "waist")!;
+    expect(waist.points.length).toBeGreaterThanOrEqual(2);
+    expect(waist.points.map((point) => point.measured_at))
+      .toEqual([...waist.points].map((point) => point.measured_at).sort());
+    expect(waist.since_first_change).toMatchObject({ change_cm: -3.4, elapsed_days: 61 });
+    expect(result.body.data!.algorithm_versions).toMatchObject({
+      change: "anthropometry_change_v1",
+      weight_comparison: "anthropometry_weight_comparison_v1",
+    });
+  });
+
+  it("generates only the versioned descriptive weight comparison", async () => {
+    const result = await callFunction<{
+      weight_comparison: { eligible: boolean; site_code: string; description: string | null };
+    }>(
+      "get-anthropometric-progress",
+      tokenA,
+      "GET",
+      undefined,
+      "?from=2026-06-01T00%3A00%3A00Z&to=2026-08-02T00%3A00%3A00Z",
+    );
+    expect(result.body.data!.weight_comparison).toMatchObject({
+      eligible: true,
+      site_code: "waist",
+      description: "Weight trend was broadly stable while waist circumference decreased.",
+    });
+    expect(result.body.data!.weight_comparison.description).not.toMatch(/fat|muscle|recomposition/i);
+  });
+
+  it("does not expose another user's progress", async () => {
+    const result = await callFunction<{ series: unknown[] }>(
+      "get-anthropometric-progress",
+      tokenB,
+      "GET",
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.data!.series).toEqual([]);
+  });
+
+  it("validates range/site filters and can disable the weight comparison", async () => {
+    const unknownSite = await callFunction(
+      "get-anthropometric-progress",
+      tokenA,
+      "GET",
+      undefined,
+      "?site_code=abdomen",
+    );
+    expect(unknownSite.status).toBe(422);
+    expect(unknownSite.body.error?.code).toBe("UNKNOWN_SITE");
+
+    const reversedRange = await callFunction(
+      "get-anthropometric-progress",
+      tokenA,
+      "GET",
+      undefined,
+      "?from=2026-08-02T00%3A00%3A00Z&to=2026-06-01T00%3A00%3A00Z",
+    );
+    expect(reversedRange.status).toBe(422);
+    expect(reversedRange.body.error?.code).toBe("VALIDATION_ERROR");
+
+    const filtered = await callFunction<{
+      series: Array<{ site_code: string }>;
+      weight_comparison: unknown;
+    }>(
+      "get-anthropometric-progress",
+      tokenA,
+      "GET",
+      undefined,
+      "?site_code=hips&include_weight_comparison=false",
+    );
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.data!.series.every((series) => series.site_code === "hips")).toBe(true);
+    expect(filtered.body.data!.weight_comparison).toBeNull();
+  });
+
+  it("does not mutate calorie targets, goal phases, or plateau assessments", async () => {
+    const service = svcClient();
+    async function snapshot() {
+      const [phases, targets, feedback] = await Promise.all([
+        service.from("goal_phases").select("*").eq("user_id", userIdA).order("id"),
+        service.from("calorie_target_snapshots").select("*").eq("user_id", userIdA).order("id"),
+        service.from("goal_feedback_assessments").select("*").eq("user_id", userIdA).order("id"),
+      ]);
+      return {
+        phases: phases.data,
+        targets: targets.data,
+        feedback: feedback.data,
+      };
+    }
+    const before = await snapshot();
+    const result = await callFunction(
+      "get-anthropometric-progress",
+      tokenA,
+      "GET",
+    );
+    expect(result.status).toBe(200);
+    expect(await snapshot()).toEqual(before);
   });
 });
 

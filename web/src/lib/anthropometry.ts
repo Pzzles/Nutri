@@ -1,4 +1,4 @@
-import { callFunction, deleteFunction } from "./supabase";
+import { callFunction, deleteFunction, getFunction } from "./supabase";
 
 export const ANTHROPOMETRY_PROTOCOL_VERSION = "anthropometry_protocol_v1" as const;
 export const ANTHROPOMETRY_REPEATABILITY_THRESHOLD_CM = 1.0 as const;
@@ -144,6 +144,82 @@ export interface AnthropometrySaveResponse {
   };
 }
 
+export type AnthropometryQuality =
+  | "within_repeatability_threshold"
+  | "repeatability_warning";
+
+export interface AnthropometryProgressPoint {
+  session_id: string;
+  site_code: AnthropometrySiteCode;
+  measured_at: string;
+  logged_date: string;
+  representative_cm: number;
+  quality: AnthropometryQuality;
+}
+
+export interface AnthropometryChange {
+  start_session_id: string;
+  end_session_id: string;
+  change_cm: number;
+  elapsed_days: number;
+}
+
+export interface AnthropometryProgressSeries {
+  site_code: AnthropometrySiteCode;
+  points: AnthropometryProgressPoint[];
+  previous_change: AnthropometryChange | null;
+  since_first_change: AnthropometryChange | null;
+}
+
+export type AnthropometrySignalDirection =
+  | "decreased"
+  | "broadly_stable"
+  | "increased";
+
+export type AnthropometryComparisonReasonCode =
+  | "insufficient_circumference_points"
+  | "circumference_interval_too_short"
+  | "circumference_repeatability_warning"
+  | "weight_status_not_eligible"
+  | "weight_confidence_not_eligible"
+  | "insufficient_weight_trend_points"
+  | "no_aligned_weight_endpoint"
+  | "aligned_weight_points_not_distinct"
+  | "no_material_cross_signal_template";
+
+export interface AnthropometryWeightComparison {
+  eligible: boolean;
+  site_code: "waist" | "abdomen_navel" | null;
+  circumference: {
+    start_session_id: string;
+    end_session_id: string;
+    change_cm: number;
+    direction: AnthropometrySignalDirection;
+  } | null;
+  weight_trend: {
+    start_point_measured_at: string;
+    end_point_measured_at: string;
+    start_kg: number;
+    end_kg: number;
+    change_kg: number;
+    stable_band_kg: number;
+    direction: AnthropometrySignalDirection;
+  } | null;
+  description: string | null;
+  reason_codes?: AnthropometryComparisonReasonCode[];
+}
+
+export interface AnthropometryProgressResponse {
+  series: AnthropometryProgressSeries[];
+  weight_comparison: AnthropometryWeightComparison | null;
+  algorithm_versions: {
+    change: string;
+    weight_comparison: string;
+    weight_trend: string;
+  };
+  limitations: string[];
+}
+
 interface SessionRequestBase {
   session_id?: string;
   measured_at?: string;
@@ -172,6 +248,25 @@ export function deleteAnthropometrySession(sessionId: string) {
   return deleteFunction<{ deleted_session_id: string }>("delete-anthropometric-session", {
     session_id: sessionId,
   });
+}
+
+export function getAnthropometricProgress(options: {
+  from?: string;
+  to?: string;
+  siteCode?: AnthropometrySiteCode;
+  includeWeightComparison?: boolean;
+} = {}) {
+  const params: Record<string, string> = {};
+  if (options.from) params.from = options.from;
+  if (options.to) params.to = options.to;
+  if (options.siteCode) params.site_code = options.siteCode;
+  if (options.includeWeightComparison !== undefined) {
+    params.include_weight_comparison = String(options.includeWeightComparison);
+  }
+  return getFunction<AnthropometryProgressResponse>(
+    "get-anthropometric-progress",
+    params,
+  );
 }
 
 export function needsThirdReading(readingsCm: readonly number[]): boolean {
@@ -213,6 +308,13 @@ export function inputToCentimetres(
 export function formatMeasurement(valueCm: number, unit: MeasurementUnit): string {
   const value = unit === "cm" ? valueCm : valueCm / 2.54;
   return `${(Math.round(value * 10) / 10).toFixed(1)} ${unit}`;
+}
+
+export function formatMeasurementChange(valueCm: number, unit: MeasurementUnit): string {
+  const value = unit === "cm" ? valueCm : valueCm / 2.54;
+  const rounded = Math.round(value * 10) / 10;
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "−" : "";
+  return `${sign}${Math.abs(rounded).toFixed(1)} ${unit}`;
 }
 
 export function formatMeasurementInput(valueCm: number, unit: MeasurementUnit): string {

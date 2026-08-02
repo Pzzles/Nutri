@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANTHROPOMETRY_SITES,
   formatMeasurement,
+  formatMeasurementChange,
   formatMeasurementInput,
   inputToCentimetres,
   needsThirdReading,
@@ -51,5 +52,11 @@ describe("anthropometry UI helpers", () => {
     expect(formatMeasurement(80, "cm")).toBe("80.0 cm");
     expect(formatMeasurement(80, "in")).toBe("31.5 in");
     expect(formatMeasurementInput(80, "in")).toBe("31.50");
+  });
+
+  it("formats signed longitudinal changes in either display unit", () => {
+    expect(formatMeasurementChange(-3.4, "cm")).toBe("−3.4 cm");
+    expect(formatMeasurementChange(2.54, "in")).toBe("+1.0 in");
+    expect(formatMeasurementChange(0, "cm")).toBe("0.0 cm");
   });
 });

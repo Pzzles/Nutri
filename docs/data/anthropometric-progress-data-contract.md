@@ -3,7 +3,7 @@
 **Phase:** 10 — Anthropometric Progress Tracking<br>
 **Contract:** `anthropometry_data_contract_v2`<br>
 **Protocol:** `anthropometry_protocol_v1`<br>
-**Status:** Gate 3 authenticated API and RLS integration implemented
+**Status:** Gate 5 trends and cross-signal interpretation implemented
 
 ## 1. Contract principles
 

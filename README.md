@@ -21,6 +21,7 @@ Nine implementation phases complete. Version 0.1.0.
 - Goal progress assessment with rate bounds and adjustment proposals
 - Anthropometric draft/finalised sessions with preserved tape readings and server-authoritative representatives
 - Owner-scoped anthropometric history, cursor pagination and explicit whole-session deletion
+- Unsmoothed circumference histories, baseline/previous changes and cautious Phase 6 weight-trend descriptions
 
 **Supporting functions**
 - Barcode lookup, custom food management, meal templates
@@ -37,6 +38,7 @@ Nine implementation phases complete. Version 0.1.0.
 - Email/password sign-up and sign-in, with in-place upgrade for existing anonymous accounts
 - Meal logging flow, dashboard, weight progress, goal phases, account management
 - Guided circuit-based tape measurements with precise landmarks, cm/in display, draft saves and accessible mobile controls
+- Responsive circumference point charts and history with waist/navel separation and descriptive cross-signal limits
 - Data export and account deletion UI in the Account page
 
 ## Stack
@@ -88,7 +90,7 @@ npm run dev
 # Requires: supabase start + supabase functions serve --env-file supabase/.env
 cd supabase/tests
 npx vitest run --config vitest.config.ts
-# Expected: 381 backend tests, 0 failures
+# Expected: 400 backend tests, 0 failures
 ```
 
 ### Run E2E tests
@@ -115,6 +117,7 @@ supabase/
     save-anthropometric-session/       Draft/finalised anthropometry save
     finalize-anthropometric-session/   Strict finalisation contract
     get-anthropometric-sessions/       Owner history with cursor pagination
+    get-anthropometric-progress/       Changes + descriptive weight comparison
     delete-anthropometric-session/     Explicit whole-session deletion
     delete-account/   Account + data deletion
     health/           Service health check
@@ -147,6 +150,8 @@ All algorithm version strings are present in `supabase/functions/_shared/science
 | Observed maintenance | `observed_maintenance_energy_balance_v1` |
 | Goal progress assessment | `goal_progress_assessment_v1` |
 | Goal progress thresholds | `goal_progress_thresholds_v1` |
+| Anthropometric change | `anthropometry_change_v1` |
+| Anthropometry/weight comparison | `anthropometry_weight_comparison_v1` |
 
 ## Security notes
 

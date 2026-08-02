@@ -97,6 +97,10 @@ export const ANTHROPOMETRY_REPRESENTATIVE_VERSION =
   "anthropometry_representative_v1" as const;
 export const ANTHROPOMETRY_THRESHOLDS_VERSION =
   "anthropometry_repeatability_thresholds_v1" as const;
+export const ANTHROPOMETRY_CHANGE_VERSION =
+  "anthropometry_change_v1" as const;
+export const ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION =
+  "anthropometry_weight_comparison_v1" as const;
 
 // Integer tenths of a centimetre keep validation and representative selection
 // deterministic across TypeScript, PostgreSQL, and future clients.
