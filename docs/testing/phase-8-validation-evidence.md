@@ -9,29 +9,48 @@
 
 ### 1. Pure calculation tests (`supabase/tests/_shared/goalProgressAssessment.test.ts`)
 
-15 tests covering all 11 progress states and key invariants.
+38 tests covering all 11 progress states, 22 acceptance-gap cases, and key invariants.
 
-| Fixture | State | Advisory |
-|---|---|---|
-| A | `no_active_goal_phase` | none |
-| B | `stale_data` | none |
-| C | `insufficient_data` | none |
-| D | `maintenance_stable` | none |
-| E | `maintenance_drift` | none |
-| F | `on_track` | none |
-| G | `slower_than_planned` | 150 kcal/day decrease |
-| H | `faster_than_planned` (cut) | none, consider_less_aggressive_goal |
-| I | `plateau_candidate` | none (historical not qualifying) |
-| J | `likely_plateau` | 250 kcal/day decrease (clamped) |
-| K | `opposite_direction` | 250 kcal/day decrease (clamped) |
-| L | `faster_than_planned` (bulk) | none, review_goal_assumptions |
+| Fixture | State | Action | Advisory |
+|---|---|---|---|
+| A | `no_active_goal_phase` | `start_goal_phase` | none |
+| B | `stale_data` | `collect_more_data` | none |
+| C | `insufficient_data` | `collect_more_data` | none |
+| D | `maintenance_stable` | `keep_current_plan` | none |
+| E | `maintenance_drift` | `review_maintenance_drift` | drift direction: up |
+| F | `on_track` | `keep_current_plan` | none |
+| G | `slower_than_planned` | `review_goal_assumptions` | none (spec §8: no adjustment) |
+| H | `faster_than_planned` (cut) | `consider_less_aggressive_goal` | none |
+| I | `plateau_candidate` | `collect_more_data` | none (spec §4: no adjustment) |
+| J | `likely_plateau` | `consider_small_calorie_adjustment` | −250 kcal/day (proposed target: 1750) |
+| K | `opposite_direction` | `consider_small_calorie_adjustment` | −250 kcal/day |
+| L | `faster_than_planned` (bulk) | `review_goal_assumptions` | none |
 
-Additional invariant tests:
-- All results carry correct algorithm version strings
-- Advisory direction is consistent with sign of (target − observed)
-- `likely_plateau` requires phase age ≥ 42 days
+Acceptance-gap cases 1–22 cover:
+- `plateau_candidate` fields contract (no adjustment, no proposed target)
+- `slower_than_planned` with full ADJ_ELIGIBLE context: still no adjustment
+- `likely_plateau` with bounded signed adjustment and proposed target
+- Opposite direction: point estimate with range including zero → not `opposite_direction`
+- Opposite direction: range fully above zero → `opposite_direction`
+- Maintenance: range includes zero → `maintenance_stable` with `rate_outside_band_but_range_includes_zero`
+- Maintenance: range fully below zero → `maintenance_drift` down
+- `on_track` at attainment ratio exactly 0.70
+- `on_track` because target rate lies within P6 range
+- `required_correction_below_minimum` safety block
+- `proposed_target_below_floor` safety block (not clamped)
+- `missing_current_target` safety block
+- `missing_official_weight` safety block
+- Aggressive-rate warning safety block
+- Low P6 confidence → no plateau candidate
+- Low P7 confidence → no likely plateau
+- Coverage below 70% → no likely plateau
+- Historical P7 confidence low → no likely plateau (stays plateau_candidate)
+- Historical coverage below 70% → no likely plateau (stays plateau_candidate)
+- Evidence conflict safety block
+- Input immutability
+- Algorithm version strings across all states
 
-**Result:** 15/15 tests pass.
+**Result:** 38/38 tests pass.
 
 ### 2. Frontend vitest tests (`web/src/__tests__/GoalFeedbackCard.test.tsx`)
 
@@ -120,6 +139,10 @@ Key flows:
 | Save does not mutate goal phase | Backend test 8, E2E test "saving does not change goal phase" |
 | No advisory auto-applies calorie change | Component test "only one call made", advisory disclaimer text |
 | Advisory shown for `likely_plateau` only when all gates pass | Pure test fixtures I vs J |
+| `plateau_candidate` never produces an adjustment | Pure test fixture I, acceptance-gap cases 1, 15–17 |
+| `slower_than_planned` never produces an adjustment | Pure test fixture G, acceptance-gap case 2 |
+| `proposed_target_below_floor` blocks, not clamps | Acceptance-gap case 11 |
+| Uncertainty-aware classification (bounds required) | Acceptance-gap cases 4–7 |
 | GET is read-only | Backend test 4 (row count unchanged) |
 
 ---

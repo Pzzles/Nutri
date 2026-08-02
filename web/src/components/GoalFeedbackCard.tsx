@@ -120,12 +120,64 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
 // ── Advisory adjustment banner ─────────────────────────────────────────────────
 
 function AdvisoryBanner({ data }: { data: GoalFeedbackResponse }) {
+  // plateau_candidate: tell user explicitly that no adjustment is suggested yet
+  if (data.progress_state === "plateau_candidate") {
+    return (
+      <div
+        className="mt-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3"
+        data-testid="plateau-candidate-notice"
+      >
+        <p className="text-sm text-amber-700 dark:text-amber-400">
+          More evidence is needed. No calorie adjustment is suggested yet.
+        </p>
+      </div>
+    );
+  }
+
+  // Blocked adjustment — show friendly reason when attempted but blocked
+  if (
+    data.progress_state === "likely_plateau" &&
+    !hasAdvisoryAdjustment(data) &&
+    data.adjustment_blocked_reason_codes?.length > 0
+  ) {
+    const friendlyReasonMap: Record<string, string> = {
+      missing_current_target:          "Your calorie target is not set.",
+      missing_official_weight:         "No official weight measurement found.",
+      low_weight_confidence:           "Weight trend confidence is too low.",
+      low_maintenance_confidence:      "Maintenance estimate confidence is too low.",
+      insufficient_nutrition_coverage: "Nutrition log coverage is below 70%.",
+      aggressive_rate_warning:         "Your goal rate has an unresolved safety warning.",
+      rate_exceeds_one_percent_body_weight: "The required correction would exceed 1% of body weight per week.",
+      required_correction_below_minimum:   "The required adjustment is below the minimum meaningful change.",
+      proposed_target_below_floor:     "The proposed target would be below the safe minimum of 1,000 kcal/day.",
+      evidence_conflict:               "Nutrition and weight data are inconsistent — review your logs.",
+    };
+    const reason = friendlyReasonMap[data.adjustment_blocked_reason_codes[0]] ??
+      "A safety condition prevents a specific suggestion.";
+    return (
+      <div
+        className="mt-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-3"
+        data-testid="adjustment-blocked-notice"
+      >
+        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+          No specific adjustment can be suggested
+        </p>
+        <p className="text-sm text-amber-700 dark:text-amber-400 mt-0.5" data-testid="adjustment-blocked-reason">
+          {reason}
+        </p>
+      </div>
+    );
+  }
+
   if (!hasAdvisoryAdjustment(data)) return null;
 
   const text = formatAdvisoryAdjustment(
     data.advisory_calorie_adjustment_kcal,
     data.advisory_adjustment_direction,
   );
+
+  // likely_plateau: show proposed target alongside the adjustment
+  const proposedTarget = data.proposed_target_kcal;
 
   return (
     <div
@@ -136,6 +188,11 @@ function AdvisoryBanner({ data }: { data: GoalFeedbackResponse }) {
       <p className="text-sm text-blue-700 dark:text-blue-400 mt-0.5" data-testid="advisory-adjustment-text">
         {text}
       </p>
+      {proposedTarget != null && (
+        <p className="text-sm text-blue-700 dark:text-blue-400 mt-0.5" data-testid="proposed-target-text">
+          Proposed target: {Math.round(proposedTarget)} kcal/day
+        </p>
+      )}
       <p className="text-xs text-blue-500 dark:text-blue-500 mt-1">
         This is a planning estimate only. Any calorie-target change requires your explicit confirmation.
       </p>
