@@ -86,3 +86,20 @@ export const OUTLIER_RESIDUAL_SIGMA = 2.5 as const;
 // Hard biological plausibility cap: a single measurement may not differ from
 // the preceding official measurement by more than this fraction of body weight.
 export const OUTLIER_MAX_SINGLE_DAY_FRACTION = 0.10 as const; // 10% of body weight
+
+// ── Phase 10: Anthropometric Progress Tracking ───────────────────────────────
+
+export const ANTHROPOMETRY_DATA_CONTRACT_VERSION =
+  "anthropometry_data_contract_v2" as const;
+export const ANTHROPOMETRY_PROTOCOL_VERSION =
+  "anthropometry_protocol_v1" as const;
+export const ANTHROPOMETRY_REPRESENTATIVE_VERSION =
+  "anthropometry_representative_v1" as const;
+export const ANTHROPOMETRY_THRESHOLDS_VERSION =
+  "anthropometry_repeatability_thresholds_v1" as const;
+
+// Integer tenths of a centimetre keep validation and representative selection
+// deterministic across TypeScript, PostgreSQL, and future clients.
+export const ANTHROPOMETRY_MIN_READING_TENTHS = 50 as const;
+export const ANTHROPOMETRY_MAX_READING_TENTHS = 3000 as const;
+export const ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS = 10 as const;

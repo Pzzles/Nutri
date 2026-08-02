@@ -1,6 +1,7 @@
 {
   "fixture_set_version": "anthropometry_fixtures_v1",
   "algorithm_versions": {
+    "data_contract": "anthropometry_data_contract_v2",
     "protocol": "anthropometry_protocol_v1",
     "representative": "anthropometry_representative_v1",
     "repeatability_thresholds": "anthropometry_repeatability_thresholds_v1",
@@ -483,6 +484,26 @@
       "expected": {
         "mutation_allowed": false,
         "stored_raw_reading_unchanged": true
+      }
+    },
+    {
+      "id": "I4_draft_reading_mutation_allowed",
+      "operation": "update_raw_reading",
+      "session_status": "draft",
+      "expected": {
+        "mutation_allowed": true,
+        "representatives_present": false
+      }
+    },
+    {
+      "id": "I5_finalisation_is_one_way",
+      "initial_status": "draft",
+      "transition": "finalized",
+      "attempted_second_transition": "draft",
+      "expected": {
+        "first_transition_allowed_for_server": true,
+        "second_transition_allowed": false,
+        "final_status": "finalized"
       }
     }
   ]
