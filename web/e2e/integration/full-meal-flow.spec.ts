@@ -1,8 +1,8 @@
 // Phase 4 — Real E2E integration tests.
 // Requires: supabase start + supabase functions serve (GROQ_API_KEY set).
-// Auth: only the anonymous sign-in route is intercepted to inject a pre-created
-// test user's real session. All application API calls (parse-meal, resolve-foods,
-// calculate-meal, log-meal, get-meals) go to the real local Supabase — zero stubs.
+// Auth: a pre-created real user session is placed in Supabase's browser storage.
+// All application API calls (parse-meal, resolve-foods, calculate-meal, log-meal,
+// get-meals) go to the real local Supabase — zero stubs.
 // Run: npx playwright test --project=integration
 import { test, expect, type Page } from "@playwright/test";
 import type { Session } from "@supabase/supabase-js";
@@ -79,22 +79,13 @@ test.afterAll(async () => {
   await deleteTestUser(userIdB);
 });
 
-// Intercept ONLY the anonymous sign-in route and return the given real session.
-// Every other request (edge functions, token refresh) passes through untouched.
 async function injectSession(page: Page, session: Session) {
-  await page.route("**/auth/v1/token?grant_type=anonymous", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        access_token: session.access_token,
-        token_type: "bearer",
-        expires_in: 3600,
-        expires_at: Math.floor(Date.now() / 1000) + 3600,
-        refresh_token: session.refresh_token,
-        user: session.user,
-      }),
-    }),
+  const storageKey = `sb-${new URL(SUPABASE_URL).hostname.split(".")[0]}-auth-token`;
+  await page.addInitScript(
+    ({ key, storedSession }) => {
+      localStorage.setItem(key, JSON.stringify(storedSession));
+    },
+    { key: storageKey, storedSession: session },
   );
 }
 
@@ -142,7 +133,7 @@ test(
   async ({ page }) => {
     await injectSession(page, sessionA);
 
-    // Step 1 — authenticate: app's anonymous sign-in returns userA's real session.
+    // Step 1 — authenticate with userA's real stored session.
     await page.goto("/log");
     await expect(page.locator("textarea")).toBeVisible({ timeout: 15_000 });
 

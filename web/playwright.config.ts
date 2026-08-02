@@ -6,6 +6,8 @@ import { defineConfig, devices } from "@playwright/test";
 const supabaseEnv: Record<string, string> = {};
 if (process.env.SUPABASE_URL) supabaseEnv.VITE_SUPABASE_URL = process.env.SUPABASE_URL;
 if (process.env.SUPABASE_ANON_KEY) supabaseEnv.VITE_SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:5173";
+const vitePort = new URL(baseURL).port || "5173";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -15,7 +17,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -35,8 +37,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:5173",
+    command: `npm run dev -- --port ${vitePort}`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
     ...(Object.keys(supabaseEnv).length > 0 && { env: supabaseEnv }),

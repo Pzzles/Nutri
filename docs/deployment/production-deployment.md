@@ -121,16 +121,33 @@ Set these environment variables in your hosting provider dashboard:
 
 ---
 
-## Step 7 — Smoke test
+## Step 7 — Configure authentication
+
+In Supabase Dashboard → Authentication → Providers → Email:
+
+- Enable email/password sign-ins.
+- Keep sign-ups enabled.
+- Temporarily disable **Confirm Email** for the early-access password flow.
+- Keep anonymous sign-ins enabled during the migration period so an existing anonymous session can
+  be upgraded from the Account page without changing its user ID or losing its data.
+
+Disabling email confirmation means ownership of an email address is not verified. Treat this as a
+temporary early-access configuration, add abuse protection before public launch, and re-enable
+verification after reliable transactional email is configured.
+
+---
+
+## Step 8 — Smoke test
 
 After deployment, verify core flows work:
 
 1. Open the deployed URL
-2. Complete anonymous onboarding
-3. Log a test meal (e.g., "100g chicken breast")
-4. Log a weight entry
-5. Open the Account page and download your data export
-6. Verify the health endpoint: `GET https://<project-ref>.functions.supabase.co/health`
+2. Create an email/password account and confirm that no verification message is requested
+3. Refresh, sign out, and sign back in
+4. Log a test meal (e.g., "100g chicken breast")
+5. Log a weight entry
+6. Open the Account page and download your data export
+7. Verify the health endpoint: `GET https://<project-ref>.functions.supabase.co/health`
 
 ---
 

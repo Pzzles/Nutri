@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 
-type Phase = "idle" | "awaiting_otp" | "done" | "already_linked";
+type Phase = "idle" | "done";
 type DeletePhase = "idle" | "confirming" | "deleting" | "deleted";
 type EquationSex = "male" | "female" | "";
 
@@ -20,10 +21,15 @@ const EMPTY_HEALTH_PROFILE: HealthProfileForm = {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 export default function AccountLink() {
-  // ── Email-link flow ────────────────────────────────────────────────────────
+  // ── Account flow ───────────────────────────────────────────────────────────
   const [phase, setPhase] = useState<Phase>("idle");
+  const [accountUser, setAccountUser] = useState<User | null>(null);
+  const [accountLoading, setAccountLoading] = useState(true);
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [healthProfile, setHealthProfile] = useState<HealthProfileForm>(EMPTY_HEALTH_PROFILE);
@@ -33,8 +39,22 @@ export default function AccountLink() {
   const [profileSaved, setProfileSaved] = useState(false);
 
   useEffect(() => {
+    void loadAccount();
     void loadHealthProfile();
   }, []);
+
+  async function loadAccount() {
+    setAccountLoading(true);
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      setAccountUser(user);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not load your account.");
+    } finally {
+      setAccountLoading(false);
+    }
+  }
 
   async function loadHealthProfile() {
     setProfileLoading(true);
@@ -124,41 +144,63 @@ export default function AccountLink() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  async function handleRequestLink(e: React.FormEvent) {
+  async function handleCreateAccount(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const { error: err } = await supabase.auth.updateUser({ email });
-      if (err) {
-        if (err.message.toLowerCase().includes("already")) {
-          setPhase("already_linked");
-          return;
-        }
-        throw err;
-      }
-      setPhase("awaiting_otp");
-    } catch (err: any) {
-      setError(err.message ?? "Could not send confirmation email.");
+      const { data, error: updateError } = await supabase.auth.updateUser({
+        email: email.trim(),
+        password,
+      });
+      if (updateError) throw updateError;
+      setAccountUser(data.user);
+      setPhase("done");
+      setPassword("");
+      setConfirmPassword("");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not save your account.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleVerifyOtp(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSignOut() {
     setError(null);
     setLoading(true);
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+      setError(signOutError.message);
+      setLoading(false);
+    }
+  }
+
+  async function handleUpdatePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setPasswordSaved(false);
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
     try {
-      const { error: err } = await supabase.auth.verifyOtp({
-        email,
-        token: otp.trim(),
-        type: "email_change",
-      });
-      if (err) throw err;
-      setPhase("done");
-    } catch (err: any) {
-      setError(err.message ?? "Verification failed.");
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw updateError;
+      setPassword("");
+      setConfirmPassword("");
+      setShowPasswordForm(false);
+      setPasswordSaved(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not update your password.");
     } finally {
       setLoading(false);
     }
@@ -324,81 +366,165 @@ export default function AccountLink() {
         )}
       </section>
 
-      {/* ── Email-link section ─────────────────────────────────────────────── */}
-      <section>
-        <h1 className="font-display text-2xl font-semibold text-ink">Save your account</h1>
-        <p className="mt-1 text-sm text-muted">
-          Your data is tied to this device. Add an email so you can sign in on any device and
-          never lose your history.
-        </p>
+      {/* ── Account section ────────────────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-surface p-5 sm:p-6">
+        <h1 className="font-display text-2xl font-semibold text-ink">Account</h1>
 
-        {phase === "idle" && (
-          <form onSubmit={handleRequestLink} className="mt-6 space-y-4">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
-            >
-              {loading ? "Sending…" : "Send confirmation code"}
-            </button>
-            {error && <p className="text-sm text-confidence-low">{error}</p>}
-          </form>
-        )}
-
-        {phase === "awaiting_otp" && (
-          <form onSubmit={handleVerifyOtp} className="mt-6 space-y-4">
-            <p className="text-sm text-muted">
-              A 6-digit code was sent to <strong>{email}</strong>. Enter it below.
+        {accountLoading ? (
+          <p className="mt-4 text-sm text-muted">Loading account…</p>
+        ) : accountUser?.is_anonymous ? (
+          <>
+            <p className="mt-1 text-sm text-muted">
+              This is still a device-only account. Add an email and password to keep the same
+              meals, weights and goals when you sign in elsewhere.
             </p>
-            <input
-              type="text"
-              inputMode="numeric"
-              required
-              maxLength={6}
-              value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              placeholder="123456"
-              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-            />
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
-              >
-                {loading ? "Verifying…" : "Verify code"}
-              </button>
+
+            {phase === "done" ? (
+              <div className="mt-6 rounded-lg bg-primary-light px-4 py-3 text-sm text-primary-dark">
+                Account saved. You can now sign in with <strong>{email}</strong> on another device.
+              </div>
+            ) : (
+              <form onSubmit={handleCreateAccount} className="mt-6 space-y-4">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-ink">Email</span>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-ink">Password</span>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-ink">Confirm password</span>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </label>
+                <p className="text-xs text-muted">
+                  Email verification is temporarily disabled. No confirmation message will be sent.
+                </p>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+                >
+                  {loading ? "Saving…" : "Create account"}
+                </button>
+              </form>
+            )}
+          </>
+        ) : (
+          <div className="mt-4">
+            {phase === "done" && (
+              <div className="mb-4 rounded-lg bg-primary-light px-4 py-3 text-sm text-primary-dark">
+                Account saved. Your existing meals, weights and goals stay with this account.
+              </div>
+            )}
+            <p className="text-sm text-muted">Signed in as</p>
+            <p className="mt-1 break-all text-sm font-medium text-ink">{accountUser?.email}</p>
+
+            {passwordSaved && (
+              <p className="mt-3 text-sm text-confidence-high">Password saved.</p>
+            )}
+
+            {showPasswordForm ? (
+              <form onSubmit={handleUpdatePassword} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-ink">New password</span>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-ink">Confirm new password</span>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+                  >
+                    {loading ? "Saving…" : "Save password"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasswordForm(false);
+                      setPassword("");
+                      setConfirmPassword("");
+                      setError(null);
+                    }}
+                    className="rounded-lg border border-border px-4 py-2 text-sm text-muted"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
               <button
                 type="button"
-                onClick={() => setPhase("idle")}
-                className="rounded-lg border border-border px-4 py-2 text-sm text-muted"
+                onClick={() => {
+                  setShowPasswordForm(true);
+                  setPasswordSaved(false);
+                }}
+                className="mt-4 rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink hover:border-primary"
               >
-                Change email
+                Set or change password
               </button>
-            </div>
-            {error && <p className="text-sm text-confidence-low">{error}</p>}
-          </form>
-        )}
+            )}
 
-        {phase === "done" && (
-          <div className="mt-6 rounded-lg bg-primary-light px-4 py-3 text-sm text-primary-dark">
-            Account saved. You can now sign in with <strong>{email}</strong> on any device.
+            <p className="mt-5 text-xs text-muted">
+              If you previously saved this account using an email code, set a password before
+              signing out for the first time.
+            </p>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={loading}
+              className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink hover:border-primary disabled:opacity-50"
+            >
+              {loading ? "Signing out…" : "Sign out"}
+            </button>
           </div>
         )}
 
-        {phase === "already_linked" && (
-          <div className="mt-6 rounded-lg bg-primary-light px-4 py-3 text-sm text-primary-dark">
-            This account is already linked to an email address.
-          </div>
-        )}
+        {error && <p role="alert" className="mt-3 text-sm text-confidence-low">{error}</p>}
       </section>
 
       <hr className="border-border" />
