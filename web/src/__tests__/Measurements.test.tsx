@@ -14,18 +14,21 @@ vi.mock("../lib/anthropometry", async (importOriginal) => {
     saveAnthropometryDraft: vi.fn(),
     finalizeAnthropometrySession: vi.fn(),
     deleteAnthropometrySession: vi.fn(),
+    getAnthropometricProgress: vi.fn(),
   };
 });
 
 import {
   deleteAnthropometrySession,
   finalizeAnthropometrySession,
+  getAnthropometricProgress,
   saveAnthropometryDraft,
 } from "../lib/anthropometry";
 
 const mockSaveDraft = vi.mocked(saveAnthropometryDraft);
 const mockFinalize = vi.mocked(finalizeAnthropometrySession);
 const mockDelete = vi.mocked(deleteAnthropometrySession);
+const mockGetProgress = vi.mocked(getAnthropometricProgress);
 
 function response(
   status: "draft" | "finalized" = "draft",
@@ -55,6 +58,7 @@ beforeEach(() => {
   mockSaveDraft.mockReset();
   mockFinalize.mockReset();
   mockDelete.mockReset();
+  mockGetProgress.mockReset();
   mockSaveDraft.mockResolvedValue(response());
   mockFinalize.mockResolvedValue(response("finalized", [{
     site_code: "waist",
@@ -68,6 +72,16 @@ beforeEach(() => {
     quality_flags: [],
   }]));
   mockDelete.mockResolvedValue({ deleted_session_id: "session-001" });
+  mockGetProgress.mockResolvedValue({
+    series: [],
+    weight_comparison: null,
+    algorithm_versions: {
+      change: "anthropometry_change_v1",
+      weight_comparison: "anthropometry_weight_comparison_v1",
+      weight_trend: "weight_trend_v1",
+    },
+    limitations: [],
+  });
 });
 
 async function beginWithSites(codes: AnthropometrySiteCode[]) {
@@ -118,6 +132,15 @@ describe("measurement setup", () => {
     await user.click(screen.getByRole("button", { name: /Begin with 0 sites/i }));
     expect(screen.getByRole("alert")).toHaveTextContent(/select at least one/i);
     expect(mockSaveDraft).not.toHaveBeenCalled();
+  });
+
+  it("loads history only when the history and trends tab is opened", async () => {
+    const user = userEvent.setup();
+    render(<Measurements />);
+    expect(mockGetProgress).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("tab", { name: /history & trends/i }));
+    expect(await screen.findByRole("heading", { name: /no finalized measurements yet/i })).toBeVisible();
+    expect(mockGetProgress).toHaveBeenCalledTimes(1);
   });
 });
 

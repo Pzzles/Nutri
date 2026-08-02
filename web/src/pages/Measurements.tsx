@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnthropometryTrends } from "../components/AnthropometryTrends";
 import {
   ANTHROPOMETRY_PREPARATION,
   ANTHROPOMETRY_PROTOCOL_VERSION,
@@ -35,6 +36,7 @@ function newIdempotencyKey(): string {
 }
 
 export default function Measurements() {
+  const [view, setView] = useState<"record" | "trends">("record");
   const [phase, setPhase] = useState<WorkflowPhase>("setup");
   const [selectedSites, setSelectedSites] = useState<AnthropometrySiteCode[]>(
     STANDARD_SITE_CODES,
@@ -64,6 +66,14 @@ export default function Measurements() {
   const currentSiteCode = circuitSites[siteIndex] ?? circuitSites[0];
   const currentSite = currentSiteCode ? siteDefinition(currentSiteCode) : null;
   const readingNumber = circuit;
+
+  function handleViewTabKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextView = event.key === "ArrowLeft" || event.key === "Home" ? "record" : "trends";
+    setView(nextView);
+    requestAnimationFrame(() => document.getElementById(`measurements-tab-${nextView}`)?.focus());
+  }
 
   useEffect(() => {
     if (phase !== "measure" || !currentSiteCode) return;
@@ -320,6 +330,39 @@ export default function Measurements() {
 
       <p className="sr-only" aria-live="polite" aria-atomic="true">{statusMessage}</p>
 
+      <div className="mt-6 inline-flex w-full rounded-lg border border-border bg-surface p-1 sm:w-auto" role="tablist" aria-label="Measurement sections" onKeyDown={handleViewTabKeyDown}>
+        <button
+          type="button"
+          id="measurements-tab-record"
+          role="tab"
+          aria-selected={view === "record"}
+          tabIndex={view === "record" ? 0 : -1}
+          aria-controls="measurements-panel-record"
+          onClick={() => setView("record")}
+          className={`min-h-11 flex-1 rounded-md px-4 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:flex-none ${view === "record" ? "bg-primary text-white" : "text-muted hover:text-ink"}`}
+        >
+          Record measurements
+        </button>
+        <button
+          type="button"
+          id="measurements-tab-trends"
+          role="tab"
+          aria-selected={view === "trends"}
+          tabIndex={view === "trends" ? 0 : -1}
+          aria-controls="measurements-panel-trends"
+          onClick={() => setView("trends")}
+          className={`min-h-11 flex-1 rounded-md px-4 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:flex-none ${view === "trends" ? "bg-primary text-white" : "text-muted hover:text-ink"}`}
+        >
+          History &amp; trends
+        </button>
+      </div>
+
+      <div id="measurements-panel-trends" role="tabpanel" aria-labelledby="measurements-tab-trends" className={view === "trends" ? "" : "hidden"}>
+        {view === "trends" && <AnthropometryTrends unit={unit} />}
+      </div>
+
+      <div id="measurements-panel-record" role="tabpanel" aria-labelledby="measurements-tab-record" className={view === "record" ? "" : "hidden"}>
+
       {phase === "setup" && (
         <SetupPanel
           selectedSites={selectedSites}
@@ -372,7 +415,7 @@ export default function Measurements() {
       )}
 
       {phase === "complete" && completed && (
-        <CompletedPanel result={completed} unit={unit} onNewSession={resetLocalSession} />
+        <CompletedPanel result={completed} unit={unit} onNewSession={resetLocalSession} onOpenTrends={() => setView("trends")} />
       )}
 
       {discardConfirm && phase !== "complete" && (
@@ -382,6 +425,7 @@ export default function Measurements() {
           onConfirm={() => void discardDraft()}
         />
       )}
+      </div>
     </main>
   );
 }
@@ -701,7 +745,7 @@ function ReviewPanel(props: ReviewPanelProps) {
   );
 }
 
-function CompletedPanel({ result, unit, onNewSession }: { result: AnthropometrySaveResponse; unit: MeasurementUnit; onNewSession: () => void }) {
+function CompletedPanel({ result, unit, onNewSession, onOpenTrends }: { result: AnthropometrySaveResponse; unit: MeasurementUnit; onNewSession: () => void; onOpenTrends: () => void }) {
   return (
     <section className="mt-6 rounded-xl border border-border bg-surface p-4 sm:p-6" aria-labelledby="complete-heading" aria-live="polite">
       <div className="flex h-11 w-11 items-center justify-center rounded-full bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" aria-hidden="true">✓</div>
@@ -726,7 +770,10 @@ function CompletedPanel({ result, unit, onNewSession }: { result: AnthropometryS
       </dl>
 
       <p className="mt-5 text-xs text-muted">Protocol: {ANTHROPOMETRY_PROTOCOL_VERSION}</p>
-      <button type="button" onClick={onNewSession} className="mt-5 min-h-12 w-full rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary-dark sm:w-auto">Start another session</button>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+        <button type="button" onClick={onOpenTrends} className="min-h-12 w-full rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary-dark sm:w-auto">View history &amp; trends</button>
+        <button type="button" onClick={onNewSession} className="min-h-12 w-full rounded-lg border border-border px-5 py-3 text-sm font-semibold text-ink hover:bg-background sm:w-auto">Start another session</button>
+      </div>
     </section>
   );
 }
