@@ -312,7 +312,9 @@ describe("resolve-foods tier 8 — unresolved", () => {
   it("returns a valid resolved item alongside an unresolved item in the same request", async () => {
     const resolvedQuery = `t8-multi-resolvable-${Date.now()}`;
     const resolvedFoodId = await insertUserFood(resolvedQuery);
-    const unresolvedQuery = `t8-multi-unresolvable-${Date.now()}-xyzzy`;
+    // Use the same prefix pattern as the tier-8 single-item test: no real words
+    // that FatSecret's lenient matching could resolve ("multi" triggered matches).
+    const unresolvedQuery = `zzz-unresolvable-gibberish-${Date.now()}`;
 
     const res = await fetch(`${SUPABASE_URL}/functions/v1/resolve-foods`, {
       method: "POST",

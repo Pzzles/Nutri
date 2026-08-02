@@ -45,6 +45,26 @@ beforeAll(async () => {
   const { data } = await client.auth.getSession();
   jwt = data.session!.access_token;
   await cleanupUser(userId);
+
+  // Phase 5+: start-goal-phase requires a complete profile and an official
+  // weight log. Set these up here so later describe blocks can depend on them.
+  await svcClient().from("profiles").upsert({
+    id:             userId,
+    birth_date:     "1990-01-01",
+    sex:            "male",
+    height_cm:      180,
+    activity_level: "moderate",
+    timezone:       "Africa/Johannesburg",
+  }, { onConflict: "id" });
+
+  await svcClient().from("weight_logs").insert({
+    user_id:     userId,
+    weight_kg:   85.5,
+    measured_at: "2026-07-19T07:00:00.000Z",
+    logged_date: "2026-07-19",
+    is_official: true,
+    source:      "manual",
+  });
 });
 
 afterAll(async () => {
@@ -187,10 +207,11 @@ describe("start-goal-phase", () => {
     });
     expect(resp.success).toBe(true);
     expect(typeof resp.data).toBe("object");
-    expect(resp.data.id).toMatch(/^[0-9a-f-]{36}$/i);
-    expect(resp.data.mode).toBe("cut");
-    expect(resp.data.status).toBe("active");
-    phaseId = resp.data.id;
+    // Phase 5+: response is { phase, snapshot }, not the phase row directly.
+    expect(resp.data.phase.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(resp.data.phase.mode).toBe("cut");
+    expect(resp.data.phase.status).toBe("active");
+    phaseId = resp.data.phase.id;
   });
 
   it("rejects starting a second phase without a transition", async () => {
@@ -222,7 +243,8 @@ describe("start-goal-phase", () => {
       .eq("id", phaseId)
       .single();
     expect(old!.status).toBe("superseded");
-    expect(old!.superseded_by).toBe(resp.data.id);
+    // Phase 5+: response is { phase, snapshot }
+    expect(old!.superseded_by).toBe(resp.data.phase.id);
   });
 });
 
