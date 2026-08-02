@@ -1,8 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 type Phase = "idle" | "awaiting_otp" | "done" | "already_linked";
 type DeletePhase = "idle" | "confirming" | "deleting" | "deleted";
+type EquationSex = "male" | "female" | "";
+
+interface HealthProfileForm {
+  birthDate: string;
+  equationSex: EquationSex;
+  heightCm: string;
+}
+
+const EMPTY_HEALTH_PROFILE: HealthProfileForm = {
+  birthDate: "",
+  equationSex: "",
+  heightCm: "",
+};
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -13,6 +26,94 @@ export default function AccountLink() {
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [healthProfile, setHealthProfile] = useState<HealthProfileForm>(EMPTY_HEALTH_PROFILE);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSaved, setProfileSaved] = useState(false);
+
+  useEffect(() => {
+    void loadHealthProfile();
+  }, []);
+
+  async function loadHealthProfile() {
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("Not authenticated");
+
+      const { data, error: fetchError } = await supabase
+        .from("profiles")
+        .select("birth_date, sex, height_cm")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+
+      setHealthProfile({
+        birthDate: data?.birth_date ?? "",
+        equationSex: data?.sex === "male" || data?.sex === "female" ? data.sex : "",
+        heightCm: data?.height_cm != null ? String(data.height_cm) : "",
+      });
+    } catch (err: any) {
+      setProfileError(err.message ?? "Could not load your health profile.");
+    } finally {
+      setProfileLoading(false);
+    }
+  }
+
+  async function handleSaveHealthProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setProfileError(null);
+    setProfileSaved(false);
+
+    const heightCm = Number(healthProfile.heightCm);
+    if (!healthProfile.birthDate || !healthProfile.equationSex || !healthProfile.heightCm) {
+      setProfileError("Complete all three profile fields.");
+      return;
+    }
+    if (!Number.isFinite(heightCm) || heightCm <= 0) {
+      setProfileError("Height must be a positive number.");
+      return;
+    }
+
+    const birthDate = new Date(`${healthProfile.birthDate}T12:00:00Z`);
+    const today = new Date();
+    let age = today.getUTCFullYear() - birthDate.getUTCFullYear();
+    const birthdayPassed =
+      today.getUTCMonth() > birthDate.getUTCMonth() ||
+      (today.getUTCMonth() === birthDate.getUTCMonth() && today.getUTCDate() >= birthDate.getUTCDate());
+    if (!birthdayPassed) age -= 1;
+    if (Number.isNaN(birthDate.getTime()) || birthDate > today) {
+      setProfileError("Enter a valid date of birth.");
+      return;
+    }
+    if (age < 18) {
+      setProfileError("Calorie target calculations are available for adults aged 18 or older.");
+      return;
+    }
+
+    setProfileSaving(true);
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("Not authenticated");
+
+      const { error: saveError } = await supabase.from("profiles").upsert({
+        id: user.id,
+        birth_date: healthProfile.birthDate,
+        sex: healthProfile.equationSex,
+        height_cm: heightCm,
+      }, { onConflict: "id" });
+      if (saveError) throw saveError;
+      setProfileSaved(true);
+    } catch (err: any) {
+      setProfileError(err.message ?? "Could not save your health profile.");
+    } finally {
+      setProfileSaving(false);
+    }
+  }
 
   // ── Export flow ────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
@@ -142,7 +243,86 @@ export default function AccountLink() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10 space-y-10">
+    <div className="mx-auto max-w-2xl px-4 py-10 space-y-10">
+
+      {/* ── Health profile section ───────────────────────────────────────────── */}
+      <section className="rounded-xl border border-border bg-surface p-5 sm:p-6">
+        <h1 className="font-display text-2xl font-semibold text-ink">Health profile</h1>
+        <p className="mt-1 text-sm text-muted">
+          These details are used to calculate calorie-target previews. Activity level and official
+          weight are collected when you set a goal and log your weight.
+        </p>
+
+        {profileLoading ? (
+          <p className="mt-6 text-sm text-muted">Loading profile…</p>
+        ) : (
+          <form onSubmit={handleSaveHealthProfile} className="mt-6 space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink">Date of birth</span>
+              <input
+                type="date"
+                required
+                value={healthProfile.birthDate}
+                onChange={(e) => {
+                  setHealthProfile((profile) => ({ ...profile, birthDate: e.target.value }));
+                  setProfileSaved(false);
+                }}
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink">Sex used by the equation</span>
+              <select
+                required
+                value={healthProfile.equationSex}
+                onChange={(e) => {
+                  setHealthProfile((profile) => ({ ...profile, equationSex: e.target.value as EquationSex }));
+                  setProfileSaved(false);
+                }}
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Select an option</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+              </select>
+              <span className="mt-1 block text-xs text-muted">
+                The current calorie equation requires one of these two inputs.
+              </span>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-ink">Height (cm)</span>
+              <input
+                type="number"
+                required
+                min="1"
+                step="0.1"
+                inputMode="decimal"
+                value={healthProfile.heightCm}
+                onChange={(e) => {
+                  setHealthProfile((profile) => ({ ...profile, heightCm: e.target.value }));
+                  setProfileSaved(false);
+                }}
+                placeholder="175"
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
+              />
+            </label>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={profileSaving}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+              >
+                {profileSaving ? "Saving…" : "Save profile"}
+              </button>
+              {profileSaved && <span className="text-sm text-confidence-high">Profile saved.</span>}
+            </div>
+            {profileError && <p role="alert" className="text-sm text-confidence-low">{profileError}</p>}
+          </form>
+        )}
+      </section>
 
       {/* ── Email-link section ─────────────────────────────────────────────── */}
       <section>

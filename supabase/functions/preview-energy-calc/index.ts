@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
     const userId = userData.user.id;
 
     const body = await req.json().catch(() => ({}));
-    const { goal_mode, target_change_kg_per_week, manual_maintenance_kcal,
+    const { goal_mode, target_change_kg_per_week, manual_maintenance_kcal, starting_weight_kg,
             aggressive_rate_acknowledged, activity_level: bodyActivityLevel } = body;
 
     const service = getServiceClient();
@@ -95,6 +95,9 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
+    const hasManualWeight = starting_weight_kg !== undefined && starting_weight_kg !== null && starting_weight_kg !== "";
+    const resolvedWeightKg = hasManualWeight ? Number(starting_weight_kg) : Number(weightRow?.weight_kg);
+
     // ── Resolve activity level (body override wins if valid) ───────────────────
     const validActivityLevels = ["sedentary", "light", "moderate", "active", "very_active"];
     const activityLevelSource = (bodyActivityLevel && validActivityLevels.includes(bodyActivityLevel))
@@ -108,7 +111,7 @@ Deno.serve(async (req) => {
     if (!profile?.sex || !["male", "female"].includes(profile.sex))      missingFieldNames.push("equation_sex");
     if (!profile?.height_cm)                                              missingFieldNames.push("height_cm");
     if (!resolvedActivityLevel)                                           missingFieldNames.push("activity_level");
-    if (!weightRow)                                                       missingFieldNames.push("official_weight_kg");
+    if (!hasManualWeight && !weightRow)                                   missingFieldNames.push("official_weight_kg");
     if (!goal_mode)                                                       missingFieldNames.push("goal_mode");
     if (goal_mode !== "maintenance" && target_change_kg_per_week == null) missingFieldNames.push("target_change_kg_per_week");
 
@@ -117,7 +120,7 @@ Deno.serve(async (req) => {
     // ── Weight freshness check ─────────────────────────────────────────────────
     const staleFields: { field: string; recorded_at: string; days_old: number; action: string }[] = [];
     let daysOld = 0;
-    if (weightRow) {
+    if (weightRow && !hasManualWeight) {
       const measuredAt = new Date(weightRow.measured_at as string);
       daysOld = (Date.now() - measuredAt.getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld > WEIGHT_FRESHNESS_WARNING_DAYS) {
@@ -133,7 +136,7 @@ Deno.serve(async (req) => {
     // ── Data quality object ────────────────────────────────────────────────────
     const profileFieldNames = ["birth_date", "equation_sex", "height_cm", "activity_level"];
     const profileComplete   = missingFieldNames.filter(f => profileFieldNames.includes(f)).length === 0;
-    const weightCurrent     = !!(weightRow && daysOld <= WEIGHT_FRESHNESS_WARNING_DAYS);
+    const weightCurrent     = hasManualWeight || !!(weightRow && daysOld <= WEIGHT_FRESHNESS_WARNING_DAYS);
     const calculationPossible = missingFields.length === 0;
 
     const dataQuality = { profile_complete: profileComplete, weight_current: weightCurrent, calculation_possible: calculationPossible };
@@ -147,7 +150,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const weight_kg      = Number(weightRow!.weight_kg);
+    const weight_kg      = resolvedWeightKg;
     const height_cm      = Number(profile!.height_cm);
     const equation_sex   = profile!.sex as EquationSex;
     const activity_level = resolvedActivityLevel as ActivityLevel;
@@ -197,8 +200,8 @@ Deno.serve(async (req) => {
     const inputProvenance: Record<string, unknown> = {
       weight: {
         source_type:  "measured",
-        log_source:   weightRow!.source ?? "unknown",
-        measured_at:  weightRow!.measured_at,
+        log_source:   hasManualWeight ? "goals_form" : (weightRow!.source ?? "unknown"),
+        measured_at:  hasManualWeight ? calcTimestamp : weightRow!.measured_at,
       },
       activity_level: {
         source_type:  "user_selected",
@@ -258,8 +261,8 @@ Deno.serve(async (req) => {
         equation_sex,
         height_cm,
         official_weight_kg:        weight_kg,
-        weight_log_id:             weightRow!.id,
-        weight_measured_at:        weightRow!.measured_at,
+        weight_log_id:             hasManualWeight ? null : weightRow!.id,
+        weight_measured_at:        hasManualWeight ? calcTimestamp : weightRow!.measured_at,
         age_years,
         activity_level,
         activity_multiplier,
