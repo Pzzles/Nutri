@@ -5,8 +5,8 @@
 **Repeatability thresholds:** `anthropometry_repeatability_thresholds_v1`<br>
 **Longitudinal change algorithm:** `anthropometry_change_v1`<br>
 **Cross-signal description:** `anthropometry_weight_comparison_v1`<br>
-**Status:** Gate 1 frozen<br>
-**Scope:** Specification and audit only; no database or production UI changes
+**Status:** Gate 1 frozen; persisted-draft lifecycle amended by Gate 2<br>
+**Scope:** Gate 1 scientific specification plus Gate 2 lifecycle/schema amendment; no authenticated API or production UI changes
 
 ## 1. Purpose and interpretation boundary
 
@@ -144,18 +144,22 @@ The range check is a corruption/input-error guard, not a claim about biologicall
 
 ## 7. Session lifecycle and authority
 
-V1 persists no server-side draft. The UI may keep an unfinished form locally. Finalisation sends all raw readings once to a server endpoint. In one transaction the server:
+Gate 2 amends the Gate 1 lifecycle to support persisted drafts. This is a versioned data-contract change (`anthropometry_data_contract_v2`); it does not change the anatomical protocol or representative algorithm.
+
+A user may create a draft session and add, replace, or remove its raw readings. Drafts have no representatives and are excluded from progress history. Draft ownership cannot change. A draft may be deleted by its owner.
+
+Finalisation sends the complete draft to a server-authoritative operation. In one transaction the server:
 
 1. authenticates the user;
 2. validates site codes, raw values, reading counts, timestamp, and protocol version;
 3. derives the user-local calendar date from `profiles.timezone` (default `Africa/Johannesburg`);
 4. calculates every representative and quality field;
-5. inserts the session, raw readings, and representatives;
-6. marks the session finalised.
+5. changes the draft session to finalised and freezes its calculation versions;
+6. inserts the calculated representatives against that finalised parent.
 
 If any step fails, nothing is stored. Clients cannot supply representatives, changes, quality classifications, or cross-signal text.
 
-Finalised sessions, readings, and representatives are immutable for the account lifetime. There is no ordinary update or delete operation. A correction is a new session with an optional note referencing the mistake; the old raw record remains. Explicit whole-account deletion removes the data by cascade, and data export includes all three record types.
+Finalised sessions, readings, and representatives cannot be updated or reopened. A correction is a new session with an optional note referencing the mistake; the old raw record remains unless the user explicitly invokes the authenticated deletion operation introduced in Prompt 3. Whole-account deletion removes the data by cascade, and data export includes all three record types.
 
 Idempotency is required. Repeating the same finalisation request with the same user-scoped idempotency key returns the original finalised session; reusing the key with a different payload returns `IDEMPOTENCY_CONFLICT`.
 

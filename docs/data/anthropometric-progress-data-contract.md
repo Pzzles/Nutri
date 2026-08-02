@@ -1,25 +1,26 @@
 # Anthropometric Progress Data Contract
 
 **Phase:** 10 — Anthropometric Progress Tracking<br>
-**Contract:** `anthropometry_data_contract_v1`<br>
+**Contract:** `anthropometry_data_contract_v2`<br>
 **Protocol:** `anthropometry_protocol_v1`<br>
-**Status:** Gate 1 frozen; proposed schema for later implementation
+**Status:** Gate 2 lifecycle amendment implemented
 
 ## 1. Contract principles
 
-- Raw readings are first-class immutable records.
-- Finalisation is atomic; no server-side draft is persisted in v1.
+- Raw readings are first-class preserved records; they become immutable when their session is finalised.
+- Draft sessions and their raw readings are persisted and owner-editable.
+- Finalisation is an atomic, one-way, server-authoritative transition.
 - Representatives and quality classifications are calculated only by the server.
 - Site codes carry explicit landmark semantics defined in the Phase 10 specification.
 - `waist` and `abdomen_navel`, and every left/right limb site, remain distinct.
 - Missing sites produce no row and no point. `null` means unavailable; zero is never a missing sentinel.
-- Finalised sessions are not edited or deleted during normal account use.
+- Finalised sessions are not edited or reopened; deletion requires the explicit authenticated Prompt 3 operation.
 - Dates and values are never interpolated, forward-filled, or smoothed.
 - Every response identifies the protocol, calculation, and threshold versions used.
 
-## 2. Proposed relational model
+## 2. Implemented relational model
 
-Implementation will create dedicated tables. Column types and constraints below are frozen unless a later prompt documents and versions a necessary correction.
+Gate 2 creates these dedicated tables in migration `0030_anthropometric_progress_model.sql`. Column types and constraints below are frozen unless a later prompt documents and versions a necessary correction.
 
 ### 2.1 `anthropometric_sessions`
 
@@ -27,26 +28,29 @@ Implementation will create dedicated tables. Column types and constraints below 
 |---|---|---:|---|
 | `id` | `uuid` | no | Primary key, server generated |
 | `user_id` | `uuid` | no | FK to `profiles(id) ON DELETE CASCADE` |
-| `measured_at` | `timestamptz` | no | User-supplied observation time, validated by server |
-| `logged_date` | `date` | no | Derived by server in the effective profile timezone |
-| `timezone` | `text` | no | Effective IANA timezone frozen at finalisation |
+| `status` | `text` | no | `draft` or `finalized`; transition is one-way |
+| `measured_at` | `timestamptz` | draft: yes | User-supplied observation time, required to finalise |
+| `logged_date` | `date` | draft: yes | Null in drafts; derived by server at finalisation |
+| `timezone` | `text` | draft: yes | Null in drafts; effective IANA timezone frozen at finalisation |
 | `notes` | `text` | yes | Optional user note, maximum 500 characters |
+| `data_contract_version` | `text` | no | `anthropometry_data_contract_v2` |
 | `protocol_version` | `text` | no | `anthropometry_protocol_v1` |
-| `representative_algorithm_version` | `text` | no | `anthropometry_representative_v1` |
-| `thresholds_version` | `text` | no | `anthropometry_repeatability_thresholds_v1` |
-| `idempotency_key` | `text` | no | User-scoped, 1–128 characters |
-| `payload_hash` | `text` | no | Server-generated canonical request hash for conflict detection |
-| `finalized_at` | `timestamptz` | no | Server clock; establishes finalised state |
+| `representative_algorithm_version` | `text` | draft: yes | Null in drafts; `anthropometry_representative_v1` when finalised |
+| `thresholds_version` | `text` | draft: yes | Null in drafts; `anthropometry_repeatability_thresholds_v1` when finalised |
+| `idempotency_key` | `text` | draft: yes | Null in drafts; user-scoped 1–128 characters when finalised |
+| `payload_hash` | `text` | draft: yes | Null in drafts; server-generated canonical request hash when finalised |
+| `finalized_at` | `timestamptz` | draft: yes | Null in drafts; server clock at finalisation |
 | `created_at` | `timestamptz` | no | Server default |
+| `updated_at` | `timestamptz` | no | Updated while draft; frozen after finalisation |
 
 Required indexes/constraints:
 
 - unique `(user_id, idempotency_key)`;
 - index `(user_id, measured_at DESC, id DESC)`;
 - `measured_at <= server_now + 5 minutes` enforced in finalisation logic;
-- no user `UPDATE` or `DELETE` policy.
+- owners may update/delete only their draft rows; direct client finalisation and finalised mutation are denied.
 
-There is intentionally no `status` or draft row. Every persisted session is finalised.
+Draft rows cannot carry logged date, timezone, calculation versions, idempotency values, payload hash, or finalisation time. Finalised rows require all of them. Finalised rows cannot transition back to draft.
 
 ### 2.2 `anthropometric_readings`
 
@@ -56,15 +60,16 @@ There is intentionally no `status` or draft row. Every persisted session is fina
 | `session_id` | `uuid` | no | FK to session `ON DELETE CASCADE` |
 | `site_code` | `text` | no | One frozen site code |
 | `reading_number` | `smallint` | no | `1`, `2`, or conditionally `3` |
-| `value_cm` | `numeric(5,1)` | no | Raw user reading, 5.0–300.0 inclusive |
+| `value_cm` | `numeric(6,2)` | no | Raw user reading, 5.0–300.0 inclusive; CHECK requires an exact 0.1 cm increment rather than silently rounding |
 | `created_at` | `timestamptz` | no | Server default |
+| `updated_at` | `timestamptz` | no | Updated while the parent remains a draft; frozen after finalisation |
 
 Required constraints:
 
 - unique `(session_id, site_code, reading_number)`;
 - `site_code` is one of `chest`, `waist`, `abdomen_navel`, `hips`, `left_upper_arm_relaxed`, `right_upper_arm_relaxed`, `left_mid_thigh`, `right_mid_thigh`, `neck`;
-- raw values and reading numbers cannot be updated;
-- user access is read-only through ownership of the parent session.
+- raw values and reading numbers may be updated only while the parent session is a draft;
+- ownership is resolved through the parent session; a finalised parent makes child writes unavailable.
 
 Reading rows preserve request order by `reading_number`. The server must not replace them with their mean or median.
 
@@ -80,6 +85,7 @@ Reading rows preserve request order by `reading_number`. The server must not rep
 | `initial_pair_difference_cm` | `numeric(4,1)` | no | Absolute difference of readings 1 and 2 |
 | `all_readings_range_cm` | `numeric(4,1)` | no | Maximum minus minimum across stored readings |
 | `quality` | `text` | no | `within_repeatability_threshold` or `repeatability_warning` |
+| `quality_flags` | `jsonb` | no | `[]` or `["initial_pair_exceeds_repeatability_threshold"]` as fixed by the method |
 | `algorithm_version` | `text` | no | `anthropometry_representative_v1` |
 | `created_at` | `timestamptz` | no | Server default |
 
@@ -91,9 +97,9 @@ Required constraints:
 
 ## 3. RLS and mutation boundary
 
-Users may select their own sessions and related rows. Clients do not receive table-level mutation rights for any of the three tables. An authenticated finalisation endpoint calls one transaction/RPC that verifies `auth.uid()`, validates the request, computes representatives, and inserts the complete graph.
+Users may select their own sessions and related rows. RLS permits owners to create, update, and delete drafts and to manage raw readings only while the parent remains a draft. Clients receive no representative write policy and cannot directly transition a session to finalised. An authenticated finalisation endpoint calls one transaction/RPC that verifies `auth.uid()`, validates the draft, computes representatives, and performs the one-way transition.
 
-There is no normal endpoint to update or delete a finalised session. Service-role access must not expose an edit path. Account deletion remains allowed and deletes the parent user/session graph. A future administrative repair, if ever required, must be separately authorised and audited; it is outside v1.
+There is no update or reopen path for a finalised session. Prompt 3 adds an explicit authenticated whole-session deletion operation; deleting the parent cascades to its readings and representatives. Account deletion also deletes the graph. A future administrative repair, if ever required, must be separately authorised and audited.
 
 ## 4. Finalisation endpoint
 
@@ -136,22 +142,26 @@ Success: `201 Created` on first finalisation and `200 OK` on an identical idempo
         "readings_cm": [88.2, 88.6],
         "representative_cm": 88.4,
         "method": "mean_of_two",
+        "reading_count": 2,
         "initial_pair_difference_cm": 0.4,
         "all_readings_range_cm": 0.4,
-        "quality": "within_repeatability_threshold"
+        "quality": "within_repeatability_threshold",
+        "quality_flags": []
       },
       {
         "site_code": "abdomen_navel",
         "readings_cm": [91.0, 92.2, 91.3],
         "representative_cm": 91.3,
         "method": "median_of_three",
+        "reading_count": 3,
         "initial_pair_difference_cm": 1.2,
         "all_readings_range_cm": 1.2,
-        "quality": "repeatability_warning"
+        "quality": "repeatability_warning",
+        "quality_flags": ["initial_pair_exceeds_repeatability_threshold"]
       }
     ],
     "algorithm_versions": {
-      "data_contract": "anthropometry_data_contract_v1",
+      "data_contract": "anthropometry_data_contract_v2",
       "protocol": "anthropometry_protocol_v1",
       "representative": "anthropometry_representative_v1",
       "repeatability_thresholds": "anthropometry_repeatability_thresholds_v1"
@@ -340,6 +350,6 @@ Bump the named version when any listed behavior changes:
 | `anthropometry_repeatability_thresholds_v1` | Reading bounds, 1.0 cm threshold, required counts, future tolerance |
 | `anthropometry_change_v1` | Point ordering, endpoint selection, elapsed-time calculation, or change calculation |
 | `anthropometry_weight_comparison_v1` | Eligible sites, quality gates, 14/7-day thresholds, endpoint alignment, direction bands, or sentence templates |
-| `anthropometry_data_contract_v1` | Persisted or API field semantics, missingness, idempotency, or immutability behavior |
+| `anthropometry_data_contract_v2` | Persisted draft/finalised lifecycle, API field semantics, missingness, idempotency, or immutability behavior |
 
 Old finalised sessions retain their stored versions. A new algorithm does not silently recalculate or overwrite historical representatives.

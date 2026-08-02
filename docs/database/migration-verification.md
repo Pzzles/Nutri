@@ -4,7 +4,7 @@ Date: 2026-08-02
 Verified on: local Supabase stack (PostgreSQL 15)  
 Command: `supabase db reset --local`
 
-All 28 migrations apply cleanly in order with zero errors.
+The Phase 9 baseline of 28 migrations applied cleanly in order with zero errors. Phase 10 migration `0030` is transactionally verified below; a full ledger-driven reset awaits the repository's separate `0029` migration-history repair.
 
 ---
 
@@ -40,6 +40,7 @@ All 28 migrations apply cleanly in order with zero errors.
 | 0026 | `0026_goal_feedback_assessment_v2.sql` | Adds rate bounds and adjustment columns to goal_feedback_assessments |
 | 0027 | `0027_fix_fn_log_weight_overload.sql` | **Phase 9 fix**: drops the original 5-param fn_log_weight overload (resolves PGRST203) |
 | 0028 | `0028_fix_supersede_fk_order.sql` | **Phase 9 fix**: defers superseded_by FK backfill until after new phase row exists |
+| 0030 | `0030_anthropometric_progress_model.sql` | **Phase 10 Gate 2**: draft/finalised anthropometric sessions, preserved readings, representatives, lifecycle guards and RLS |
 
 ---
 
@@ -58,8 +59,27 @@ All user-data tables have RLS enabled and at minimum one policy:
 | daily_log_status | `daily_log_status_all_own` | `auth.uid() = user_id` |
 | user_food_cache | `user_food_cache_all_own` | `auth.uid() = user_id` |
 | goal_feedback_assessments | `goal_feedback_assessments_all_own` | `auth.uid() = user_id` |
+| anthropometric_sessions | four operation-specific policies | owner read/write for drafts; owner read-only after finalisation |
+| anthropometric_readings | four parent-scoped policies | owner access through a session; writes only while draft |
+| anthropometric_representatives | `anthropometric_representatives_select_own` | owner read through the parent session; server-owned writes |
 
 `foods` table: global foods have `owner_user_id IS NULL`; user-created foods have `owner_user_id = auth.uid()`.
+
+### Phase 10 Gate 2 transactional verification
+
+Migration `0030` was applied to the local PostgreSQL 15 project inside a transaction and rolled back after assertions. The audit verified:
+
+- all three anthropometric tables enable RLS;
+- all nine operation-specific policies exist;
+- `anon` has no anthropometric table privileges;
+- authenticated draft/read privileges are present;
+- draft raw-reading updates succeed;
+- representatives cannot be inserted before finalisation;
+- the server-owned draft-to-finalized transition succeeds once;
+- session, raw-reading and representative updates fail after finalisation;
+- deleting the parent session cascades to its children.
+
+`supabase db push --local --dry-run` could not use the migration ledger because the active local database contains applied version `0029` from the repository's separate, unmerged duplicate-0027 repair. Gate 2 did not rewrite that ledger or import the unrelated branch.
 
 ---
 
