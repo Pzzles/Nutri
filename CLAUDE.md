@@ -110,14 +110,12 @@ Before `git clean`, show the user what would be deleted (`git clean -n`) and ask
 - Tests: Vitest 1.6.1 (unit + API integration) + Playwright (E2E)
 - Timezone: SAST = Africa/Johannesburg (UTC+2)
 
-## Active Phases
+## Current state
 
-Phase 5 (Scientific Baseline Calculations) is **in progress** on branch
-`feat/science-baseline-calculations`. It implements Mifflin–St Jeor BMR/TDEE,
-server-authoritative calorie targets, immutable calculation snapshots, and the
-Phase 5 data-collection and data-quality contract.
+All nine implementation phases are **complete**. The codebase is on branch
+`feat/product-deployment-hardening` awaiting review and merge to `master`.
 
-Do not implement Phase 6 features (EWMA smoothing, adaptive maintenance, plateau
-detection, Hall model, effective-dated activity history, waist-to-height ratio).
-See `docs/algorithms/phase-5-energy-calculations.md` and
-`docs/data/measurement-and-calculation-data-contract.md` for Phase 5 scope.
+Phases 1–9 are implemented, tested (331 backend integration tests pass), and
+documented. Do not implement Phase 6 features beyond what is already built
+(Hall model, effective-dated activity history, waist-to-height ratio). See
+`CHANGELOG.md` for a full list of what each phase delivered.

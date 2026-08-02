@@ -1,123 +1,156 @@
-# Nutrition Tracker
+# Nutri — Nutrition Tracker
 
-A working skeleton built from `docs/02-prs.md` (v2.0) through
-`docs/07-edge-functions.md` (v2.0) and the 13 ADRs in `docs/decisions/`.
-This is not a finished product — it's the core pipeline, for real, plus
-clearly-marked stubs for everything not yet wired up.
+Production-ready personal nutrition tracking application.
+Nine implementation phases complete. Version 0.1.0.
 
-## What's actually implemented
+## What's built
 
-- **Full database schema** (`supabase/migrations/0001_init_schema.sql`) —
-  every table, RLS policy, and Postgres function described in the spec.
-- **The core logging pipeline, end to end**: `parse-meal` (Claude) →
-  `resolve-foods` (Food Resolution Engine — synonym resolution, tiered
-  cache lookup, fuzzy matching, confidence scoring, post-resolution
-  duplicate detection) → `calculate-meal` (pure nutrition math) →
-  `log-meal` (atomic persistence + idempotency + cache promotion).
-- **Supporting functions**: `search-food`, `barcode-lookup`,
-  `create-custom-food`, `manage-custom-food`, `save-meal-template`,
-  `dashboard-summary` (today's totals), `log-weight`, `recent-foods`,
-  `edit-meal` (meal-level fields only), `health`, and the scheduled
-  `recalculate-frequency-rankings` job.
-- **A working React app** (`web/`) with magic-link auth, a "log a meal"
-  flow that exercises the whole pipeline, and a basic dashboard.
+**Meal logging pipeline (end-to-end)**
+- `parse-meal` — Claude AI parses natural-language meal descriptions
+- `resolve-foods` — 8-tier food resolution waterfall (user-exact → user-partial → user cache → global cache → fuzzy trigram → FatSecret → USDA → unresolved)
+- `calculate-meal` — pure nutrition math, unit conversion, confidence scoring
+- `log-meal` — atomic persistence with idempotency and cache promotion
 
-## What's honestly stubbed, not faked
+**Weight and goal tracking**
+- Weight logging with same-day demotion (only one official entry per day)
+- EWMA weight smoothing and Theil-Sen rate estimation
+- Goal phases (cut/maintenance/bulk) with server-authoritative calorie targets
+- Mifflin-St Jeor BMR + activity multiplier TDEE calculation
+- Immutable calorie target snapshots with full input provenance
+- Adaptive maintenance estimate from observed energy balance
+- Goal progress assessment with rate bounds and adjustment proposals
 
-- **USDA FDC / Open Food Facts text search** (`resolve-foods` tiers 4-5) —
-  the function signature and call site exist; the actual HTTP calls are a
-  `TODO`. Verify current API docs for both before wiring this up — external
-  API shapes drift and I didn't want to guess at exact params in code you'd
-  otherwise trust blindly.
-- **`log-meal` source: `'template'` and `'copy_previous'`** — return
-  `501 NOT_IMPLEMENTED`. The `draft` path (used by the web app) is fully
-  implemented; these two converge on the same persistence logic once
-  written (see ADR-013) but the re-resolution step for each isn't built yet.
-- **Volume/count → gram conversion** in `calculate-meal` — only mass units
-  (`g`/`kg`) convert directly today. "1 cup rice" or "2 eggs" fall back to
-  the food's default serving size. Real conversion needs per-food density
-  or piece-weight data, which is its own small reference table.
-- **7-day dashboard trend** — today's totals are fully correct; the trend
-  view is a `TODO` in `dashboard-summary`.
-- **`edit-meal`** only supports meal-level fields (`meal_type`, `eaten_at`)
-  today. Editing an individual meal item's quantity would need to re-run
-  `calculate-meal` to refresh confidence/totals — not yet wired.
-- **TanStack Query / React Hook Form / Zod** — named in the original tech
-  stack (`01-executive-summary.md`) but not yet added to `web/`. The app
-  uses plain `useState` for now. Worth adding once there's more than one
-  form to justify it.
+**Supporting functions**
+- Barcode lookup, custom food management, meal templates
+- Dashboard summary (today's totals + latest weight)
+- Food search, recent foods, edit/delete meal items
+- Daily log status (complete / partial / unknown)
+- Health endpoint (`/functions/v1/health`)
 
-## Setup
+**Data privacy**
+- `export-my-data` — authenticated GET, downloads `nutri_data_export_v1` JSON
+- `delete-account` — permanently deletes all user data with explicit confirmation
 
-### 1. Supabase project
+**Frontend (React 18 + Vite + TypeScript + Tailwind CSS)**
+- Anonymous auth with magic-link email upgrade (no password required)
+- Meal logging flow, dashboard, weight progress, goal phases, account management
+- Data export and account deletion UI in the Account page
+
+## Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18, Vite 5, TypeScript 5.5, Tailwind CSS |
+| Backend | Supabase (PostgreSQL 15, RLS, Edge Functions) |
+| Edge Functions | Deno 1.x |
+| AI | Anthropic Claude (parse-meal) |
+| Food data | FatSecret Platform API |
+| Tests | Vitest 1.6 (backend integration), Playwright (E2E) |
+
+## Quick start
+
+### Prerequisites
+- [Supabase CLI](https://supabase.com/docs/guides/cli) v1.200+
+- [Deno](https://deno.land/) v1.40+
+- Node.js 20+
+
+### Local development
 
 ```bash
-# from the supabase/ directory, against a project you've already created
-supabase link --project-ref <your-project-ref>
-supabase db push          # runs 0001_init_schema.sql
-cp .env.example .env      # fill in the values
-supabase secrets set --env-file .env
-supabase functions deploy # deploys every function in supabase/functions/
+# 1. Start local Supabase (PostgreSQL + Edge Functions)
+supabase start
+
+# 2. Apply all migrations
+supabase db reset --local
+
+# 3. Set up Edge Function environment
+cp supabase/.env.example supabase/.env
+# Edit supabase/.env — fill in ANTHROPIC_API_KEY, FATSECRET_* credentials
+
+# 4. Serve edge functions locally
+supabase functions serve --env-file supabase/.env
+
+# 5. Set up the web app
+cd web
+cp .env.example .env.local
+# Edit .env.local — fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+# (get these from: supabase status)
+npm install
+npm run dev
 ```
 
-For local development instead: `supabase start`, then
-`supabase functions serve --env-file .env`.
+### Run backend integration tests
 
-### 2. Scheduled job
-
-`recalculate-frequency-rankings` needs a `pg_cron` job (or an external
-scheduler) hitting it once daily with the `x-cron-secret` header set to
-your `CRON_SECRET` value. Not automated by this scaffold — add it via the
-Supabase SQL editor:
-
-```sql
-select cron.schedule(
-  'recalculate-frequency-rankings',
-  '0 3 * * *', -- daily at 03:00 UTC
-  $$
-  select net.http_post(
-    url := 'https://<your-project-ref>.functions.supabase.co/recalculate-frequency-rankings',
-    headers := jsonb_build_object('x-cron-secret', '<your CRON_SECRET>')
-  );
-  $$
-);
+```bash
+# Requires: supabase start + supabase functions serve --env-file supabase/.env
+cd supabase/tests
+npx vitest run --config vitest.config.ts
+# Expected: 331 tests, 0 failures
 ```
 
-(Requires the `pg_cron` and `pg_net` extensions enabled on your project.)
-
-### 3. Web app
+### Run E2E tests
 
 ```bash
 cd web
-npm install
-cp .env.example .env.local   # fill in VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
-npm run dev
+npx playwright test
 ```
+
+### Production deployment
+
+See [docs/deployment/production-deployment.md](docs/deployment/production-deployment.md).
 
 ## Directory layout
 
 ```
-docs/
-  decisions/        ADR-001 through ADR-013
 supabase/
-  migrations/        0001_init_schema.sql
+  migrations/         0001–0028 — schema evolution + bug fixes
   functions/
-    _shared/          types, envelope, confidence table, unit families, client factories
-    _scheduled/       recalculate-frequency-rankings (cron-only, not client-facing)
-    <14 functions>/   one folder per Edge Function
+    _shared/          Shared helpers (envelope, supabase client, energy calc, science config)
+    _scheduled/       recalculate-frequency-rankings (cron job)
+    export-my-data/   GDPR data export
+    delete-account/   Account + data deletion
+    health/           Service health check
+    <27 more>/        One folder per Edge Function
+  tests/              Backend integration tests (Vitest, real DB)
 web/
   src/
-    lib/              supabase client + fetch helper + shared types
-    components/       ConfidenceBadge
-    pages/            Auth, LogMeal, Dashboard
+    lib/              Supabase client + fetch helpers
+    components/       GoalFeedbackCard, ConfidenceBadge, …
+    pages/            Auth, Dashboard, LogMeal, Progress, Account
+docs/
+  deployment/         Production deployment guide, environment variables
+  database/           Migration verification
+  security/           Secret audit
+  operations/         Backup/restore, observability
+  privacy/            Data export and deletion
+  testing/            Pre-existing baseline, validation evidence
+  release/            Phase 9 readiness audit, release rehearsal
 ```
 
-## A note on the spec docs
+## Algorithm versions
 
-The canonical `02-prs.md`, `05-database-design.md`, and
-`07-edge-functions.md` (all v2.0) exist as text earlier in the conversation
-this was built from — this repo doesn't duplicate them as files yet.
-`03-domain-model.md` and `04-system-architecture.md` only exist as patch
-notes against the original drafts, not fully merged documents. Worth doing
-that merge before this grows much further, so the docs and the code don't
-drift apart.
+All algorithm version strings are present in `supabase/functions/_shared/scienceConfig.ts`:
+
+| Algorithm | Version string |
+|-----------|---------------|
+| BMR (Mifflin-St Jeor) | `weight_time_ewma_v3` |
+| Rate estimation | `weight_rate_theil_sen_v1` |
+| Rate interval | `weight_rate_interval_sen_v1` |
+| Observed maintenance | `observed_maintenance_energy_balance_v1` |
+| Goal progress assessment | `goal_progress_assessment_v1` |
+| Goal progress thresholds | `goal_progress_thresholds_v1` |
+
+## Security notes
+
+- All secrets via environment variables; zero credentials committed
+- RLS enabled on every user-data table
+- `SECURITY DEFINER` RPCs verify `auth.uid() = p_user_id`
+- Account deletion gated by explicit `"DELETE MY ACCOUNT"` confirmation
+- Server-authoritative calorie targets — client cannot supply `target_calories`
+- Portion sizes never guessed; `serving_size_g ?? 100` is a UI-blocking fallback only
+
+## Constraints (never implement)
+
+- **No BMR/TDEE algorithm changes** — Mifflin-St Jeor + Harris-Benedict variants are fixed
+- **No portion-size guessing** — always require explicit user input
+- **No mock tests** — all integration tests hit the real local Supabase stack
