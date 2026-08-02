@@ -124,6 +124,49 @@ const INELIGIBLE_PREVIEW: EnergyCalcPreview = {
   data_quality: { profile_complete: false, weight_current: false, calculation_possible: false },
 };
 
+// Spec fixture: BMR 1994, × 1.2 sedentary, maintenance 2393, deficit 550, target 1843.
+const CUT_PREVIEW_1843: EnergyCalcPreview = {
+  ready: true,
+  missing_fields: [],
+  stale_fields: [],
+  data_quality: { profile_complete: true, weight_current: true, calculation_possible: true },
+  calculation_timestamp: "2026-08-02T00:00:00Z",
+  input_snapshot: {
+    birth_date: "1996-08-02",
+    equation_sex: "male",
+    height_cm: 175,
+    official_weight_kg: 104.5,
+    weight_log_id: "wl-cut-1843",
+    weight_measured_at: "2026-08-02T06:00:00Z",
+    age_years: 30,
+    activity_level: "sedentary",
+    activity_multiplier: 1.2,
+    goal_mode: "cut",
+    target_change_kg_per_week: -0.5,
+    manual_maintenance_kcal: null,
+  },
+  estimated_bmr_kcal: 1994,
+  estimated_tdee_kcal: 2393,
+  manual_maintenance_kcal: null,
+  effective_maintenance_kcal: 2393,
+  maintenance_source: "equation_estimate",
+  daily_adjustment_kcal: -550,
+  raw_target_kcal: 1843,
+  recommended_target_kcal: 1843,
+  warnings: [],
+  is_aggressive_rate: false,
+  algorithm_versions: { algorithm: "mifflin_st_jeor_v1", activity_multiplier: "activity_multiplier_v1" },
+  explanation: [
+    "Estimated resting energy (Mifflin–St Jeor, male): 1994 kcal/day",
+    "× activity multiplier (Sedentary – little or no exercise, 1.2): 2393 kcal/day",
+    "Estimated maintenance: 2393 kcal/day",
+    "Deficit: 550 kcal/day (0.5 kg/week × 7,700 ÷ 7)",
+    "Calorie target: 1843 kcal/day",
+    "",
+    "Note: These are estimates. Actual energy requirements vary. This calculator is not designed for pregnancy, breastfeeding or medical nutrition treatment.",
+  ].join("\n"),
+};
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 interface PhasesResponse { active_phase: GoalPhase | null; phases: GoalPhase[]; total_count: number; }
@@ -344,5 +387,127 @@ describe("Goals Phase 5 — snapshot breakdown in active phase", () => {
 
     await waitFor(() => screen.getByText(/cut/i));
     expect(screen.queryByText(/how this was calculated/i)).not.toBeInTheDocument();
+  });
+});
+
+// ── Calorie preview breakdown display fixes ───────────────────────────────────
+
+async function setupAndPreview(previewFixture: EnergyCalcPreview) {
+  setupPage();
+  mockCall.mockResolvedValueOnce(previewFixture);
+  await openForm();
+  await userEvent.click(screen.getByRole("button", { name: /preview calorie target/i }));
+  await waitFor(() => screen.getByText(/calorie breakdown/i));
+}
+
+describe("calorie preview breakdown — activity multiplier row", () => {
+  it("displays the multiplier value as × 1.2", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText("× 1.2")).toBeInTheDocument();
+  });
+
+  it("does not display 2393 kcal/day in the activity multiplier row (appears only in maintenance row)", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    // 2393 kcal/day should appear exactly once — the maintenance row, not the multiplier row
+    expect(screen.getAllByText("2393 kcal/day")).toHaveLength(1);
+  });
+});
+
+describe("calorie preview breakdown — maintenance row", () => {
+  it("displays estimated maintenance as 2393 kcal/day", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText("2393 kcal/day")).toBeInTheDocument();
+  });
+});
+
+describe("calorie preview breakdown — deficit sign convention", () => {
+  it("displays daily deficit as 550 kcal/day (positive magnitude)", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText("550 kcal/day")).toBeInTheDocument();
+  });
+
+  it("does not display -550 anywhere in the breakdown", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.queryByText(/-550/)).not.toBeInTheDocument();
+  });
+
+  it("expanded explanation shows Deficit: 550 (positive)", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    // The <pre> element is in the DOM even before details is opened.
+    expect(screen.getByText(/Deficit: 550 kcal\/day/)).toBeInTheDocument();
+    expect(screen.queryByText(/Deficit: -550/)).not.toBeInTheDocument();
+  });
+});
+
+describe("calorie preview breakdown — calorie target", () => {
+  it("displays calorie target as 1843 kcal/day", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getAllByText("1843 kcal/day").length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("calorie preview breakdown — inputs summary", () => {
+  it("shows the sex from the preview response", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText("Male")).toBeInTheDocument();
+  });
+
+  it("shows the age from the preview response", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText("30 years")).toBeInTheDocument();
+  });
+
+  it("shows the height from the preview response", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText("175 cm")).toBeInTheDocument();
+  });
+
+  it("shows the weight from the preview response", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText("104.5 kg")).toBeInTheDocument();
+  });
+
+  it("shows the target rate from the preview response", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText("Target rate: 0.5 kg/week")).toBeInTheDocument();
+  });
+
+  it("shows a weight recorded date when weight_measured_at is present", async () => {
+    await setupAndPreview(CUT_PREVIEW_1843);
+    expect(screen.getByText(/Weight recorded:/)).toBeInTheDocument();
+  });
+});
+
+describe("calorie preview breakdown — preview/saved target parity", () => {
+  it("start-goal-phase does not send target_calories and the returned target matches the preview", async () => {
+    setupPage();
+    const EXPECTED_TARGET = CUT_PREVIEW_1843.recommended_target_kcal!; // 1843
+
+    mockCall
+      .mockResolvedValueOnce(CUT_PREVIEW_1843)
+      .mockResolvedValueOnce({
+        phase: { ...ACTIVE_PHASE, target_calories: EXPECTED_TARGET, snapshot_id: "snap-1843" },
+        snapshot: null,
+      });
+
+    await openForm();
+    await userEvent.click(screen.getByRole("button", { name: /preview calorie target/i }));
+    await waitFor(() => screen.getByText(/calorie breakdown/i));
+
+    // Preview shows the expected target.
+    expect(screen.getAllByText("1843 kcal/day").length).toBeGreaterThanOrEqual(1);
+
+    await userEvent.click(screen.getByRole("button", { name: /^start phase$/i }));
+
+    await waitFor(() => {
+      const startCallBody = mockCall.mock.calls.find(
+        (c) => c[0] === "start-goal-phase",
+      )?.[1] as Record<string, unknown>;
+      expect(startCallBody).toBeDefined();
+      // Client never supplies target_calories — server is authoritative.
+      expect(startCallBody?.target_calories).toBeUndefined();
+      // The preview target and the server-returned target are both 1843.
+      expect(EXPECTED_TARGET).toBe(CUT_PREVIEW_1843.recommended_target_kcal);
+    });
   });
 });

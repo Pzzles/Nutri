@@ -725,11 +725,15 @@ export default function Goals() {
 // ── CalorieBreakdown ──────────────────────────────────────────────────────────
 
 function CalorieBreakdown({ preview }: { preview: EnergyCalcPreview }) {
+  const snap = preview.input_snapshot;
   return (
     <div className="space-y-1 text-sm">
       <BreakdownRow label="Resting energy (BMR)" value={`${preview.estimated_bmr_kcal} kcal/day`} />
-      <BreakdownRow label={`× Activity multiplier (${preview.input_snapshot?.activity_level ?? ""})`}
-                    value={`${preview.estimated_tdee_kcal} kcal/day`} />
+      <BreakdownRow
+        label="Activity multiplier"
+        value={snap?.activity_multiplier != null ? `× ${snap.activity_multiplier}` : ""}
+        sublabel={snap ? (ACTIVITY_LABELS[snap.activity_level] ?? snap.activity_level) : undefined}
+      />
       {preview.maintenance_source === "manual_override" ? (
         <BreakdownRow label="Maintenance (manual override)" value={`${preview.effective_maintenance_kcal} kcal/day`} highlight />
       ) : (
@@ -738,7 +742,7 @@ function CalorieBreakdown({ preview }: { preview: EnergyCalcPreview }) {
       {preview.daily_adjustment_kcal !== 0 && (
         <BreakdownRow
           label={preview.daily_adjustment_kcal! < 0 ? "Daily deficit" : "Daily surplus"}
-          value={`${preview.daily_adjustment_kcal! < 0 ? "" : "+"}${preview.daily_adjustment_kcal} kcal/day`}
+          value={`${Math.abs(preview.daily_adjustment_kcal!)} kcal/day`}
         />
       )}
       <div className="border-t border-border pt-1 mt-1">
@@ -748,21 +752,48 @@ function CalorieBreakdown({ preview }: { preview: EnergyCalcPreview }) {
           bold
         />
       </div>
+      {snap && <InputsSummary snap={snap} />}
     </div>
   );
 }
 
 function BreakdownRow({
-  label, value, bold, highlight,
+  label, value, bold, highlight, sublabel,
 }: {
-  label: string; value: string; bold?: boolean; highlight?: boolean;
+  label: string; value: string; bold?: boolean; highlight?: boolean; sublabel?: string;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className={`text-xs ${highlight ? "text-blue-600 dark:text-blue-400" : "text-muted"}`}>{label}</span>
+    <div className="flex items-start justify-between">
+      <div>
+        <span className={`text-xs ${highlight ? "text-blue-600 dark:text-blue-400" : "text-muted"}`}>{label}</span>
+        {sublabel && <div className="text-xs text-muted/70">{sublabel}</div>}
+      </div>
       <span className={`text-xs ${bold ? "font-semibold text-ink" : highlight ? "text-blue-600 dark:text-blue-400" : "text-ink"}`}>
         {value}
       </span>
+    </div>
+  );
+}
+
+function InputsSummary({ snap }: { snap: NonNullable<EnergyCalcPreview["input_snapshot"]> }) {
+  const weightDate = snap.weight_measured_at
+    ? new Date(snap.weight_measured_at).toLocaleDateString("en-GB", {
+        day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
+      })
+    : null;
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Inputs used</p>
+      <ul className="space-y-0.5 text-xs text-ink">
+        <li>{snap.equation_sex === "male" ? "Male" : "Female"}</li>
+        <li>{snap.age_years} years</li>
+        <li>{snap.height_cm} cm</li>
+        <li>{snap.official_weight_kg} kg</li>
+        <li>{ACTIVITY_LABELS[snap.activity_level] ?? snap.activity_level}</li>
+        <li>Target rate: {Math.abs(snap.target_change_kg_per_week)} kg/week</li>
+        {weightDate && <li>Weight recorded: {weightDate}</li>}
+      </ul>
     </div>
   );
 }
