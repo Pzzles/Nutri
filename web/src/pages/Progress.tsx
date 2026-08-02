@@ -30,7 +30,10 @@ export default function Progress() {
         <AdaptiveMaintenanceCard onLogWeight={() => setTab("weight")} />
       </div>
       <div className={tab === "feedback" ? "p-4 max-w-xl mx-auto" : "hidden"}>
-        <GoalFeedbackCard />
+        <GoalFeedbackCard
+          onOpenGoals={() => setTab("goals")}
+          onLogWeight={() => setTab("weight")}
+        />
       </div>
     </div>
   );
