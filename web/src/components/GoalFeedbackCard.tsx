@@ -59,6 +59,25 @@ function SectionRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function weightEvidenceLabel(status: string): string {
+  const labels: Record<string, string> = {
+    usable:                    "Ready",
+    provisional:               "Early estimate",
+    stale:                     "Out of date",
+    insufficient:              "Not enough data",
+    insufficient_measurements: "Not enough weigh-ins",
+    insufficient_coverage:     "Not enough elapsed time",
+  };
+  return labels[status] ?? status.replace(/_/g, " ");
+}
+
+function nutritionEvidenceLabel(status: "usable" | "provisional" | "insufficient" | null): string {
+  if (status === "usable") return "Ready";
+  if (status === "provisional") return "Early estimate";
+  if (status === "insufficient") return "Not enough complete logs";
+  return "Not available";
+}
+
 function EvidenceBlock({
   label,
   p6Status,
@@ -77,10 +96,10 @@ function EvidenceBlock({
   return (
     <div className="space-y-0" data-testid={`evidence-${label.replace(/\s+/g, "-").toLowerCase()}`}>
       <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{label}</p>
-      <SectionRow label="Weight trend"      value={`${p6Status} · ${p6Confidence} confidence`} />
+      <SectionRow label="Weight trend"      value={`${weightEvidenceLabel(p6Status)} · ${p6Confidence} confidence`} />
       <SectionRow label="Observed rate"     value={formatWeeklyRate(p6Rate)} />
-      <SectionRow label="Nutrition quality" value={p7Status ?? "—"} />
-      <SectionRow label="Log coverage"      value={formatCoverage(p7Coverage)} />
+      <SectionRow label="Nutrition evidence" value={nutritionEvidenceLabel(p7Status)} />
+      <SectionRow label="Complete food coverage" value={formatCoverage(p7Coverage)} />
     </div>
   );
 }
@@ -202,6 +221,26 @@ function AdvisoryBanner({ data }: { data: GoalFeedbackResponse }) {
 
 // ── Reason codes (expandable) ─────────────────────────────────────────────────
 
+function reasonCodeDescription(code: string): string {
+  const descriptions: Record<string, string> = {
+    no_active_phase:                            "No goal phase is active.",
+    p6_stale:                                   "The latest weight measurement is out of date.",
+    p6_insufficient:                            "There is not enough weight history to estimate a rate.",
+    no_target_rate:                             "The active phase does not have a planned weekly rate.",
+    rate_within_band:                           "The observed rate is close to the planned rate.",
+    target_inside_rate_range:                   "The planned rate falls inside the observed trend's uncertainty range.",
+    rate_below_target:                          "Progress is slower than the planned rate.",
+    rate_above_target:                          "Progress is faster than the planned rate.",
+    rate_near_zero:                             "The observed weight trend is close to stable.",
+    rate_near_zero_cut:                         "The cut's observed weight trend is close to flat.",
+    plateau_persistent:                         "The near-flat trend is present now and was also present 14 days ago.",
+    rate_opposite_direction:                    "Weight is moving in the opposite direction from the active goal.",
+    rate_outside_band:                          "The maintenance trend is outside the stable range.",
+    rate_outside_band_but_range_includes_zero:  "The trend may be drifting, but its uncertainty range still includes stable weight.",
+  };
+  return descriptions[code] ?? `${code.replace(/_/g, " ")}.`;
+}
+
 function ReasonCodesDetail({ codes }: { codes: string[] }) {
   if (codes.length === 0) return null;
   return (
@@ -211,7 +250,9 @@ function ReasonCodesDetail({ codes }: { codes: string[] }) {
       </summary>
       <ul className="mt-2 list-disc pl-5 space-y-0.5" data-testid="reason-codes-list">
         {codes.map((code) => (
-          <li key={code} className="text-xs text-gray-500 dark:text-gray-400">{code}</li>
+          <li key={code} className="text-xs text-gray-500 dark:text-gray-400">
+            {reasonCodeDescription(code)}
+          </li>
         ))}
       </ul>
     </details>
@@ -222,9 +263,11 @@ function ReasonCodesDetail({ codes }: { codes: string[] }) {
 
 interface GoalFeedbackCardProps {
   onAssessmentSaved?: (assessmentId: string) => void;
+  onOpenGoals?: () => void;
+  onLogWeight?: () => void;
 }
 
-export function GoalFeedbackCard({ onAssessmentSaved }: GoalFeedbackCardProps) {
+export function GoalFeedbackCard({ onAssessmentSaved, onOpenGoals, onLogWeight }: GoalFeedbackCardProps) {
   const [data, setData]       = useState<GoalFeedbackResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
@@ -276,17 +319,30 @@ export function GoalFeedbackCard({ onAssessmentSaved }: GoalFeedbackCardProps) {
       >
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Goal Feedback</h2>
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          {stateDescription(state)}
+          Feedback compares your observed weight trend with the rate planned for your goal phase.
         </p>
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{stateDescription(state)}</p>
+        {onOpenGoals && (
+          <button
+            type="button"
+            onClick={onOpenGoals}
+            className="mt-5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            Set up goal phase
+          </button>
+        )}
       </div>
     );
   }
 
   // ── Insufficient / stale data ──────────────────────────────────────────────
   if (state === "insufficient_data" || state === "stale_data") {
+    const isStale = state === "stale_data";
+    const missingTargetRate = data.reason_codes.includes("no_target_rate");
+
     return (
       <div
-        className={`rounded-2xl border ${CARD_BORDER[tone]} ${CARD_BG[tone]} p-6`}
+        className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6"
         data-testid="goal-feedback-card-no-data"
       >
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Goal Feedback</h2>
@@ -295,9 +351,62 @@ export function GoalFeedbackCard({ onAssessmentSaved }: GoalFeedbackCardProps) {
             {formatGoalMode(data.goal_phase.mode)} phase active
           </p>
         )}
-        <p className={`mt-3 text-sm ${DESC_COLOR[tone]}`}>
-          {stateDescription(state)}
+        <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+          This will compare your observed weight-change rate with your planned rate and tell you
+          whether to continue or review your setup. It never changes your calorie target automatically.
         </p>
+
+        <div className="mt-5 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950 p-4">
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+            {missingTargetRate
+              ? "Set a planned rate to continue"
+              : isStale
+              ? "Log a current weight to continue"
+              : "Building your first assessment"}
+          </p>
+          <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+            {missingTargetRate
+              ? "Feedback needs a weekly target rate to compare against your observed trend."
+              : isStale
+              ? "Your latest weight measurement is more than 14 days old."
+              : "Your phase does not have enough elapsed weight data to estimate progress yet."}
+          </p>
+        </div>
+
+        {!missingTargetRate && (
+          <div className="mt-5">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">What to do next</p>
+            <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-gray-600 dark:text-gray-400">
+              <li>Log your weight on at least 4 different days across at least 7 days.</li>
+              <li>Keep completing food logs; adjustment suggestions require at least 70% coverage.</li>
+            </ol>
+            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+              Rate feedback is more reliable after 14+ days and at least 6 weigh-in days.
+              {data.goal_phase?.mode === "cut" && " Plateau feedback starts after 28 days and needs 42 days to confirm persistence."}
+            </p>
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          {missingTargetRate && onOpenGoals && (
+            <button
+              type="button"
+              onClick={onOpenGoals}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              Review goals
+            </button>
+          )}
+          {!missingTargetRate && onLogWeight && (
+            <button
+              type="button"
+              onClick={onLogWeight}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              Log weight
+            </button>
+          )}
+        </div>
       </div>
     );
   }

@@ -176,6 +176,9 @@ describe("Insufficient and stale data states", () => {
     await waitFor(() => {
       expect(screen.getByTestId("goal-feedback-card-no-data")).toBeInTheDocument();
     });
+    expect(screen.getByText(/Building your first assessment/i)).toBeInTheDocument();
+    expect(screen.getByText(/at least 4 different days across at least 7 days/i)).toBeInTheDocument();
+    expect(screen.getByText(/adjustment suggestions require at least 70% coverage/i)).toBeInTheDocument();
   });
 
   it("shows no-data card for stale_data", async () => {
@@ -188,6 +191,8 @@ describe("Insufficient and stale data states", () => {
     await waitFor(() => {
       expect(screen.getByTestId("goal-feedback-card-no-data")).toBeInTheDocument();
     });
+    expect(screen.getByText(/Log a current weight to continue/i)).toBeInTheDocument();
+    expect(screen.getByText(/more than 14 days old/i)).toBeInTheDocument();
   });
 });
 
@@ -334,13 +339,13 @@ describe("Reason codes", () => {
     expect(screen.getByTestId("reason-codes-detail")).toBeInTheDocument();
   });
 
-  it("lists each reason code", async () => {
+  it("explains each reason code in plain language", async () => {
     getMock.mockResolvedValue(LIKELY_PLATEAU_RESPONSE);
     render(<GoalFeedbackCard />);
     await waitFor(() => screen.getByTestId("reason-codes-list"));
     const list = screen.getByTestId("reason-codes-list");
-    expect(list).toHaveTextContent("plateau_persistent");
-    expect(list).toHaveTextContent("rate_near_zero_cut");
+    expect(list).toHaveTextContent(/near-flat trend is present now and was also present 14 days ago/i);
+    expect(list).toHaveTextContent(/cut's observed weight trend is close to flat/i);
   });
 });
 
