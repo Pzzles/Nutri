@@ -1,12 +1,13 @@
 // export-my-data
 // Authenticated GET endpoint. Returns all personal data stored for the
-// calling user as a single JSON document (format: nutri_data_export_v1).
+// calling user as a single JSON document (format: nutri_data_export_v2).
 // The frontend downloads this as a .json file.
 //
 // Tables exported (all filtered to the authenticated user):
 //   profile, weight_logs, goal_phases, calorie_target_snapshots,
 //   meals, meal_items, daily_log_status, user_foods, user_food_cache,
-//   goal_feedback_assessments
+//   goal_feedback_assessments, anthropometric_sessions,
+//   anthropometric_readings, anthropometric_representatives
 //
 // The export intentionally omits global caches (global_food_cache) and
 // foods the user did not create (owner_user_id IS NULL).
@@ -48,6 +49,7 @@ Deno.serve(async (req) => {
       userFoodsRes,
       userFoodCacheRes,
       feedbackRes,
+      anthropometricSessionsRes,
     ] = await Promise.all([
       svc.from("profiles").select("*").eq("id", userId).maybeSingle(),
       svc.from("weight_logs").select("*").eq("user_id", userId).order("measured_at", { ascending: true }),
@@ -58,6 +60,9 @@ Deno.serve(async (req) => {
       svc.from("foods").select("*").eq("owner_user_id", userId),
       svc.from("user_food_cache").select("*").eq("user_id", userId),
       svc.from("goal_feedback_assessments").select("*").eq("user_id", userId).order("assessment_date", { ascending: true }),
+      svc.from("anthropometric_sessions").select("*").eq("user_id", userId)
+        .order("measured_at", { ascending: true, nullsFirst: true })
+        .order("id", { ascending: true }),
     ]);
 
     // meal_items must be fetched via meal_id — chunk to avoid URL length limits.
@@ -68,8 +73,25 @@ Deno.serve(async (req) => {
       mealItems = data ?? [];
     }
 
+    const anthropometricSessionIds: string[] = (anthropometricSessionsRes.data ?? [])
+      .map((session: Record<string, unknown>) => session.id as string);
+    let anthropometricReadings: unknown[] = [];
+    let anthropometricRepresentatives: unknown[] = [];
+    if (anthropometricSessionIds.length > 0) {
+      const [readingsRes, representativesRes] = await Promise.all([
+        svc.from("anthropometric_readings").select("*")
+          .in("session_id", anthropometricSessionIds)
+          .order("session_id").order("site_code").order("reading_number"),
+        svc.from("anthropometric_representatives").select("*")
+          .in("session_id", anthropometricSessionIds)
+          .order("session_id").order("site_code"),
+      ]);
+      anthropometricReadings = readingsRes.data ?? [];
+      anthropometricRepresentatives = representativesRes.data ?? [];
+    }
+
     const exportDoc = {
-      export_version: "nutri_data_export_v1",
+      export_version: "nutri_data_export_v2",
       exported_at: new Date().toISOString(),
       user_id: userId,
       data: {
@@ -83,6 +105,9 @@ Deno.serve(async (req) => {
         user_foods:                 userFoodsRes.data ?? [],
         user_food_cache:            userFoodCacheRes.data ?? [],
         goal_feedback_assessments:  feedbackRes.data ?? [],
+        anthropometric_sessions:    anthropometricSessionsRes.data ?? [],
+        anthropometric_readings:    anthropometricReadings,
+        anthropometric_representatives: anthropometricRepresentatives,
       },
     };
 

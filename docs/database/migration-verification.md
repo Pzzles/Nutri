@@ -2,9 +2,9 @@
 
 Date: 2026-08-02  
 Verified on: local Supabase stack (PostgreSQL 15)  
-Command: `supabase db reset --local`
+Command: `supabase db push --local`
 
-The Phase 9 baseline of 28 migrations applied cleanly in order with zero errors. Phase 10 migration `0030` is transactionally verified below; a full ledger-driven reset awaits the repository's separate `0029` migration-history repair.
+The Phase 9 baseline is retained below. Phase 10 migrations `0031` and `0032` are transactionally verified below; they follow the merged `0029`/`0030` migration-history repairs.
 
 ---
 
@@ -38,9 +38,11 @@ The Phase 9 baseline of 28 migrations applied cleanly in order with zero errors.
 | 0024 | `0024_fix_daily_log_status_constraint.sql` | Fixes daily_log_status unique constraint |
 | 0025 | `0025_goal_feedback_assessments.sql` | goal_feedback_assessments table v1 |
 | 0026 | `0026_goal_feedback_assessment_v2.sql` | Adds rate bounds and adjustment columns to goal_feedback_assessments |
-| 0027 | `0027_fix_fn_log_weight_overload.sql` | **Phase 9 fix**: drops the original 5-param fn_log_weight overload (resolves PGRST203) |
 | 0028 | `0028_fix_supersede_fk_order.sql` | **Phase 9 fix**: defers superseded_by FK backfill until after new phase row exists |
-| 0030 | `0030_anthropometric_progress_model.sql` | **Phase 10 Gate 2**: draft/finalised anthropometric sessions, preserved readings, representatives, lifecycle guards and RLS |
+| 0029 | `0029_fix_fn_log_weight_overload.sql` | **Migration-history repair**: canonical placement of the weight RPC overload fix |
+| 0030 | `0030_defer_goal_phase_supersession_fk.sql` | **Migration-history repair**: canonical placement of the deferred goal-phase supersession FK |
+| 0031 | `0031_anthropometric_progress_model.sql` | **Phase 10 Gate 2**: draft/finalised anthropometric sessions, preserved readings, representatives, lifecycle guards and RLS |
+| 0032 | `0032_anthropometric_api_rpcs.sql` | **Phase 10 Gate 3**: service-only atomic draft replacement/finalisation RPC with serialised idempotency |
 
 ---
 
@@ -67,7 +69,7 @@ All user-data tables have RLS enabled and at minimum one policy:
 
 ### Phase 10 Gate 2 transactional verification
 
-Migration `0030` was applied to the local PostgreSQL 15 project inside a transaction and rolled back after assertions. The audit verified:
+Migration `0031` was applied to the local PostgreSQL 15 project inside a transaction and rolled back after assertions. The audit verified:
 
 - all three anthropometric tables enable RLS;
 - all nine operation-specific policies exist;
@@ -79,7 +81,11 @@ Migration `0030` was applied to the local PostgreSQL 15 project inside a transac
 - session, raw-reading and representative updates fail after finalisation;
 - deleting the parent session cascades to its children.
 
-`supabase db push --local --dry-run` could not use the migration ledger because the active local database contains applied version `0029` from the repository's separate, unmerged duplicate-0027 repair. Gate 2 did not rewrite that ledger or import the unrelated branch.
+During Gate 2, `supabase db push --local --dry-run` could not use the migration ledger because the active local database contained applied version `0029` before its migration-history repair was merged. Gate 3 synchronized that repair and mechanically renumbered the anthropometry migration from `0030` to `0031` to avoid a duplicate version.
+
+### Phase 10 Gate 3 integration verification
+
+Migrations `0030`–`0032` were applied to the local PostgreSQL 15 stack. The real Edge Functions and database integration suite verifies JWT authentication, service-only RPC execution, two-user RLS isolation across all three tables, atomic draft replacement, one-way finalisation, server-calculated representatives, sequential and concurrent idempotency, stable cursor pagination, explicit owner-only deletion and export coverage.
 
 ---
 

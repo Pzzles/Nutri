@@ -3,7 +3,7 @@
 **Phase:** 10 — Anthropometric Progress Tracking<br>
 **Contract:** `anthropometry_data_contract_v2`<br>
 **Protocol:** `anthropometry_protocol_v1`<br>
-**Status:** Gate 2 lifecycle amendment implemented
+**Status:** Gate 3 authenticated API and RLS integration implemented
 
 ## 1. Contract principles
 
@@ -20,7 +20,7 @@
 
 ## 2. Implemented relational model
 
-Gate 2 creates these dedicated tables in migration `0030_anthropometric_progress_model.sql`. Column types and constraints below are frozen unless a later prompt documents and versions a necessary correction.
+Gate 2 creates these dedicated tables in migration `0031_anthropometric_progress_model.sql`. Column types and constraints below are frozen unless a later prompt documents and versions a necessary correction. The file was mechanically renumbered from `0030` after the migration-history repair branch claimed that version.
 
 ### 2.1 `anthropometric_sessions`
 
@@ -97,11 +97,15 @@ Required constraints:
 
 ## 3. RLS and mutation boundary
 
-Users may select their own sessions and related rows. RLS permits owners to create, update, and delete drafts and to manage raw readings only while the parent remains a draft. Clients receive no representative write policy and cannot directly transition a session to finalised. An authenticated finalisation endpoint calls one transaction/RPC that verifies `auth.uid()`, validates the draft, computes representatives, and performs the one-way transition.
+Users may select their own sessions and related rows. RLS permits owners to create, update, and delete drafts and to manage raw readings only while the parent remains a draft. Clients receive no representative write policy and cannot directly transition a session to finalised. The Edge Function verifies the caller JWT and derives the user ID; its service-only RPC then atomically validates or replaces the owned draft, persists server-calculated representatives, and performs the one-way transition. The RPC is revoked from `anon` and `authenticated`, so clients cannot submit forged representative rows directly.
 
 There is no update or reopen path for a finalised session. Prompt 3 adds an explicit authenticated whole-session deletion operation; deleting the parent cascades to its readings and representatives. Account deletion also deletes the graph. A future administrative repair, if ever required, must be separately authorised and audited.
 
-## 4. Finalisation endpoint
+## 4. Save and finalisation endpoints
+
+### `POST /functions/v1/save-anthropometric-session`
+
+Persists a draft when `status` is `draft`. A draft may contain zero to three raw readings per supplied site, may omit `measured_at`, and never contains representatives. Supplying `session_id` replaces that owned draft's raw-reading set atomically rather than merging stale readings. The same endpoint accepts `status: "finalized"` for clients using the unified workflow, with the same validation as the dedicated finalisation endpoint below.
 
 ### `POST /functions/v1/finalize-anthropometric-session`
 
@@ -109,6 +113,7 @@ Request:
 
 ```json
 {
+  "session_id": "optional-existing-draft-uuid",
   "idempotency_key": "3d16dc2f-617a-4e43-8550-89999e2ec9ae",
   "protocol_version": "anthropometry_protocol_v1",
   "measured_at": "2026-08-02T06:30:00+02:00",
@@ -122,7 +127,7 @@ Request:
 
 The request must not contain `representative_cm`, `change_cm`, quality, weight data, algorithm output, or user ID. Unknown fields are rejected with `FORBIDDEN_FIELD` rather than silently ignored when they could impersonate calculated data.
 
-Success: `201 Created` on first finalisation and `200 OK` on an identical idempotent replay.
+`session_id` is optional. When present, it must identify an owned draft. Success is `201 Created` on first finalisation and `200 OK` on an identical idempotent replay. Concurrent identical requests are serialised by user and idempotency key and resolve to one session.
 
 ```json
 {
@@ -202,12 +207,18 @@ Query parameters:
 | Parameter | Default | Contract |
 |---|---|---|
 | `limit` | `20` | Integer 1–100 sessions |
-| `before` | absent | Opaque cursor; no date interpolation |
+| `before` | absent | Opaque `(measured_at, id)` cursor; no date interpolation |
 | `site_code` | absent | Optional exact site filter |
 
 Response sessions are ordered by `measured_at DESC, id DESC`. Each includes raw readings and representatives. Pagination operates on sessions, not child rows, so a session is never split across pages.
 
-## 6. Progress endpoint
+## 6. Deletion endpoint
+
+### `DELETE /functions/v1/delete-anthropometric-session`
+
+Request body: `{ "session_id": "uuid" }`. The authenticated owner may delete one complete draft or finalised session. Readings and representatives are removed by foreign-key cascade. A missing or cross-user ID returns the same `404 NOT_FOUND`, preventing ownership disclosure. This operation is deletion, not an edit or reopen path.
+
+## 7. Progress endpoint
 
 ### `GET /functions/v1/get-anthropometric-progress`
 
@@ -319,7 +330,7 @@ Stable ineligibility reason codes:
 - `aligned_weight_points_not_distinct`
 - `no_material_cross_signal_template`
 
-## 7. Ordering, missingness, and numeric representation
+## 8. Ordering, missingness, and numeric representation
 
 - Site arrays use the frozen site order from the specification, never alphabetical order.
 - Point arrays are chronological ascending; history session arrays are reverse chronological.
@@ -329,17 +340,16 @@ Stable ineligibility reason codes:
 - Empty history returns `series: []` and an ineligible comparison. It does not manufacture nine empty/zero series unless the frontend explicitly builds presentation placeholders.
 - `null` is used only for a known field whose calculation is unavailable. It is never converted to `0`.
 
-## 8. Privacy integration
+## 9. Privacy integration
 
-The next implementation prompt must:
+Gate 3:
 
-1. include `anthropometric_sessions`, `anthropometric_readings`, and `anthropometric_representatives` in user data export;
-2. bump the export contract version because the exported shape changes;
-3. remove the three tables during whole-account deletion, preferably through `profiles -> sessions -> children` cascades;
-4. ensure logs never contain raw measurements, notes, JWTs, email addresses, or full user IDs;
-5. return only rows owned by the authenticated user.
+1. includes `anthropometric_sessions`, `anthropometric_readings`, and `anthropometric_representatives` in `nutri_data_export_v2`;
+2. removes the three tables during whole-account deletion through `profiles -> sessions -> children` cascades;
+3. does not log request bodies, raw measurements, notes, JWTs, email addresses, or full user IDs;
+4. constrains every service-role API query by the JWT-derived user ID.
 
-## 9. Version-bump rules
+## 10. Version-bump rules
 
 Bump the named version when any listed behavior changes:
 
