@@ -36,6 +36,7 @@ Nine implementation phases complete. Version 0.1.0.
 **Frontend (React 18 + Vite + TypeScript + Tailwind CSS)**
 - Email/password sign-up and sign-in, with in-place upgrade for existing anonymous accounts
 - Meal logging flow, dashboard, weight progress, goal phases, account management
+- Guided circuit-based tape measurements with precise landmarks, cm/in display, draft saves and accessible mobile controls
 - Data export and account deletion UI in the Account page
 
 ## Stack
@@ -87,7 +88,7 @@ npm run dev
 # Requires: supabase start + supabase functions serve --env-file supabase/.env
 cd supabase/tests
 npx vitest run --config vitest.config.ts
-# Expected: 381 tests, 0 failures
+# Expected: 381 backend tests, 0 failures
 ```
 
 ### Run E2E tests
