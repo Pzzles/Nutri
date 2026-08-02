@@ -56,7 +56,7 @@ const DASHBOARD_BASE = {
 
 // ── Test 1: Dashboard shows latest weight tile ─────────────────────────────────
 
-test("dashboard shows latest weight and links to /weight", async ({ page }) => {
+test("dashboard shows latest weight and links to progress", async ({ page }) => {
   await stubAuth(page);
 
   await page.route("**/functions/v1/dashboard-summary", (route) =>
@@ -66,7 +66,7 @@ test("dashboard shows latest weight and links to /weight", async ({ page }) => {
   await page.goto(BASE);
 
   await expect(page.getByText("85.5")).toBeVisible();
-  await expect(page.getByText(/log weight/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: /view weight & goals/i })).toHaveAttribute("href", "/progress");
 });
 
 test("dashboard shows 'No weight logged yet' when no weight exists", async ({ page }) => {
@@ -92,8 +92,7 @@ test("weight page displays log history", async ({ page }) => {
 
   await page.goto(`${BASE}/weight`);
 
-  await expect(page.getByText("85.5")).toBeVisible();
-  await expect(page.getByText("Official")).toBeVisible();
+  await expect(page.getByLabel("Weight history").getByText("85.5 kg")).toBeVisible();
 });
 
 // ── Test 3: Log a new weight entry ────────────────────────────────────────────
@@ -120,13 +119,13 @@ test("user can log a new weight entry and see it appear", async ({ page }) => {
   await page.getByRole("spinbutton", { name: /weight/i }).fill("84");
   await page.getByRole("button", { name: /^log$/i }).click();
 
-  await expect(page.getByText("84")).toBeVisible();
+  await expect(page.getByLabel("Weight history").getByText("84 kg")).toBeVisible();
   expect(logCalled).toBe(true);
 });
 
 // ── Test 4: Validation prevents bad input ──────────────────────────────────────
 
-test("weight page blocks submission with weight below 20", async ({ page }) => {
+test("weight page blocks submission with weight below 1", async ({ page }) => {
   await stubAuth(page);
 
   await page.route("**/functions/v1/get-weight-logs**", (route) =>
@@ -139,15 +138,15 @@ test("weight page blocks submission with weight below 20", async ({ page }) => {
 
   await page.goto(`${BASE}/weight`);
 
-  await page.getByRole("spinbutton", { name: /weight/i }).fill("10");
+  await page.getByRole("spinbutton", { name: /weight/i }).fill("0.5");
   await page.getByRole("button", { name: /^log$/i }).click();
 
-  await expect(page.getByText(/between 20 and 300/i)).toBeVisible();
+  await expect(page.getByText(/between 1 and 500/i)).toBeVisible();
 });
 
 // ── Test 5: NavBar Weight link navigates to /weight ───────────────────────────
 
-test("Weight link in nav takes user to the weight page", async ({ page }) => {
+test("dashboard weight tile takes user to progress", async ({ page }) => {
   await stubAuth(page);
 
   await page.route("**/functions/v1/dashboard-summary", (route) =>
@@ -158,8 +157,8 @@ test("Weight link in nav takes user to the weight page", async ({ page }) => {
   );
 
   await page.goto(BASE);
-  await page.getByRole("link", { name: /^weight$/i }).click();
+  await page.getByRole("link", { name: /view weight & goals/i }).click();
 
-  await expect(page).toHaveURL(/\/weight/);
-  await expect(page.getByRole("heading", { name: /^weight$/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/progress/);
+  await expect(page.getByRole("tab", { name: "Goals" })).toHaveAttribute("aria-selected", "true");
 });

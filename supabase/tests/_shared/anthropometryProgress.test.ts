@@ -170,6 +170,67 @@ describe("anthropometry_change_v1 frozen longitudinal fixtures", () => {
     expect(series.map((entry) => entry.site_code)).toEqual(["waist"]);
     expect(series[0].points[0].representative_cm).toBe(90);
   });
+
+  it.each([
+    {
+      cadence: "daily",
+      dates: [
+        "2026-01-01T06:00:00Z",
+        "2026-01-02T06:00:00Z",
+        "2026-01-03T06:00:00Z",
+        "2026-01-04T06:00:00Z",
+      ],
+      expectedPreviousDays: 1,
+      expectedSinceFirstDays: 3,
+    },
+    {
+      cadence: "fortnightly",
+      dates: [
+        "2026-01-01T06:00:00Z",
+        "2026-01-15T06:00:00Z",
+        "2026-01-29T06:00:00Z",
+      ],
+      expectedPreviousDays: 14,
+      expectedSinceFirstDays: 28,
+    },
+    {
+      cadence: "monthly",
+      dates: [
+        "2026-01-31T06:00:00Z",
+        "2026-02-28T06:00:00Z",
+        "2026-03-31T06:00:00Z",
+      ],
+      expectedPreviousDays: 31,
+      expectedSinceFirstDays: 59,
+    },
+    {
+      cadence: "sporadic",
+      dates: [
+        "2026-01-02T06:00:00Z",
+        "2026-01-11T06:00:00Z",
+        "2026-03-25T06:00:00Z",
+      ],
+      expectedPreviousDays: 73,
+      expectedSinceFirstDays: 82,
+    },
+  ])("preserves $cadence measurements as actual, unsmoothed points", ({
+    cadence,
+    dates,
+    expectedPreviousDays,
+    expectedSinceFirstDays,
+  }) => {
+    const input = dates.map((date, index) =>
+      point(`${cadence}-${index + 1}`, date, "waist", 90 - index * 0.5)
+    );
+    const waist = buildAnthropometrySeries([...input].reverse())[0];
+
+    expect(waist.points.map((entry) => entry.measured_at)).toEqual(dates);
+    expect(waist.points).toHaveLength(dates.length);
+    expect(waist.previous_change?.elapsed_days).toBe(expectedPreviousDays);
+    expect(waist.since_first_change?.elapsed_days).toBe(expectedSinceFirstDays);
+    expect(waist.since_first_change?.start_session_id).toBe(`${cadence}-1`);
+    expect(waist.since_first_change?.end_session_id).toBe(`${cadence}-${dates.length}`);
+  });
 });
 
 describe("anthropometry_weight_comparison_v1 frozen fixtures", () => {

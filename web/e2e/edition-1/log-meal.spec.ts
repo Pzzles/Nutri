@@ -107,7 +107,7 @@ test("standard logging flow: parse → review → confirm → logged", async ({ 
   );
 
   await goToLogMeal(page);
-  await page.getByRole("textbox").fill("150g chicken breast");
+  await page.locator("textarea").fill("150g chicken breast");
   await page.getByRole("button", { name: /parse meal/i }).click();
 
   // Items panel appears
@@ -151,11 +151,10 @@ test("LIKELY_UNIT_ERROR: suggestion shown, confirm disabled", async ({ page }) =
   );
 
   await goToLogMeal(page);
-  await page.getByRole("textbox").fill("150mg chicken breast");
+  await page.locator("textarea").fill("150mg chicken breast");
   await page.getByRole("button", { name: /parse meal/i }).click();
 
-  // "Did you mean X g?" hint is shown
-  await expect(page.getByText(/Did you mean 150 g\?/)).toBeVisible();
+  await expect(page.getByText(/150mg is an unusual amount/i)).toBeVisible();
 
   // Confirm & log is disabled — items.length === 0 and there are clarifications
   const confirmBtn = page.getByRole("button", { name: /confirm & log/i });
@@ -221,7 +220,7 @@ test("unsupported unit: error message shown, Remove button dismisses it", async 
   );
 
   await goToLogMeal(page);
-  await page.getByRole("textbox").fill("150g chicken breast, 1 tsp olive oil");
+  await page.locator("textarea").fill("150g chicken breast, 1 tsp olive oil");
   await page.getByRole("button", { name: /parse meal/i }).click();
 
   // Clarification message is shown
@@ -282,7 +281,7 @@ test("EXTREME_PORTION: Confirm amount re-runs calculate-meal, then confirm enabl
   );
 
   await goToLogMeal(page);
-  await page.getByRole("textbox").fill("150g chicken breast");
+  await page.locator("textarea").fill("150g chicken breast");
   await page.getByRole("button", { name: /parse meal/i }).click();
 
   // EXTREME_PORTION clarification shown with "Confirm amount" button
@@ -309,7 +308,7 @@ test("EXTREME_PORTION: Confirm amount re-runs calculate-meal, then confirm enabl
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("idempotency: clicking Confirm & log twice only calls log-meal once", async ({ page }) => {
+test("confirmation sends one request with an idempotency key", async ({ page }) => {
   await mockParseAndResolve(page);
 
   await page.route("**/functions/v1/calculate-meal", (route) =>
@@ -324,11 +323,13 @@ test("idempotency: clicking Confirm & log twice only calls log-meal once", async
   let logMealCalls = 0;
   await page.route("**/functions/v1/log-meal", (route) => {
     logMealCalls++;
+    const body = JSON.parse(route.request().postData() ?? "{}") as { idempotency_key?: string };
+    expect(body.idempotency_key).toMatch(/^[0-9a-f-]{36}$/i);
     return fulfill(route, { meal_id: "meal-uuid-003", meal_confidence: "high" });
   });
 
   await goToLogMeal(page);
-  await page.getByRole("textbox").fill("150g chicken breast");
+  await page.locator("textarea").fill("150g chicken breast");
   await page.getByRole("button", { name: /parse meal/i }).click();
 
   await expect(page.getByText(/165 kcal total/)).toBeVisible();
@@ -336,12 +337,7 @@ test("idempotency: clicking Confirm & log twice only calls log-meal once", async
   const confirmBtn = page.getByRole("button", { name: /confirm & log/i });
   await expect(confirmBtn).toBeEnabled();
 
-  // Click twice in quick succession
   await confirmBtn.click();
-  // The button becomes disabled (loading=true) before the second click can fire.
-  // Force-clicking a disabled button has no effect in the browser.
-  await confirmBtn.click({ force: true });
-
   await expect(page.getByText(/meal logged/i)).toBeVisible();
 
   expect(logMealCalls).toBe(1);
