@@ -11,14 +11,14 @@ with good data stewardship practices.
 **Auth**: Required (Bearer token)  
 **Response**: `application/json` with `Content-Disposition: attachment`
 
-Returns a `nutri_data_export_v1` JSON document containing all personal data
+Returns a `nutri_data_export_v2` JSON document containing all personal data
 stored for the authenticated user.
 
 ### Export format
 
 ```json
 {
-  "export_version": "nutri_data_export_v1",
+  "export_version": "nutri_data_export_v2",
   "exported_at": "2026-08-02T10:00:00.000Z",
   "user_id": "<uuid>",
   "data": {
@@ -31,7 +31,10 @@ stored for the authenticated user.
     "daily_log_status": [ ... ],
     "user_foods": [ ... ],
     "user_food_cache": [ ... ],
-    "goal_feedback_assessments": [ ... ]
+    "goal_feedback_assessments": [ ... ],
+    "anthropometric_sessions": [ ... ],
+    "anthropometric_readings": [ ... ],
+    "anthropometric_representatives": [ ... ]
   }
 }
 ```
@@ -50,6 +53,9 @@ stored for the authenticated user.
 | `user_foods` | Foods the user created manually |
 | `user_food_cache` | User's per-food resolution preferences |
 | `goal_feedback_assessments` | All goal progress assessments |
+| `anthropometric_sessions` | All draft and finalised tape-measure sessions |
+| `anthropometric_readings` | Every preserved raw circumference reading |
+| `anthropometric_representatives` | Server-calculated representative values and quality metadata |
 
 ### What is excluded
 
@@ -89,6 +95,9 @@ weight_logs
 user_food_cache
 foods (user-owned only)
 profiles
+  └─ anthropometric_sessions
+       ├─ anthropometric_readings
+       └─ anthropometric_representatives
 auth.users
 ```
 

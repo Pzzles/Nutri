@@ -1,11 +1,10 @@
--- 0030_anthropometric_progress_model.sql
+-- 0031_anthropometric_progress_model.sql
 --
 -- Phase 10, Gate 2: anthropometric progress data model.
 --
 -- Creates persisted draft sessions, immutable finalised sessions, preserved raw
 -- readings, server-owned representative rows, and owner-scoped RLS. Migration
--- number 0030 intentionally leaves 0029 available for the repository's known
--- duplicate-0027 repair.
+-- Version 0031 follows the merged migration-history repairs at 0029 and 0030.
 
 -- ---------------------------------------------------------------------------
 -- Stable site dictionary

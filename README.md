@@ -19,6 +19,8 @@ Nine implementation phases complete. Version 0.1.0.
 - Immutable calorie target snapshots with full input provenance
 - Adaptive maintenance estimate from observed energy balance
 - Goal progress assessment with rate bounds and adjustment proposals
+- Anthropometric draft/finalised sessions with preserved tape readings and server-authoritative representatives
+- Owner-scoped anthropometric history, cursor pagination and explicit whole-session deletion
 
 **Supporting functions**
 - Barcode lookup, custom food management, meal templates
@@ -28,7 +30,7 @@ Nine implementation phases complete. Version 0.1.0.
 - Health endpoint (`/functions/v1/health`)
 
 **Data privacy**
-- `export-my-data` — authenticated GET, downloads `nutri_data_export_v1` JSON
+- `export-my-data` — authenticated GET, downloads `nutri_data_export_v2` JSON including anthropometry
 - `delete-account` — permanently deletes all user data with explicit confirmation
 
 **Frontend (React 18 + Vite + TypeScript + Tailwind CSS)**
@@ -85,7 +87,7 @@ npm run dev
 # Requires: supabase start + supabase functions serve --env-file supabase/.env
 cd supabase/tests
 npx vitest run --config vitest.config.ts
-# Expected: 331 tests, 0 failures
+# Expected: 381 tests, 0 failures
 ```
 
 ### Run E2E tests
@@ -103,14 +105,19 @@ See [docs/deployment/production-deployment.md](docs/deployment/production-deploy
 
 ```
 supabase/
-  migrations/         0001–0028 — schema evolution + bug fixes
+  migrations/         0001–0032 — schema evolution + bug fixes
   functions/
     _shared/          Shared helpers (envelope, supabase client, energy calc, science config)
+    _handlers/        Server-only request handlers shared by multiple endpoints
     _scheduled/       recalculate-frequency-rankings (cron job)
     export-my-data/   GDPR data export
+    save-anthropometric-session/       Draft/finalised anthropometry save
+    finalize-anthropometric-session/   Strict finalisation contract
+    get-anthropometric-sessions/       Owner history with cursor pagination
+    delete-anthropometric-session/     Explicit whole-session deletion
     delete-account/   Account + data deletion
     health/           Service health check
-    <27 more>/        One folder per Edge Function
+    <29 more>/        One folder per Edge Function
   tests/              Backend integration tests (Vitest, real DB)
 web/
   src/
