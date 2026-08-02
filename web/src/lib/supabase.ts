@@ -56,3 +56,25 @@ export async function getFunction<T = unknown>(
   }
   return json.data as T;
 }
+
+// DELETE variant — explicit body is used for owner-scoped resource deletion.
+export async function deleteFunction<T = unknown>(name: string, body: unknown): Promise<T> {
+  const { data: session } = await supabase.auth.getSession();
+  const token = session.session?.access_token;
+  if (!token) throw new Error("Not authenticated");
+
+  const resp = await fetch(`${url}/functions/v1/${name}`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const json = await resp.json();
+  if (!json.success) {
+    throw new Error(json.error?.message ?? `${name} failed`);
+  }
+  return json.data as T;
+}

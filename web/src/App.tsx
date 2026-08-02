@@ -12,6 +12,7 @@ import AccountLink from "./pages/AccountLink";
 import Goals from "./pages/Goals";
 import WeightLogPage from "./pages/WeightLog";
 import MealHistory from "./pages/MealHistory";
+import Measurements from "./pages/Measurements";
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="/search" element={<SearchFood />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/weight" element={<WeightLogPage />} />
+          <Route path="/measurements" element={<Measurements />} />
           <Route path="/auth" element={<Navigate to="/" replace />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -79,9 +81,12 @@ function NavBar({ darkMode, onToggleTheme }: { darkMode: boolean; onToggleTheme:
   const isActive = (path: string) => location.pathname === path;
 
   return (
-    <nav className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
-      <span className="font-display text-sm font-semibold text-ink">Nutrition Tracker</span>
-      <div className="flex items-center gap-1">
+    <nav className="flex items-center justify-between gap-2 border-b border-border bg-surface px-3 py-3 sm:px-4">
+      <span className="shrink-0 font-display text-sm font-semibold text-ink">
+        <span className="sm:hidden">Nutri</span>
+        <span className="hidden sm:inline">Nutrition Tracker</span>
+      </span>
+      <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto sm:gap-1">
         <NavLink to="/" label="Dashboard" active={isActive("/")} />
         <NavLink to="/log" label="Log" active={isActive("/log")} />
         <NavLink to="/progress" label="Progress" active={isActive("/progress")} />
@@ -113,7 +118,7 @@ function NavLink({ to, label, active }: { to: string; label: string; active: boo
   return (
     <Link
       to={to}
-      className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
+      className={`shrink-0 rounded-full px-2 py-1.5 text-xs transition-colors sm:px-3 sm:text-sm ${
         active ? "bg-primary text-white" : "text-muted hover:text-ink"
       }`}
     >
