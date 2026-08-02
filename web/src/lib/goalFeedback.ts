@@ -41,6 +41,8 @@ export interface EvidenceSnapshot {
   p6_status: string;
   p6_confidence: "low" | "medium" | "high";
   p6_weekly_rate_kg: number | null;
+  p6_rate_lower_kg: number | null;
+  p6_rate_upper_kg: number | null;
   p7_status: "usable" | "provisional" | "insufficient" | null;
   p7_confidence: "low" | "medium" | "high" | null;
   p7_coverage_fraction: number | null;
@@ -67,8 +69,17 @@ export interface GoalFeedbackResponse {
   progress_state: ProgressState;
   feedback_action: FeedbackAction;
   reason_codes: string[];
+
+  // Canonical signed fields (Phase 8 v2)
+  suggested_adjustment_kcal: number | null;
+  proposed_target_kcal: number | null;
+  adjustment_blocked_reason_codes: string[];
+  maintenance_drift_direction: "up" | "down" | null;
+
+  // Compatibility aliases
   advisory_calorie_adjustment_kcal: number | null;
   advisory_adjustment_direction: AdjustmentDirection | null;
+
   goal_attainment_ratio: number | null;
   goal_phase: GoalPhaseSummary | null;
   evidence: {
@@ -136,11 +147,11 @@ export function stateDescription(state: ProgressState): string {
     case "on_track":
       return "Your observed progress is close to your planned rate. Keep it up.";
     case "slower_than_planned":
-      return "Your progress rate is below your goal. This is common early in a phase.";
+      return "Your progress rate is below your planned pace. Review your goal setup to check your targets and assumptions.";
     case "faster_than_planned":
       return "Your progress rate is above your planned pace.";
     case "plateau_candidate":
-      return "Progress appears to have slowed. Continue monitoring — this may be temporary.";
+      return "Your recent trend has been close to flat. More evidence is needed before treating this as a persistent plateau.";
     case "likely_plateau":
       return "Two weeks of evidence suggest a sustained stall. A small calorie adjustment may help.";
     case "opposite_direction":
@@ -215,7 +226,7 @@ export function formatAdvisoryAdjustment(
 
 /** Whether the response has a computed advisory adjustment. */
 export function hasAdvisoryAdjustment(r: GoalFeedbackResponse): boolean {
-  return r.advisory_calorie_adjustment_kcal != null && r.advisory_adjustment_direction != null;
+  return r.suggested_adjustment_kcal != null;
 }
 
 /** Format a coverage fraction as a percentage. */

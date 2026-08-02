@@ -61,6 +61,9 @@ type SnapshotRow = {
   manual_maintenance_kcal: number | null;
   effective_maintenance_kcal: number;
   maintenance_source: string;
+  final_target_kcal: number;
+  warning_codes: string[];
+  aggressive_rate_acknowledged: boolean;
 };
 
 type DailyLogRow = { logged_date: string; status: string };
@@ -70,9 +73,15 @@ type P67Evidence = {
   p6Status: string;
   p6Confidence: "low" | "medium" | "high";
   p6WeeklyRateKg: number | null;
+  p6RateLowerKg: number | null;
+  p6RateUpperKg: number | null;
   p7Status: "usable" | "provisional" | "insufficient" | null;
   p7Confidence: "low" | "medium" | "high" | null;
   p7CoverageFraction: number | null;
+  p7ObservedMaintenanceKcal: number | null;
+  p7ObservedMaintenanceLowerKcal: number | null;
+  p7ObservedMaintenanceUpperKcal: number | null;
+  p7Warnings: string[];
 };
 
 // ── Database helpers ──────────────────────────────────────────────────────────
@@ -100,11 +109,24 @@ async function dbLoadActiveGoalPhase(uid: string, svc: SupabaseClient): Promise<
 async function dbLoadSnapshot(id: string, svc: SupabaseClient): Promise<SnapshotRow | null> {
   const { data, error } = await svc
     .from("calorie_target_snapshots")
-    .select("calculated_tdee_kcal, manual_maintenance_kcal, effective_maintenance_kcal, maintenance_source")
+    .select("calculated_tdee_kcal, manual_maintenance_kcal, effective_maintenance_kcal, maintenance_source, final_target_kcal, warning_codes, aggressive_rate_acknowledged")
     .eq("id", id)
     .single();
   if (error || !data) return null;
   return data as SnapshotRow;
+}
+
+async function dbLoadMostRecentOfficialWeight(uid: string, svc: SupabaseClient): Promise<number | null> {
+  const { data, error } = await svc
+    .from("weight_logs")
+    .select("weight_kg")
+    .eq("user_id", uid)
+    .eq("is_official", true)
+    .order("measured_at", { ascending: false })
+    .limit(1)
+    .single();
+  if (error || !data) return null;
+  return Number((data as { weight_kg: number }).weight_kg);
 }
 
 async function dbLoadWeightLogs(
@@ -219,18 +241,31 @@ async function computeEvidence(
   // Load weight logs up to asOf (inclusive by local date)
   const weightRows = await dbLoadWeightLogs(uid, phaseStart, asOfLocal, svc);
 
-  if (weightRows.length === 0) {
-    return {
-      p6Status: "insufficient_measurements", p6Confidence: "low", p6WeeklyRateKg: null,
-      p7Status: null, p7Confidence: null, p7CoverageFraction: null,
-    };
-  }
+  const NULL_EVIDENCE: P67Evidence = {
+    p6Status: "insufficient_measurements", p6Confidence: "low", p6WeeklyRateKg: null,
+    p6RateLowerKg: null, p6RateUpperKg: null,
+    p7Status: null, p7Confidence: null, p7CoverageFraction: null,
+    p7ObservedMaintenanceKcal: null, p7ObservedMaintenanceLowerKcal: null,
+    p7ObservedMaintenanceUpperKcal: null, p7Warnings: [],
+  };
+
+  if (weightRows.length === 0) return NULL_EVIDENCE;
 
   // P6 calculation with asOf as the reference point
   const p6Result  = p6Calculate(weightRows, asOfIso, tz);
   const p6Status  = p6Result.status;
   const p6Conf    = p6Result.confidence;
   const p6Rate    = p6Result.weekly_rate?.estimate_kg ?? null;
+  const p6Lower   = p6Result.weekly_rate?.lower_kg ?? null;
+  const p6Upper   = p6Result.weekly_rate?.upper_kg ?? null;
+
+  const noP7: P67Evidence = {
+    p6Status, p6Confidence: p6Conf, p6WeeklyRateKg: p6Rate,
+    p6RateLowerKg: p6Lower, p6RateUpperKg: p6Upper,
+    p7Status: null, p7Confidence: null, p7CoverageFraction: null,
+    p7ObservedMaintenanceKcal: null, p7ObservedMaintenanceLowerKcal: null,
+    p7ObservedMaintenanceUpperKcal: null, p7Warnings: [],
+  };
 
   // If P6 cannot produce a useful rate, skip P7
   if (
@@ -239,15 +274,11 @@ async function computeEvidence(
     p6Status === "insufficient_coverage" ||
     p6Rate === null
   ) {
-    return { p6Status, p6Confidence: p6Conf, p6WeeklyRateKg: p6Rate,
-             p7Status: null, p7Confidence: null, p7CoverageFraction: null };
+    return noP7;
   }
 
   const selectedWindow = p6Result.measurements.selected_rate_window_days;
-  if (!selectedWindow) {
-    return { p6Status, p6Confidence: p6Conf, p6WeeklyRateKg: p6Rate,
-             p7Status: null, p7Confidence: null, p7CoverageFraction: null };
-  }
+  if (!selectedWindow) return noP7;
 
   // Nutrition window aligned to P6 rate window, ending at yesterday relative to asOf
   const asOfYesterday = shiftDate(asOfLocal, -1);
@@ -256,8 +287,7 @@ async function computeEvidence(
   const windowEnd     = asOfYesterday;
 
   if (windowStart > windowEnd) {
-    return { p6Status, p6Confidence: p6Conf, p6WeeklyRateKg: p6Rate,
-             p7Status: "insufficient", p7Confidence: null, p7CoverageFraction: null };
+    return { ...noP7, p7Status: "insufficient" };
   }
 
   const calDays = calendarDaysBetween(windowStart, windowEnd);
@@ -318,11 +348,17 @@ async function computeEvidence(
 
   return {
     p6Status,
-    p6Confidence:       p6Conf,
-    p6WeeklyRateKg:     p6Rate,
-    p7Status:           p7Result?.status ?? "insufficient",
-    p7Confidence:       p7Result?.confidence ?? null,
-    p7CoverageFraction: p7Result?.coverageFraction ?? null,
+    p6Confidence:                  p6Conf,
+    p6WeeklyRateKg:                p6Rate,
+    p6RateLowerKg:                 p6Lower,
+    p6RateUpperKg:                 p6Upper,
+    p7Status:                      p7Result?.status ?? "insufficient",
+    p7Confidence:                  p7Result?.confidence ?? null,
+    p7CoverageFraction:            p7Result?.coverageFraction ?? null,
+    p7ObservedMaintenanceKcal:     p7Result?.observedMaintenanceKcal ?? null,
+    p7ObservedMaintenanceLowerKcal: p7Result?.maintenanceLowerKcal ?? null,
+    p7ObservedMaintenanceUpperKcal: p7Result?.maintenanceUpperKcal ?? null,
+    p7Warnings:                    p7Result?.warnings ?? [],
   };
 }
 
@@ -330,9 +366,10 @@ async function computeEvidence(
 
 type FeedbackDeps = {
   now: () => Date;
-  loadProfile:         (uid: string) => Promise<{ timezone: string | null }>;
-  loadActiveGoalPhase: (uid: string) => Promise<GoalPhase | null>;
-  loadSnapshot:        (id: string)  => Promise<SnapshotRow | null>;
+  loadProfile:           (uid: string) => Promise<{ timezone: string | null }>;
+  loadActiveGoalPhase:   (uid: string) => Promise<GoalPhase | null>;
+  loadSnapshot:          (id: string)  => Promise<SnapshotRow | null>;
+  loadOfficialWeight:    (uid: string) => Promise<number | null>;
   computeCurrentEvidence:    (uid: string, phase: GoalPhase, snap: SnapshotRow | null, tz: string, asOf: Date) => Promise<P67Evidence>;
   computeHistoricalEvidence: (uid: string, phase: GoalPhase, snap: SnapshotRow | null, tz: string, asOf: Date) => Promise<P67Evidence>;
 };
@@ -372,11 +409,11 @@ export async function handleGetGoalFeedback(
     });
   }
 
-  // ── 4. Load Phase 5 snapshot ──────────────────────────────────────────────
-  let snapshot: SnapshotRow | null = null;
-  if (phase.snapshot_id) {
-    snapshot = await deps.loadSnapshot(phase.snapshot_id);
-  }
+  // ── 4. Load Phase 5 snapshot and official weight (parallel) ──────────────
+  const [snapshot, officialWeightKg] = await Promise.all([
+    phase.snapshot_id ? deps.loadSnapshot(phase.snapshot_id) : Promise.resolve(null),
+    deps.loadOfficialWeight(userId),
+  ]);
 
   // ── 5. Compute current evidence ───────────────────────────────────────────
   const now        = deps.now();
@@ -387,23 +424,43 @@ export async function handleGetGoalFeedback(
   const historicalEv = await deps.computeHistoricalEvidence(userId, phase, snapshot, tz, asOf14);
 
   // ── 7. Assess progress ────────────────────────────────────────────────────
+  const hasUnresolvedAggressiveRateWarning =
+    Array.isArray(snapshot?.warning_codes) &&
+    (snapshot!.warning_codes as string[]).includes("aggressive_rate") &&
+    !snapshot!.aggressive_rate_acknowledged;
+
   const input: GoalProgressInput = {
-    goalMode:                  phase.mode as "cut" | "maintenance" | "bulk",
-    goalTargetRateKgPerWeek:   phase.target_change_kg_per_week ?? null,
-    goalPhaseStartedAt:        phase.started_at,
-    assessedAt:                now.toISOString(),
-    currentP6Status:           currentEv.p6Status,
-    currentP6Confidence:       currentEv.p6Confidence,
-    currentP6WeeklyRateKg:     currentEv.p6WeeklyRateKg,
-    currentP7Status:           currentEv.p7Status,
-    currentP7Confidence:       currentEv.p7Confidence,
-    currentP7CoverageFraction: currentEv.p7CoverageFraction,
-    historicalP6Status:        historicalEv.p6Status,
-    historicalP6Confidence:    historicalEv.p6Confidence,
-    historicalP6WeeklyRateKg:  historicalEv.p6WeeklyRateKg,
-    historicalP7Status:        historicalEv.p7Status,
-    historicalP7Confidence:    historicalEv.p7Confidence,
+    goalMode:                     phase.mode as "cut" | "maintenance" | "bulk",
+    goalTargetRateKgPerWeek:      phase.target_change_kg_per_week ?? null,
+    goalPhaseStartedAt:           phase.started_at,
+    assessedAt:                   now.toISOString(),
+
+    currentP6Status:              currentEv.p6Status,
+    currentP6Confidence:          currentEv.p6Confidence,
+    currentP6WeeklyRateKg:        currentEv.p6WeeklyRateKg,
+    currentP6RateLowerKg:         currentEv.p6RateLowerKg,
+    currentP6RateUpperKg:         currentEv.p6RateUpperKg,
+
+    currentP7Status:                      currentEv.p7Status,
+    currentP7Confidence:                  currentEv.p7Confidence,
+    currentP7CoverageFraction:            currentEv.p7CoverageFraction,
+    currentP7ObservedMaintenanceKcal:     currentEv.p7ObservedMaintenanceKcal,
+    currentP7ObservedMaintenanceLowerKcal: currentEv.p7ObservedMaintenanceLowerKcal,
+    currentP7ObservedMaintenanceUpperKcal: currentEv.p7ObservedMaintenanceUpperKcal,
+    currentP7Warnings:                    currentEv.p7Warnings,
+
+    historicalP6Status:           historicalEv.p6Status,
+    historicalP6Confidence:       historicalEv.p6Confidence,
+    historicalP6WeeklyRateKg:     historicalEv.p6WeeklyRateKg,
+    historicalP6RateLowerKg:      historicalEv.p6RateLowerKg,
+    historicalP6RateUpperKg:      historicalEv.p6RateUpperKg,
+    historicalP7Status:           historicalEv.p7Status,
+    historicalP7Confidence:       historicalEv.p7Confidence,
     historicalP7CoverageFraction: historicalEv.p7CoverageFraction,
+
+    currentOfficialWeightKg:               officialWeightKg,
+    currentTargetCalories:                 snapshot?.final_target_kcal ?? null,
+    hasUnresolvedAggressiveRateWarning,
   };
 
   const assessment = assess(input);
@@ -413,15 +470,24 @@ export async function handleGetGoalFeedback(
     progress_state:                    assessment.state,
     feedback_action:                   assessment.feedbackAction,
     reason_codes:                      assessment.reasonCodes,
+
+    // Canonical signed fields (new)
+    suggested_adjustment_kcal:         assessment.suggestedAdjustmentKcal,
+    proposed_target_kcal:              assessment.proposedTargetKcal,
+    adjustment_blocked_reason_codes:   assessment.adjustmentBlockedReasonCodes,
+    maintenance_drift_direction:       assessment.maintenanceDriftDirection,
+
+    // Compatibility aliases (existing UI)
     advisory_calorie_adjustment_kcal:  assessment.advisoryCalorieAdjustmentKcal,
     advisory_adjustment_direction:     assessment.advisoryAdjustmentDirection,
+
     goal_attainment_ratio:             assessment.goalAttainmentRatio,
 
     goal_phase: {
       id:                        phase.id,
       mode:                      phase.mode,
       started_at:                phase.started_at,
-      target_rate_kg_per_week:   phase.target_change_kg_per_week ?? null,
+      target_change_kg_per_week: phase.target_change_kg_per_week ?? null,
     },
 
     evidence: {
@@ -429,6 +495,8 @@ export async function handleGetGoalFeedback(
         p6_status:             currentEv.p6Status,
         p6_confidence:         currentEv.p6Confidence,
         p6_weekly_rate_kg:     currentEv.p6WeeklyRateKg,
+        p6_rate_lower_kg:      currentEv.p6RateLowerKg,
+        p6_rate_upper_kg:      currentEv.p6RateUpperKg,
         p7_status:             currentEv.p7Status,
         p7_confidence:         currentEv.p7Confidence,
         p7_coverage_fraction:  currentEv.p7CoverageFraction,
@@ -437,6 +505,8 @@ export async function handleGetGoalFeedback(
         p6_status:             historicalEv.p6Status,
         p6_confidence:         historicalEv.p6Confidence,
         p6_weekly_rate_kg:     historicalEv.p6WeeklyRateKg,
+        p6_rate_lower_kg:      historicalEv.p6RateLowerKg,
+        p6_rate_upper_kg:      historicalEv.p6RateUpperKg,
         p7_status:             historicalEv.p7Status,
         p7_confidence:         historicalEv.p7Confidence,
         p7_coverage_fraction:  historicalEv.p7CoverageFraction,
@@ -470,6 +540,7 @@ Deno.serve(async (req: Request) => {
       loadProfile:         (uid) => dbLoadProfile(uid, svc),
       loadActiveGoalPhase: (uid) => dbLoadActiveGoalPhase(uid, svc),
       loadSnapshot:        (id)  => dbLoadSnapshot(id, svc),
+      loadOfficialWeight:  (uid) => dbLoadMostRecentOfficialWeight(uid, svc),
       computeCurrentEvidence:    (uid, phase, snap, tz, asOf) =>
         computeEvidence(uid, phase, snap, tz, asOf, svc),
       computeHistoricalEvidence: (uid, phase, snap, tz, asOf) =>

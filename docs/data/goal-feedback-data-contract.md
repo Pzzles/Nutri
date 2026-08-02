@@ -27,21 +27,31 @@ Immutable, user-scoped assessment snapshots. One row per
 | `progress_state` | `text` | NOT NULL | One of 11 states (see below) |
 | `reason_codes` | `jsonb` | NOT NULL | Array of machine-readable strings |
 | `feedback_action` | `text` | NOT NULL | One of 7 actions (see below) |
-| `advisory_calorie_adjustment_kcal` | `numeric(6,1)` | NULL | Null = not applicable |
-| `advisory_adjustment_direction` | `text` | NULL | `increase` \| `decrease` |
+| `advisory_calorie_adjustment_kcal` | `numeric(6,1)` | NULL | Compat alias — unsigned magnitude |
+| `advisory_adjustment_direction` | `text` | NULL | Compat alias — `increase` \| `decrease` |
+| `suggested_adjustment_kcal` | `numeric(6,1)` | NULL | Signed canonical adjustment (negative = eat less) |
+| `proposed_target_kcal` | `numeric(7,1)` | NULL | Proposed daily calorie target after adjustment |
+| `adjustment_blocked_reason_codes` | `jsonb` | NOT NULL | Array of block code strings (empty when no attempt) |
+| `maintenance_drift_direction` | `text` | NULL | `up` \| `down` — drift direction for `maintenance_drift` |
 | `goal_attainment_ratio` | `numeric(8,4)` | NULL | Null for maintenance |
 | `current_p6_status` | `text` | NOT NULL | P6 status at assessment time |
 | `current_p6_confidence` | `text` | NOT NULL | `low` \| `medium` \| `high` |
 | `current_p6_weekly_rate_kg` | `numeric(8,6)` | NULL | Null when no rate |
+| `current_rate_lower_kg` | `numeric(8,6)` | NULL | P6 CI lower bound |
+| `current_rate_upper_kg` | `numeric(8,6)` | NULL | P6 CI upper bound |
 | `current_p7_status` | `text` | NULL | `usable` \| `provisional` \| `insufficient` |
 | `current_p7_confidence` | `text` | NULL | `low` \| `medium` \| `high` |
 | `current_p7_coverage_fraction` | `numeric(6,5)` | NULL | 0–1 |
 | `historical_p6_status` | `text` | NULL | P6 status at (assessedAt − 14 days) |
 | `historical_p6_confidence` | `text` | NULL | — |
 | `historical_p6_weekly_rate_kg` | `numeric(8,6)` | NULL | — |
+| `previous_rate_lower_kg` | `numeric(8,6)` | NULL | Historical P6 CI lower bound |
+| `previous_rate_upper_kg` | `numeric(8,6)` | NULL | Historical P6 CI upper bound |
 | `historical_p7_status` | `text` | NULL | — |
 | `historical_p7_confidence` | `text` | NULL | — |
 | `historical_p7_coverage_fraction` | `numeric(6,5)` | NULL | — |
+| `current_official_weight_kg` | `numeric(6,3)` | NULL | Most-recent official weight at assessment time |
+| `current_target_calories` | `numeric(7,1)` | NULL | Calorie target from the snapshot |
 | `algorithm_versions` | `jsonb` | NOT NULL | `{goal_progress, goal_thresholds, energy_balance, …}` |
 | `warnings` | `jsonb` | NOT NULL | Array of strings |
 | `limitations` | `jsonb` | NOT NULL | Array of strings |
@@ -97,8 +107,17 @@ consider_small_calorie_adjustment | review_maintenance_drift
   "progress_state": "on_track",                    // ProgressState
   "feedback_action": "keep_current_plan",          // FeedbackAction
   "reason_codes": ["rate_within_band"],             // string[]
-  "advisory_calorie_adjustment_kcal": null,         // number | null
+
+  // Canonical signed fields (v2)
+  "suggested_adjustment_kcal": null,               // number | null — negative = decrease
+  "proposed_target_kcal": null,                    // number | null
+  "adjustment_blocked_reason_codes": [],           // string[] — empty when no attempt
+  "maintenance_drift_direction": null,             // "up" | "down" | null
+
+  // Compatibility aliases
+  "advisory_calorie_adjustment_kcal": null,         // number | null — unsigned magnitude
   "advisory_adjustment_direction": null,            // "increase" | "decrease" | null
+
   "goal_attainment_ratio": 0.96,                   // number | null
   "goal_phase": {
     "id": "…",
@@ -111,6 +130,8 @@ consider_small_calorie_adjustment | review_maintenance_drift
       "p6_status": "usable",
       "p6_confidence": "high",
       "p6_weekly_rate_kg": -0.48,
+      "p6_rate_lower_kg": -0.60,              // number | null — P6 CI lower bound
+      "p6_rate_upper_kg": -0.36,              // number | null — P6 CI upper bound
       "p7_status": "usable",
       "p7_confidence": "high",
       "p7_coverage_fraction": 0.86

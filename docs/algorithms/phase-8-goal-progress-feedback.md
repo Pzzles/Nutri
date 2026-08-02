@@ -44,14 +44,14 @@ States are evaluated in priority order (first match wins):
 | 1 | `no_active_goal_phase` | `goalMode === null` |
 | 2 | `stale_data` | P6 status is `stale` |
 | 3 | `insufficient_data` | P6 status insufficient, no rate, or no target |
-| 4 | `maintenance_stable` | Maintenance mode, `|rate| ≤ 0.10 kg/week` |
-| 5 | `maintenance_drift` | Maintenance mode, `|rate| > 0.10 kg/week` |
-| 6 | `likely_plateau` | Cut, rate near zero, persistent across 14 days |
-| 7 | `plateau_candidate` | Cut, rate near zero, single assessment |
-| 8 | `opposite_direction` | Rate sign opposite to target, outside band |
-| 9 | `on_track` | `|deviation| ≤ band` |
-| 10 | `slower_than_planned` | Magnitude below target by > band |
-| 11 | `faster_than_planned` | Magnitude above target by > band |
+| 4 | `maintenance_stable` | Maintenance mode, `|rate| ≤ 0.10 kg/week` or P6 range includes zero |
+| 5 | `maintenance_drift` | Maintenance mode, `|rate| > band` AND P6 range fully excludes zero |
+| 6 | `likely_plateau` | Cut, rate near zero, persistent across 14 days (P7 quality required for historical evidence) |
+| 7 | `plateau_candidate` | Cut, rate near zero, current evidence only |
+| 8 | `opposite_direction` | P6 range fully excludes zero in the direction opposite to goal |
+| 9 | `on_track` | Target rate inside P6 range OR attainment ratio 0.70–1.30 |
+| 10 | `slower_than_planned` | Attainment ratio < 0.70, or rate sign opposite without range confirmation |
+| 11 | `faster_than_planned` | Attainment ratio > 1.30 |
 
 ---
 
@@ -83,7 +83,7 @@ band = 0.10                               for maintenance
 All `plateau_candidate` criteria **plus**:
 
 1. Phase age ≥ 42 days
-2. Historical evidence (at now − 14 days) also qualifies as `plateau_candidate`
+2. Historical evidence (at now − 14 days) also qualifies as `plateau_candidate`, with the additional requirement that historical P7 confidence is `medium` or `high` AND historical P7 coverage fraction ≥ 0.70
 3. Current P7 status is `usable` (not just provisional)
 4. Current P7 confidence is `medium` or `high`
 5. Current P7 coverage fraction ≥ 0.70
@@ -92,15 +92,24 @@ All `plateau_candidate` criteria **plus**:
 
 ## Advisory Calorie Adjustment
 
-An advisory adjustment is shown when evidence quality meets all gates:
+An advisory adjustment is computed for `likely_plateau`, `opposite_direction`, and `maintenance_drift`. It is **not** computed for `plateau_candidate` or `slower_than_planned`.
 
-| Gate | Requirement |
+### Safety blocks (checked in order)
+
+If any block fires, `suggested_adjustment_kcal` is null and the block codes appear in `adjustment_blocked_reason_codes`:
+
+| Code | Condition |
 |---|---|
-| P6 status | Not `stale` |
-| P6 confidence | `medium` or `high` |
-| P7 status | `usable` (not provisional) |
-| P7 confidence | `medium` or `high` |
-| P7 coverage | ≥ 70% |
+| `missing_current_target` | No calorie target available |
+| `missing_official_weight` | No official weight log available |
+| `low_weight_confidence` | P6 confidence is `low` |
+| `low_maintenance_confidence` | P7 confidence is `low` |
+| `insufficient_nutrition_coverage` | P7 coverage < 70% |
+| `aggressive_rate_warning` | Unresolved aggressive-rate warning on the snapshot |
+| `rate_exceeds_one_percent_body_weight` | Required rate correction > 1% body weight/week |
+| `required_correction_below_minimum` | Corrected amount < 100 kcal/day |
+| `proposed_target_below_floor` | Proposed target < 1 000 kcal/day (not clamped — blocked) |
+| `evidence_conflict` | P7 maintenance CI fully excludes the current calorie target in the direction contrary to the goal |
 
 ### Formula
 
@@ -109,8 +118,11 @@ required_daily = (target_rate − observed_rate) × 7700 / 7
 step           = required_daily × 0.50
 rounded        = round(step / 50) × 50
 magnitude      = clamp(|rounded|, 100, 250)
-direction      = "increase" if required_daily > 0 else "decrease"
+signed         = magnitude × sign(required_daily)   # negative = decrease intake
+proposed       = current_target + signed
 ```
+
+`suggested_adjustment_kcal` is signed (negative = eat less). `advisory_calorie_adjustment_kcal` is the unsigned magnitude for backwards compatibility. `proposed_target_kcal` is the resulting daily target.
 
 The half-step (`× 0.50`) implements cautious, incremental adjustment rather than
 correcting the full deficit in one go.
@@ -130,7 +142,9 @@ change requires explicit user confirmation through the goal flow.
 | `faster_than_planned` (cut) | `consider_less_aggressive_goal` |
 | `faster_than_planned` (bulk) | `review_goal_assumptions` |
 | `maintenance_drift` | `review_maintenance_drift` |
-| `slower_than_planned`, `opposite_direction`, `likely_plateau`, `plateau_candidate` | `consider_small_calorie_adjustment` |
+| `slower_than_planned` | `review_goal_assumptions` |
+| `plateau_candidate` | `collect_more_data` |
+| `opposite_direction`, `likely_plateau` | `consider_small_calorie_adjustment` |
 
 ---
 
