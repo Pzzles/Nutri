@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnthropometryTrends } from "../components/AnthropometryTrends";
 import {
   ANTHROPOMETRY_PREPARATION,
@@ -8,6 +8,7 @@ import {
   finalizeAnthropometrySession,
   formatMeasurement,
   formatMeasurementInput,
+  hasRepeatablePair,
   inputToCentimetres,
   needsThirdReading,
   saveAnthropometryDraft,
@@ -49,6 +50,10 @@ export default function Measurements() {
   const [readings, setReadings] = useState<ReadingState>({});
   const [circuit, setCircuit] = useState<Circuit>(1);
   const [siteIndex, setSiteIndex] = useState(0);
+  const [resolutionSites, setResolutionSites] = useState<AnthropometrySiteCode[]>([]);
+  const [retakeSite, setRetakeSite] = useState<AnthropometrySiteCode | null>(null);
+  const [retakeResumeIndex, setRetakeResumeIndex] = useState<number | null>(null);
+  const [lowConfidenceSite, setLowConfidenceSite] = useState<AnthropometrySiteCode | null>(null);
   const [readingInput, setReadingInput] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -58,11 +63,11 @@ export default function Measurements() {
   const [completed, setCompleted] = useState<AnthropometrySaveResponse | null>(null);
   const readingInputRef = useRef<HTMLInputElement>(null);
 
-  const resolutionSites = useMemo(
-    () => selectedSites.filter((code) => needsThirdReading(readings[code] ?? [])),
-    [readings, selectedSites],
-  );
-  const circuitSites = circuit === 3 ? resolutionSites : selectedSites;
+  const circuitSites = retakeSite
+    ? [retakeSite]
+    : circuit === 3
+    ? resolutionSites
+    : selectedSites;
   const currentSiteCode = circuitSites[siteIndex] ?? circuitSites[0];
   const currentSite = currentSiteCode ? siteDefinition(currentSiteCode) : null;
   const readingNumber = circuit;
@@ -148,6 +153,10 @@ export default function Measurements() {
       setReadings({});
       setCircuit(1);
       setSiteIndex(0);
+      setResolutionSites([]);
+      setRetakeSite(null);
+      setRetakeResumeIndex(null);
+      setLowConfidenceSite(null);
       setStatusMessage("Draft started. First reading circuit.");
       setPhase("measure");
     } catch (cause) {
@@ -178,14 +187,23 @@ export default function Measurements() {
       return;
     }
 
-    const nextSiteReadings = [...(readings[currentSiteCode] ?? [])];
+    let nextSiteReadings = [...(readings[currentSiteCode] ?? [])];
     nextSiteReadings[readingNumber - 1] = parsed.valueCm;
     let nextReadings: ReadingState = {
       ...readings,
       [currentSiteCode]: nextSiteReadings,
     };
 
-    const endsSecondCircuit = circuit === 2 && siteIndex === selectedSites.length - 1;
+    if (
+      retakeSite && circuit === 2 &&
+      !needsThirdReading(nextSiteReadings)
+    ) {
+      nextSiteReadings = nextSiteReadings.slice(0, 2);
+      nextReadings = { ...nextReadings, [currentSiteCode]: nextSiteReadings };
+    }
+
+    const endsSecondCircuit = !retakeSite && circuit === 2 &&
+      siteIndex === selectedSites.length - 1;
     let nextResolutionSites = resolutionSites;
     if (endsSecondCircuit) {
       nextResolutionSites = selectedSites.filter((code) =>
@@ -206,6 +224,40 @@ export default function Measurements() {
       setReadings(nextReadings);
       setReadingInput("");
 
+      if (circuit === 3 && !hasRepeatablePair(nextSiteReadings)) {
+        if (!retakeSite) setRetakeResumeIndex(siteIndex);
+        setLowConfidenceSite(currentSiteCode);
+        setStatusMessage(
+          `${siteDefinition(currentSiteCode).label} has low measurement confidence and must be retaken.`,
+        );
+        return;
+      }
+
+      if (retakeSite) {
+        if (circuit === 1) {
+          setCircuit(2);
+          setStatusMessage("First retake reading saved. Take the second reading.");
+        } else if (circuit === 2 && needsThirdReading(nextSiteReadings)) {
+          setCircuit(3);
+          setStatusMessage("The retake needs one resolution reading.");
+        } else {
+          setRetakeSite(null);
+          setRetakeResumeIndex(null);
+          if (
+            retakeResumeIndex != null &&
+            retakeResumeIndex < resolutionSites.length - 1
+          ) {
+            setCircuit(3);
+            setSiteIndex(retakeResumeIndex + 1);
+            setStatusMessage("Retake saved. Continue the resolution circuit.");
+          } else {
+            setStatusMessage("All required readings are saved. Review your session.");
+            setPhase("review");
+          }
+        }
+        return;
+      }
+
       if (siteIndex < circuitSites.length - 1) {
         setSiteIndex((index) => index + 1);
         setStatusMessage(`Reading ${readingNumber} saved.`);
@@ -214,6 +266,7 @@ export default function Measurements() {
         setSiteIndex(0);
         setStatusMessage("First circuit saved. Begin the second reading circuit.");
       } else if (circuit === 2 && nextResolutionSites.length > 0) {
+        setResolutionSites(nextResolutionSites);
         setCircuit(3);
         setSiteIndex(0);
         setStatusMessage(
@@ -230,8 +283,35 @@ export default function Measurements() {
     }
   }
 
+  async function retakeLowConfidenceSite() {
+    if (busy || !lowConfidenceSite) return;
+    const siteCode = lowConfidenceSite;
+    const nextReadings: ReadingState = { ...readings, [siteCode]: [] };
+    setBusy(true);
+    setError(null);
+    try {
+      await persistDraft(nextReadings);
+      setReadings(nextReadings);
+      setLowConfidenceSite(null);
+      setRetakeSite(siteCode);
+      setCircuit(1);
+      setSiteIndex(0);
+      setReadingInput("");
+      setStatusMessage(`Retaking ${siteDefinition(siteCode).label}. First reading.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not start the retake.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function goBack() {
     setError(null);
+    if (retakeSite) {
+      if (circuit === 2) setCircuit(1);
+      if (circuit === 3) setCircuit(2);
+      return;
+    }
     if (siteIndex > 0) {
       setSiteIndex((index) => index - 1);
       return;
@@ -246,9 +326,13 @@ export default function Measurements() {
   }
 
   function backFromReview() {
-    if (resolutionSites.length > 0) {
+    const completedResolutionSites = selectedSites.filter((code) =>
+      (readings[code] ?? []).length === 3
+    );
+    if (completedResolutionSites.length > 0) {
+      setResolutionSites(completedResolutionSites);
       setCircuit(3);
-      setSiteIndex(resolutionSites.length - 1);
+      setSiteIndex(completedResolutionSites.length - 1);
     } else {
       setCircuit(2);
       setSiteIndex(selectedSites.length - 1);
@@ -289,6 +373,10 @@ export default function Measurements() {
     setReadings({});
     setCircuit(1);
     setSiteIndex(0);
+    setResolutionSites([]);
+    setRetakeSite(null);
+    setRetakeResumeIndex(null);
+    setLowConfidenceSite(null);
     setReadingInput("");
     setNotes("");
     setPrepared(false);
@@ -379,7 +467,7 @@ export default function Measurements() {
         />
       )}
 
-      {phase === "measure" && currentSite && (
+      {phase === "measure" && currentSite && !lowConfidenceSite && (
         <MeasurementPanel
           site={currentSite}
           circuit={circuit}
@@ -388,12 +476,25 @@ export default function Measurements() {
           unit={unit}
           readingInput={readingInput}
           busy={busy}
+          isRetake={Boolean(retakeSite)}
           error={error}
           canGoBack={circuit !== 1 || siteIndex > 0}
           inputRef={readingInputRef}
           onInputChange={setReadingInput}
           onSubmit={(event) => void submitReading(event)}
           onBack={goBack}
+          onDiscard={() => setDiscardConfirm(true)}
+        />
+      )}
+
+      {phase === "measure" && lowConfidenceSite && (
+        <LowConfidencePanel
+          site={siteDefinition(lowConfidenceSite)}
+          readings={readings[lowConfidenceSite] ?? []}
+          unit={unit}
+          busy={busy}
+          error={error}
+          onRetake={() => void retakeLowConfidenceSite()}
           onDiscard={() => setDiscardConfirm(true)}
         />
       )}
@@ -564,6 +665,7 @@ interface MeasurementPanelProps {
   unit: MeasurementUnit;
   readingInput: string;
   busy: boolean;
+  isRetake: boolean;
   error: string | null;
   canGoBack: boolean;
   inputRef: React.RefObject<HTMLInputElement>;
@@ -580,7 +682,9 @@ function MeasurementPanel(props: MeasurementPanelProps) {
     : props.unit === "cm"
     ? `About ${formatMeasurement(parsed.valueCm, "in")} for display`
     : `Stored as ${formatMeasurement(parsed.valueCm, "cm")}`;
-  const circuitLabel = props.circuit === 1
+  const circuitLabel = props.isRetake
+    ? `Retake · reading ${props.circuit}`
+    : props.circuit === 1
     ? "First circuit"
     : props.circuit === 2
     ? "Second circuit"
@@ -660,13 +764,69 @@ function MeasurementPanel(props: MeasurementPanelProps) {
           <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center">
             <button type="button" onClick={props.onBack} disabled={!props.canGoBack || props.busy} className="min-h-12 rounded-lg border border-border px-4 py-3 text-sm font-medium text-ink hover:bg-background disabled:opacity-40">Back</button>
             <button type="submit" disabled={props.busy || !props.readingInput} className="min-h-12 flex-1 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-50 sm:flex-none">
-              {props.busy ? "Saving…" : "Save reading and continue"}
+              {props.busy
+                ? props.circuit === 3
+                  ? "Checking consistency…"
+                  : "Saving…"
+                : "Save reading and continue"}
             </button>
             <button type="button" onClick={props.onDiscard} disabled={props.busy} className="min-h-12 rounded-lg px-4 py-3 text-sm font-medium text-muted hover:text-ink disabled:opacity-50 sm:ml-auto">Discard draft</button>
           </div>
         </form>
       </div>
     </div>
+  );
+}
+
+interface LowConfidencePanelProps {
+  site: (typeof ANTHROPOMETRY_SITES)[number];
+  readings: number[];
+  unit: MeasurementUnit;
+  busy: boolean;
+  error: string | null;
+  onRetake: () => void;
+  onDiscard: () => void;
+}
+
+function LowConfidencePanel(props: LowConfidencePanelProps) {
+  return (
+    <section
+      className="mt-6 rounded-xl border border-border bg-surface p-4 sm:p-6"
+      aria-labelledby="low-confidence-heading"
+      aria-live="polite"
+    >
+      <p className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+        Measurement confidence: Low
+      </p>
+      <h2 id="low-confidence-heading" className="mt-3 font-display text-2xl font-semibold text-ink">
+        Retake {props.site.label}
+      </h2>
+      <p className="mt-2 text-sm leading-6 text-muted">
+        No two readings were within 1.0 cm of each other. Normal differences in tape position, posture, breathing, or reading technique can cause this. Nutri will not calculate or finalize this site from these readings.
+      </p>
+      <p className="mt-4 rounded-lg bg-background p-3 text-sm text-muted">
+        Recorded: {props.readings.map((value) => formatMeasurement(value, props.unit)).join(" · ")}
+      </p>
+      <p className="mt-4 text-sm leading-6 text-muted">
+        Recheck the named landmark, let the tape lie flat and snug without compression, then take a fresh set for this site only.
+      </p>
+
+      {props.error && <div className="mt-4"><ErrorMessage message={props.error} /></div>}
+
+      <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+        <button
+          type="button"
+          onClick={props.onRetake}
+          disabled={props.busy}
+          className="min-h-12 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-50"
+        >
+          {props.busy ? "Preparing retake…" : "Retake this site"}
+        </button>
+        <button type="button" onClick={props.onDiscard} disabled={props.busy} className="min-h-12 rounded-lg px-4 py-3 text-sm font-medium text-muted hover:text-ink disabled:opacity-50 sm:ml-auto">
+          Discard draft
+        </button>
+      </div>
+    </section>
   );
 }
 

@@ -1,10 +1,10 @@
 {
-  "fixture_set_version": "anthropometry_fixtures_v1",
+  "fixture_set_version": "anthropometry_fixtures_v2",
   "algorithm_versions": {
     "data_contract": "anthropometry_data_contract_v2",
     "protocol": "anthropometry_protocol_v1",
-    "representative": "anthropometry_representative_v1",
-    "repeatability_thresholds": "anthropometry_repeatability_thresholds_v1",
+    "representative": "anthropometry_representative_v2",
+    "repeatability_thresholds": "anthropometry_repeatability_thresholds_v2",
     "change": "anthropometry_change_v1",
     "weight_comparison": "anthropometry_weight_comparison_v1"
   },
@@ -102,6 +102,12 @@
       "site_code": "waist",
       "readings_cm": [80.0, 81.0, 80.4],
       "expected_error": "UNEXPECTED_THIRD_READING"
+    },
+    {
+      "id": "V2b_no_pair_agrees_requires_site_retake",
+      "site_code": "waist",
+      "readings_cm": [80.0, 81.2, 50.0],
+      "expected_error": "RETAKE_SITE_REQUIRED"
     },
     {
       "id": "V3_missing_is_not_zero",

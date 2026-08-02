@@ -4,6 +4,7 @@ import {
   formatMeasurement,
   formatMeasurementChange,
   formatMeasurementInput,
+  hasRepeatablePair,
   inputToCentimetres,
   needsThirdReading,
 } from "../lib/anthropometry";
@@ -29,6 +30,12 @@ describe("anthropometry UI helpers", () => {
     expect(needsThirdReading([80, 81])).toBe(false);
     expect(needsThirdReading([80, 81.1])).toBe(true);
     expect(needsThirdReading([81.1, 80])).toBe(true);
+  });
+
+  it("recognizes whether any pair of three readings agrees", () => {
+    expect(hasRepeatablePair([80, 81.2, 80.5])).toBe(true);
+    expect(hasRepeatablePair([80, 82, 81])).toBe(true);
+    expect(hasRepeatablePair([80, 81.2, 50])).toBe(false);
   });
 
   it("accepts centimetres at one-decimal precision", () => {

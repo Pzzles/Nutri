@@ -55,6 +55,7 @@ export type AnthropometryValidationCode =
   | "READING_OUT_OF_RANGE"
   | "INVALID_READING_PRECISION"
   | "THIRD_READING_REQUIRED"
+  | "RETAKE_SITE_REQUIRED"
   | "UNEXPECTED_THIRD_READING"
   | "INVALID_READING_COUNT";
 
@@ -215,6 +216,22 @@ export function calculateAnthropometryRepresentative(
       quality_flags: [],
       algorithm_version: ANTHROPOMETRY_REPRESENTATIVE_VERSION,
     };
+  }
+
+  const hasAgreeingPair = [
+    Math.abs(tenths[0] - tenths[1]),
+    Math.abs(tenths[0] - tenths[2]),
+    Math.abs(tenths[1] - tenths[2]),
+  ].some((difference) =>
+    difference <= ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS
+  );
+
+  if (!hasAgreeingPair) {
+    throw new AnthropometryValidationError(
+      "RETAKE_SITE_REQUIRED",
+      "No two readings agreed within 1.0 cm. Retake this measurement site",
+      siteCode,
+    );
   }
 
   const orderedTenths = [...tenths].sort((left, right) => left - right);

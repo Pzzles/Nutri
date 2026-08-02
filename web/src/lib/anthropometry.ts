@@ -273,7 +273,20 @@ export function needsThirdReading(readingsCm: readonly number[]): boolean {
   if (readingsCm.length < 2) return false;
   const leftTenths = Math.round(readingsCm[0] * 10);
   const rightTenths = Math.round(readingsCm[1] * 10);
-  return Math.abs(leftTenths - rightTenths) > 10;
+  return Math.abs(leftTenths - rightTenths) >
+    ANTHROPOMETRY_REPEATABILITY_THRESHOLD_CM * 10;
+}
+
+export function hasRepeatablePair(readingsCm: readonly number[]): boolean {
+  if (readingsCm.length !== 3) return false;
+  const tenths = readingsCm.map((reading) => Math.round(reading * 10));
+  return [
+    Math.abs(tenths[0] - tenths[1]),
+    Math.abs(tenths[0] - tenths[2]),
+    Math.abs(tenths[1] - tenths[2]),
+  ].some((difference) =>
+    difference <= ANTHROPOMETRY_REPEATABILITY_THRESHOLD_CM * 10
+  );
 }
 
 export function inputToCentimetres(

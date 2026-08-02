@@ -387,6 +387,37 @@ describe("draft and server-authoritative finalization", () => {
     expect(readings?.map((row) => Number(row.value_cm))).toEqual([99.1]);
   });
 
+  it("blocks finalization and preserves the draft when no pair of three readings agrees", async () => {
+    const draft = await save(tokenA, {
+      status: "draft",
+      protocol_version: "anthropometry_protocol_v1",
+      sites: [{ site_code: "waist", readings_cm: [80, 81.2, 50] }],
+    });
+    const draftId = draft.body.data!.session.id;
+
+    const failed = await finalize(tokenA, {
+      session_id: draftId,
+      measured_at: "2026-07-03T07:00:00Z",
+      protocol_version: "anthropometry_protocol_v1",
+      idempotency_key: `low-confidence-${Date.now()}`,
+      sites: [{ site_code: "waist", readings_cm: [80, 81.2, 50] }],
+    });
+
+    expect(failed.status).toBe(422);
+    expect(failed.body.error?.code).toBe("RETAKE_SITE_REQUIRED");
+    const { data: session } = await svcClient().from("anthropometric_sessions")
+      .select("status").eq("id", draftId).single();
+    const { data: readings } = await svcClient().from("anthropometric_readings")
+      .select("value_cm").eq("session_id", draftId).order("reading_number");
+    const { count: representativeCount } = await svcClient()
+      .from("anthropometric_representatives")
+      .select("site_code", { count: "exact", head: true })
+      .eq("session_id", draftId);
+    expect(session?.status).toBe("draft");
+    expect(readings?.map((row) => Number(row.value_cm))).toEqual([80, 81.2, 50]);
+    expect(representativeCount).toBe(0);
+  });
+
   it("replays the same idempotent finalization without another row", async () => {
     const result = await finalize(tokenA, {
       session_id: sessionId,

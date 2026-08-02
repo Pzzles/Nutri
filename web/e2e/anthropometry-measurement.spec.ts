@@ -45,9 +45,9 @@ function savedResponse(status: "draft" | "finalized", sites: unknown[] = []) {
     algorithm_versions: {
       data_contract: "anthropometry_data_contract_v2",
       protocol: "anthropometry_protocol_v1",
-      representative: status === "finalized" ? "anthropometry_representative_v1" : null,
+      representative: status === "finalized" ? "anthropometry_representative_v2" : null,
       repeatability_thresholds:
-        status === "finalized" ? "anthropometry_repeatability_thresholds_v1" : null,
+        status === "finalized" ? "anthropometry_repeatability_thresholds_v2" : null,
     },
   };
 }

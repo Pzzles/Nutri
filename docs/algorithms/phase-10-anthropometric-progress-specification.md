@@ -1,8 +1,8 @@
 # Phase 10 — Anthropometric Progress Tracking Specification
 
 **Protocol:** `anthropometry_protocol_v1`<br>
-**Representative algorithm:** `anthropometry_representative_v1`<br>
-**Repeatability thresholds:** `anthropometry_repeatability_thresholds_v1`<br>
+**Representative algorithm:** `anthropometry_representative_v2`<br>
+**Repeatability thresholds:** `anthropometry_repeatability_thresholds_v2`<br>
 **Longitudinal change algorithm:** `anthropometry_change_v1`<br>
 **Cross-signal description:** `anthropometry_weight_comparison_v1`<br>
 **Status:** Gate 1 frozen; persisted-draft lifecycle amended by Gate 2<br>
@@ -43,7 +43,7 @@ The protocol uses these primary references:
 - The [NHANES 2021 Anthropometry Procedures Manual](https://wwwn.cdc.gov/nchs/data/nhanes/2021-2023/manuals/2021-Anthropometry-Procedures-Manual-508.pdf) documents trained-examiner waist, hip, and mid-upper-arm measurements and reinforces explicit landmarks and standard positioning.
 - The [ISAK accreditation scheme](https://www.isak.global/FormationSystem/AccreditationScheme) treats standardisation and technical error of measurement as core anthropometry competencies.
 
-Nutri is a self-measurement product, not a trained-examiner survey. `anthropometry_protocol_v1` therefore uses a bounded third-reading rule rather than an unlimited retake loop. This is a product adaptation: two readings are taken; an initial difference greater than 1.0 cm requires one additional reading; the median of all three is then used and the initial disagreement remains visible as a quality warning.
+Nutri is a self-measurement product, not a trained-examiner survey. `anthropometry_protocol_v1` therefore asks for a third reading when the first two differ by more than 1.0 cm. Under the v2 representative rule, the median is used only when at least one pair among the three agrees within 1.0 cm. If no pair agrees, the site is marked low confidence, finalisation is blocked, and the user is asked neutrally to retake that site only.
 
 ## 3. Frozen site dictionary and landmarks
 
@@ -112,12 +112,17 @@ if d12 <= 10:
 
 if d12 > 10:
     require exactly 3 readings
-    representative = median(reading_1, reading_2, reading_3)
-    method = median_of_three
-    quality = repeatability_warning
+    if min(d12, d13, d23) <= 10:
+        representative = median(reading_1, reading_2, reading_3)
+        method = median_of_three
+        quality = repeatability_warning
+    else:
+        do not calculate a representative
+        block finalisation with RETAKE_SITE_REQUIRED
+        request a fresh set for this site only
 ```
 
-The threshold comparison is exact: a difference of `1.0 cm` passes; `1.1 cm` requires a third reading. A third reading is rejected when the first pair passes, preventing discretionary selection of a preferred result. No fourth reading is accepted in v1.
+The threshold comparison is exact: a difference of `1.0 cm` passes; `1.1 cm` requires a third reading. A third reading is rejected when the first pair passes, preventing discretionary selection of a preferred result. A failed set is not extended with a fourth reading: its raw draft values remain stored until the user starts a fresh set for that site.
 
 The representative of a passing pair can fall on `0.05 cm`. It is stored exactly to two decimal places. The median of three is one of the raw `0.1 cm` readings. Raw readings are never rounded again or overwritten.
 
@@ -127,7 +132,7 @@ Display values and displayed changes use one decimal place with decimal half-up 
 
 ## 6. Validation thresholds
 
-`anthropometry_repeatability_thresholds_v1` freezes these product rules:
+`anthropometry_repeatability_thresholds_v2` freezes these product rules:
 
 | Rule | Value |
 |---|---:|
@@ -137,6 +142,8 @@ Display values and displayed changes use one decimal place with decimal half-up 
 | Passing first-pair difference | ≤ 1.0 cm |
 | Readings when first pair passes | exactly 2 |
 | Readings when first pair fails | exactly 3 |
+| Passing three-reading set | at least one pair differs by ≤ 1.0 cm |
+| Three-reading set with no passing pair | block finalisation and retake that site |
 | Sites required to finalise | at least 1 |
 | Future timestamp tolerance | 5 minutes beyond server clock |
 

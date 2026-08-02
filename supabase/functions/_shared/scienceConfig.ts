@@ -94,9 +94,9 @@ export const ANTHROPOMETRY_DATA_CONTRACT_VERSION =
 export const ANTHROPOMETRY_PROTOCOL_VERSION =
   "anthropometry_protocol_v1" as const;
 export const ANTHROPOMETRY_REPRESENTATIVE_VERSION =
-  "anthropometry_representative_v1" as const;
+  "anthropometry_representative_v2" as const;
 export const ANTHROPOMETRY_THRESHOLDS_VERSION =
-  "anthropometry_repeatability_thresholds_v1" as const;
+  "anthropometry_repeatability_thresholds_v2" as const;
 export const ANTHROPOMETRY_CHANGE_VERSION =
   "anthropometry_change_v1" as const;
 export const ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION =

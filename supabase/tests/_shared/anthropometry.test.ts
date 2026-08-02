@@ -131,6 +131,38 @@ describe("calculateAnthropometryRepresentative", () => {
     ]);
   });
 
+  it("accepts a third reading when at least one pair agrees", () => {
+    const result = calculateAnthropometryRepresentative({
+      site_code: "waist",
+      readings_cm: [80.0, 81.2, 80.5],
+    });
+
+    expect(result.representative_cm).toBe(80.5);
+    expect(result.method).toBe("median_of_three");
+    expect(result.quality).toBe("repeatability_warning");
+  });
+
+  it("requires a site retake when no pair of three readings agrees", () => {
+    const error = captureValidationError(() =>
+      calculateAnthropometryRepresentative({
+        site_code: "waist",
+        readings_cm: [80.0, 81.2, 50.0],
+      })
+    );
+
+    expect(error.code).toBe("RETAKE_SITE_REQUIRED");
+    expect(error.siteCode).toBe("waist");
+  });
+
+  it("accepts an agreeing pair at the exact 1.0 cm boundary", () => {
+    const result = calculateAnthropometryRepresentative({
+      site_code: "waist",
+      readings_cm: [80.0, 82.0, 81.0],
+    });
+
+    expect(result.representative_cm).toBe(81.0);
+  });
+
   it("preserves a mean at 0.05 cm precision", () => {
     const result = calculateAnthropometryRepresentative({
       site_code: "left_upper_arm_relaxed",

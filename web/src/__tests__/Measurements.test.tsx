@@ -47,9 +47,9 @@ function response(
     algorithm_versions: {
       data_contract: "anthropometry_data_contract_v2",
       protocol: "anthropometry_protocol_v1",
-      representative: status === "finalized" ? "anthropometry_representative_v1" : null,
+      representative: status === "finalized" ? "anthropometry_representative_v2" : null,
       repeatability_thresholds:
-        status === "finalized" ? "anthropometry_repeatability_thresholds_v1" : null,
+        status === "finalized" ? "anthropometry_repeatability_thresholds_v2" : null,
     },
   };
 }
@@ -180,6 +180,40 @@ describe("circuit workflow", () => {
     await enterReading(user, "80.5");
     await waitFor(() => expect(screen.getByRole("heading", { name: /check your raw readings/i })).toBeVisible());
     expect(screen.getByText(/third reading used/i)).toBeVisible();
+  });
+
+  it("checks the third reading, blocks a low-confidence set, and retakes only that site", async () => {
+    const user = await beginWithSites(["waist"]);
+    await enterReading(user, "80.0");
+    await enterReading(user, "81.2");
+
+    let resolveThirdSave!: (value: AnthropometrySaveResponse) => void;
+    mockSaveDraft.mockImplementationOnce(() =>
+      new Promise((resolve) => {
+        resolveThirdSave = resolve;
+      })
+    );
+
+    const input = screen.getByRole("spinbutton", { name: /Reading 3 in centimetres/i });
+    await user.type(input, "50.0");
+    await user.click(screen.getByRole("button", { name: /save reading and continue/i }));
+    expect(screen.getByRole("button", { name: /checking consistency/i })).toBeDisabled();
+
+    resolveThirdSave(response());
+    expect(await screen.findByRole("heading", { name: /retake waist/i })).toBeVisible();
+    expect(screen.getByText(/measurement confidence: low/i)).toBeVisible();
+    expect(screen.getByText(/no two readings were within 1.0 cm/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /finalize session/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /retake this site/i }));
+    expect(await screen.findByText(/Retake · reading 1/i)).toBeVisible();
+    await enterReading(user, "80.1");
+    await enterReading(user, "80.4");
+
+    expect(await screen.findByRole("heading", { name: /check your raw readings/i })).toBeVisible();
+    expect(mockSaveDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      sites: [{ site_code: "waist", readings_cm: [80.1, 80.4] }],
+    }));
   });
 
   it("does not request a third reading at the exact 1.0 cm boundary", async () => {

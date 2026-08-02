@@ -262,7 +262,10 @@ export async function handleAnthropometricSessionSave(
     );
   } catch (error) {
     if (error instanceof AnthropometryValidationError) {
-      const status = error.code === "THIRD_READING_REQUIRED" ? 422 : 400;
+      const status = error.code === "THIRD_READING_REQUIRED" ||
+          error.code === "RETAKE_SITE_REQUIRED"
+        ? 422
+        : 400;
       return fail(error.code, error.message, status);
     }
     console.error(error);

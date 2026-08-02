@@ -92,7 +92,7 @@ test("authenticated mobile user finalizes raw waist readings and sees real histo
     if (sessionsError) throw sessionsError;
     expect(sessions).toHaveLength(2);
     expect(sessions?.every((entry) => entry.status === "finalized")).toBe(true);
-    expect(sessions?.every((entry) => entry.representative_algorithm_version === "anthropometry_representative_v1")).toBe(true);
+    expect(sessions?.every((entry) => entry.representative_algorithm_version === "anthropometry_representative_v2")).toBe(true);
 
     const sessionIds = sessions!.map((entry) => entry.id);
     const { data: readings, error: readingsError } = await service
