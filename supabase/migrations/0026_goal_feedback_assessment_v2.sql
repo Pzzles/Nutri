@@ -32,10 +32,19 @@ ALTER TABLE public.goal_feedback_assessments
   ADD COLUMN IF NOT EXISTS adjustment_blocked_reason_codes  JSONB NOT NULL DEFAULT '[]',
   ADD COLUMN IF NOT EXISTS maintenance_drift_direction       TEXT;
 
-ALTER TABLE public.goal_feedback_assessments
-  ADD CONSTRAINT IF NOT EXISTS chk_gfa_drift_direction
-    CHECK (maintenance_drift_direction IS NULL
-           OR maintenance_drift_direction IN ('up', 'down'));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.check_constraints
+    WHERE constraint_schema = 'public'
+      AND constraint_name   = 'chk_gfa_drift_direction'
+  ) THEN
+    ALTER TABLE public.goal_feedback_assessments
+      ADD CONSTRAINT chk_gfa_drift_direction
+        CHECK (maintenance_drift_direction IS NULL
+               OR maintenance_drift_direction IN ('up', 'down'));
+  END IF;
+END $$;
 
 -- ── Safety snapshot columns ───────────────────────────────────────────────────
 

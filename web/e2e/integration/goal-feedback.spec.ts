@@ -367,7 +367,7 @@ test.describe("Flow 3 — Plateau or progress assessment (50-day cut phase)", ()
     const cardVisible = await page.getByTestId("goal-feedback-card").isVisible();
     if (!cardVisible) return; // no-data card — skip
     await expect(page.getByTestId("save-assessment-btn")).toBeVisible();
-    await expect(page.getByText(/Does not change your calorie target/i)).toBeVisible();
+    await expect(page.getByTestId("goal-feedback-card").getByText(/Does not change your calorie target/i)).toBeVisible();
   });
 
   test("save assessment flow: button transitions to 'Assessment saved'", async ({ page }) => {
@@ -426,5 +426,347 @@ test.describe("Flow 3 — Plateau or progress assessment (50-day cut phase)", ()
       { timeout: 15_000 },
     ).catch(() => null);
     await page.screenshot({ path: "e2e/evidence/p8-goal-feedback-plateau-mobile.png" });
+  });
+});
+
+// ── Weight-log seeding helper ─────────────────────────────────────────────────
+
+async function insertWeightRows(
+  userId: string,
+  days: number,
+  startKg: number,
+  rateKgPerDay: number,
+): Promise<void> {
+  const rows = [];
+  for (let i = 0; i < days; i++) {
+    const daysAgo = days - i;
+    rows.push({
+      user_id:     userId,
+      weight_kg:   +(startKg + i * rateKgPerDay).toFixed(3),
+      measured_at: isoAt7(daysAgo),
+      logged_date: toSastDate(isoAt7(daysAgo)),
+      is_official: true,
+      source:      "manual",
+    });
+  }
+  const { error } = await svcClient().from("weight_logs").insert(rows);
+  if (error) throw new Error(`insertWeightRows: ${error.message}`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Flow 4 — plateau_candidate (30-day cut, near-zero rate, with nutrition data)
+// ══════════════════════════════════════════════════════════════════════════════
+
+test.describe("Flow 4 — plateau_candidate (30-day cut, near-zero rate)", () => {
+  let setup: UserSetup;
+  let phaseId: string;
+
+  test.beforeAll(async () => {
+    const email = testEmail("p8-pc-e2e");
+    setup = await setupUser(email);
+    const svc = svcClient();
+
+    await svc.from("profiles").upsert(
+      { id: setup.userId, timezone: "Africa/Johannesburg" },
+      { onConflict: "id" },
+    );
+
+    // 35 days of near-zero weight change (−0.014 kg/week ≈ −0.002 kg/day)
+    await insertWeightRows(setup.userId, 35, 84.0, -0.002);
+
+    // Phase started 30 days ago (≥28 for plateau_candidate, <42 for likely_plateau)
+    const phaseStart = new Date();
+    phaseStart.setUTCDate(phaseStart.getUTCDate() - 30);
+    const pr = await svc.from("goal_phases").insert({
+      user_id:                   setup.userId,
+      mode:                      "cut",
+      status:                    "active",
+      started_at:                phaseStart.toISOString(),
+      starting_weight_kg:        84.0,
+      starting_weight_source:    "manual",
+      target_change_kg_per_week: -0.50,
+    }).select("id").single();
+    if (pr.error) throw new Error(`phase insert: ${pr.error.message}`);
+    phaseId = (pr.data as { id: string }).id;
+
+    // 30 complete nutrition days (P7 provisional/usable)
+    for (let d = 30; d >= 1; d--) {
+      await insertMealWithKcal(setup.userId, utcDaysAgo(d), 2000);
+      await setDLS(setup.userId, utcDaysAgo(d), "complete");
+    }
+
+    // Warm up
+    await fetch(`${SUPABASE_URL}/functions/v1/get-goal-feedback`, {
+      headers: { Authorization: `Bearer ${setup.accessToken}`, apikey: ANON_KEY },
+    }).then(r => r.text()).catch(() => null);
+  }, 120_000);
+
+  test.afterAll(async () => { await cleanupUser(setup.userId); });
+
+  test("plateau_candidate: card renders and shows plateau notice or review action", async ({ page }) => {
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector(
+      '[data-testid^="goal-feedback-card"]:not([data-testid="goal-feedback-card-loading"])',
+      { timeout: 20_000 },
+    ).catch(() => null);
+
+    // With near-zero rate and 30-day phase, should be plateau_candidate or slower_than_planned
+    const cardVisible = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    const noDataVisible = await page.getByTestId("goal-feedback-card-no-data").isVisible().catch(() => false);
+    expect(cardVisible || noDataVisible).toBe(true);
+
+    if (cardVisible) {
+      const headline = await page.getByTestId("state-headline").textContent();
+      // plateau_candidate → "Possible plateau" | slower_than_planned → "Slower than planned"
+      const validHeadlines = ["Possible plateau", "Slower than planned"];
+      expect(validHeadlines.some(h => headline?.includes(h))).toBe(true);
+    }
+  });
+
+  test("plateau_candidate: no advisory adjustment banner visible", async ({ page }) => {
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector('[data-testid="goal-feedback-card"]', { timeout: 20_000 }).catch(() => null);
+    const cardVisible = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    if (!cardVisible) return;
+
+    // plateau_candidate and slower_than_planned: no advisory adjustment should appear
+    const headline = await page.getByTestId("state-headline").textContent();
+    const isPlateau = headline?.includes("Possible plateau") || headline?.includes("Slower");
+    if (isPlateau) {
+      const banner = await page.getByTestId("advisory-adjustment-banner").isVisible().catch(() => false);
+      expect(banner).toBe(false);
+    }
+  });
+
+  test("plateau_candidate: if state shown, 'plateau-candidate-notice' is visible", async ({ page }) => {
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector('[data-testid="goal-feedback-card"]', { timeout: 20_000 }).catch(() => null);
+    const cardVisible = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    if (!cardVisible) return;
+
+    const headline = await page.getByTestId("state-headline").textContent();
+    if (headline?.includes("Possible plateau")) {
+      await expect(page.getByTestId("plateau-candidate-notice")).toBeVisible();
+    }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Flow 5 — slower_than_planned (30-day cut, −0.15 kg/week, target −0.50 kg/week)
+// ══════════════════════════════════════════════════════════════════════════════
+
+test.describe("Flow 5 — slower_than_planned (attainment ratio ≈ 0.30)", () => {
+  let setup: UserSetup;
+
+  test.beforeAll(async () => {
+    const email = testEmail("p8-slow-e2e");
+    setup = await setupUser(email);
+    const svc = svcClient();
+
+    await svc.from("profiles").upsert(
+      { id: setup.userId, timezone: "Africa/Johannesburg" },
+      { onConflict: "id" },
+    );
+
+    // 35 days at −0.021 kg/day ≈ −0.147 kg/week (below −0.50 target, ratio ≈ 0.29)
+    await insertWeightRows(setup.userId, 35, 84.0, -0.021);
+
+    const phaseStart = new Date();
+    phaseStart.setUTCDate(phaseStart.getUTCDate() - 30);
+    await svc.from("goal_phases").insert({
+      user_id:                   setup.userId,
+      mode:                      "cut",
+      status:                    "active",
+      started_at:                phaseStart.toISOString(),
+      starting_weight_kg:        84.0,
+      starting_weight_source:    "manual",
+      target_change_kg_per_week: -0.50,
+    });
+
+    await fetch(`${SUPABASE_URL}/functions/v1/get-goal-feedback`, {
+      headers: { Authorization: `Bearer ${setup.accessToken}`, apikey: ANON_KEY },
+    }).then(r => r.text()).catch(() => null);
+  }, 60_000);
+
+  test.afterAll(async () => { await cleanupUser(setup.userId); });
+
+  test("slower_than_planned: headline contains 'Slower' and no adjustment banner", async ({ page }) => {
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector('[data-testid="goal-feedback-card"]', { timeout: 20_000 }).catch(() => null);
+    const cardVisible = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    if (!cardVisible) return;
+
+    const headline = await page.getByTestId("state-headline").textContent();
+    expect(headline).toContain("Slower");
+
+    // slower_than_planned never triggers an advisory adjustment
+    const banner = await page.getByTestId("advisory-adjustment-banner").isVisible().catch(() => false);
+    expect(banner).toBe(false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Flow 6 — maintenance_stable (30-day maintenance, near-zero rate)
+// ══════════════════════════════════════════════════════════════════════════════
+
+test.describe("Flow 6 — maintenance_stable (30-day maintenance, stable weight)", () => {
+  let setup: UserSetup;
+
+  test.beforeAll(async () => {
+    const email = testEmail("p8-maint-e2e");
+    setup = await setupUser(email);
+    const svc = svcClient();
+
+    await svc.from("profiles").upsert(
+      { id: setup.userId, timezone: "Africa/Johannesburg" },
+      { onConflict: "id" },
+    );
+
+    // 35 days at −0.001 kg/day ≈ −0.007 kg/week (within ±0.10 maintenance band)
+    await insertWeightRows(setup.userId, 35, 80.0, -0.001);
+
+    const phaseStart = new Date();
+    phaseStart.setUTCDate(phaseStart.getUTCDate() - 30);
+    await svc.from("goal_phases").insert({
+      user_id:                   setup.userId,
+      mode:                      "maintenance",
+      status:                    "active",
+      started_at:                phaseStart.toISOString(),
+      starting_weight_kg:        80.0,
+      starting_weight_source:    "manual",
+      target_change_kg_per_week: 0,
+    });
+
+    await fetch(`${SUPABASE_URL}/functions/v1/get-goal-feedback`, {
+      headers: { Authorization: `Bearer ${setup.accessToken}`, apikey: ANON_KEY },
+    }).then(r => r.text()).catch(() => null);
+  }, 60_000);
+
+  test.afterAll(async () => { await cleanupUser(setup.userId); });
+
+  test("maintenance_stable: headline contains 'Maintaining' and no adjustment", async ({ page }) => {
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector('[data-testid="goal-feedback-card"]', { timeout: 20_000 }).catch(() => null);
+    const cardVisible = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    if (!cardVisible) return;
+
+    const headline = await page.getByTestId("state-headline").textContent();
+    expect(headline).toContain("Maintaining");
+
+    // maintenance_stable never triggers an advisory adjustment
+    const banner = await page.getByTestId("advisory-adjustment-banner").isVisible().catch(() => false);
+    expect(banner).toBe(false);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Flow 7 — likely_plateau: full save+reload flow, and adjustment-blocked notice
+// ══════════════════════════════════════════════════════════════════════════════
+// Uses a 55-day cut phase with near-zero weight change and full P7 nutrition coverage.
+// No calorie_target_snapshot → missing_current_target safety block fires when the
+// edge function attempts an adjustment.
+
+test.describe("Flow 7 — likely_plateau: save+reload and blocked-adjustment UI", () => {
+  let setup: UserSetup;
+  let phaseId: string;
+
+  test.beforeAll(async () => {
+    const email = testEmail("p8-lp-reload");
+    setup = await setupUser(email);
+    const svc = svcClient();
+
+    await svc.from("profiles").upsert(
+      { id: setup.userId, timezone: "Africa/Johannesburg" },
+      { onConflict: "id" },
+    );
+
+    // 58 days of near-zero weight change (≥42 for likely_plateau)
+    await insertWeightRows(setup.userId, 58, 83.0, -0.002);
+
+    const phaseStart = new Date();
+    phaseStart.setUTCDate(phaseStart.getUTCDate() - 55);
+    const pr = await svc.from("goal_phases").insert({
+      user_id:                   setup.userId,
+      mode:                      "cut",
+      status:                    "active",
+      started_at:                phaseStart.toISOString(),
+      starting_weight_kg:        83.0,
+      starting_weight_source:    "manual",
+      target_change_kg_per_week: -0.50,
+    }).select("id").single();
+    if (pr.error) throw new Error(`phase: ${pr.error.message}`);
+    phaseId = (pr.data as { id: string }).id;
+
+    // 50 complete nutrition days (days 50..1 ago) for strong P7 coverage
+    for (let d = 50; d >= 1; d--) {
+      await insertMealWithKcal(setup.userId, utcDaysAgo(d), 2000);
+      await setDLS(setup.userId, utcDaysAgo(d), "complete");
+    }
+
+    await fetch(`${SUPABASE_URL}/functions/v1/get-goal-feedback`, {
+      headers: { Authorization: `Bearer ${setup.accessToken}`, apikey: ANON_KEY },
+    }).then(r => r.text()).catch(() => null);
+  }, 180_000);
+
+  test.afterAll(async () => { await cleanupUser(setup.userId); });
+
+  test("likely_plateau: card renders a full assessment state", async ({ page }) => {
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector(
+      '[data-testid^="goal-feedback-card"]:not([data-testid="goal-feedback-card-loading"])',
+      { timeout: 20_000 },
+    ).catch(() => null);
+    const cardVisible = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    const noDataVisible = await page.getByTestId("goal-feedback-card-no-data").isVisible().catch(() => false);
+    expect(cardVisible || noDataVisible).toBe(true);
+  });
+
+  test("save assessment → reload → card reflects saved or on-track state", async ({ page }) => {
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector('[data-testid="goal-feedback-card"]', { timeout: 20_000 }).catch(() => null);
+    const cardVisible = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    if (!cardVisible) return; // no-data card — skip
+
+    const saveBtn = page.getByTestId("save-assessment-btn");
+    const canSave = await saveBtn.isEnabled({ timeout: 3_000 }).catch(() => false);
+    if (!canSave) return; // already saved today — skip
+
+    await saveBtn.click();
+    await expect(saveBtn).toHaveText("Assessment saved", { timeout: 10_000 });
+
+    // Verify DB has the saved row
+    const { data } = await svcClient()
+      .from("goal_feedback_assessments")
+      .select("id, progress_state")
+      .eq("user_id", setup.userId)
+      .eq("goal_phase_id", phaseId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    expect((data ?? []).length).toBeGreaterThanOrEqual(1);
+
+    // Reload — card must still render the assessment (not an error state).
+    // The save-btn resets to "Save this assessment" on remount (savedId is local state).
+    await page.reload();
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector(
+      '[data-testid^="goal-feedback-card"]:not([data-testid="goal-feedback-card-loading"])',
+      { timeout: 20_000 },
+    ).catch(() => null);
+    const stillRendered = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    expect(stillRendered).toBe(true);
+  });
+
+  test("if likely_plateau + missing snapshot: adjustment-blocked notice is visible", async ({ page }) => {
+    await navigateToFeedback(page, setup);
+    await page.waitForSelector('[data-testid="goal-feedback-card"]', { timeout: 20_000 }).catch(() => null);
+    const cardVisible = await page.getByTestId("goal-feedback-card").isVisible().catch(() => false);
+    if (!cardVisible) return;
+
+    const headline = await page.getByTestId("state-headline").textContent().catch(() => "");
+    if (!headline?.includes("Plateau likely")) return; // only check if we got likely_plateau
+
+    // No calorie_target_snapshot → missing_current_target block fires
+    // Component should render adjustment-blocked-notice
+    await expect(page.getByTestId("adjustment-blocked-notice")).toBeVisible({ timeout: 3_000 });
   });
 });

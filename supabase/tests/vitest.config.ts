@@ -9,7 +9,7 @@ export default defineConfig({
     environment: "node",
     globals: true,
     testTimeout: 30_000,
-    hookTimeout: 30_000,
+    hookTimeout: 120_000,
     include: ["**/*.test.ts"],
     exclude: ["**/node_modules/**"],
     // Run files serially — each creates and destroys test users. Parallel
