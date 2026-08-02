@@ -31,7 +31,7 @@ CREATE TABLE public.goal_feedback_assessments (
 
   -- ── Assessment timing ───────────────────────────────────────────────────────
   assessed_at                     TIMESTAMPTZ   NOT NULL,
-  assessed_date                   DATE          NOT NULL GENERATED ALWAYS AS (assessed_at::DATE) STORED,
+  assessed_date                   DATE          NOT NULL GENERATED ALWAYS AS ((assessed_at AT TIME ZONE 'UTC')::DATE) STORED,
 
   -- ── Progress state ──────────────────────────────────────────────────────────
   progress_state                  TEXT          NOT NULL,
