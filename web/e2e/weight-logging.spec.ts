@@ -12,19 +12,22 @@ function fulfill(route: Route, data: unknown) {
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
 
 async function stubAuth(page: Page) {
+  const session = {
+    access_token: "stub-token",
+    token_type: "bearer",
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    refresh_token: "stub-refresh",
+    user: { id: "user-001", email: "test@test.local", aud: "authenticated" },
+  };
+  await page.addInitScript((storedSession) => {
+    localStorage.setItem("sb-ipdrzvqhprboqqjhjldj-auth-token", JSON.stringify(storedSession));
+    localStorage.setItem("sb-127-auth-token", JSON.stringify(storedSession));
+  }, session);
+
   await page.route("**/auth/v1/**", (route) => {
-    if (route.request().url().includes("/token")) {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          access_token: "stub-token",
-          token_type: "bearer",
-          expires_in: 3600,
-          refresh_token: "stub-refresh",
-          user: { id: "user-001", email: "test@test.local" },
-        }),
-      });
+    if (route.request().url().includes("/user")) {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session.user) });
     }
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });

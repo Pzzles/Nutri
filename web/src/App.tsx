@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { supabase } from "./lib/supabase";
+import Auth from "./pages/Auth";
 import Log from "./pages/Log";
 import Progress from "./pages/Progress";
 import Dashboard from "./pages/Dashboard";
@@ -13,6 +15,7 @@ import MealHistory from "./pages/MealHistory";
 
 export default function App() {
   const [ready, setReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("theme");
     return saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -24,21 +27,27 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!data.session) {
-        const { data: anonData } = await supabase.auth.signInAnonymously();
-        if (anonData.user) {
-          await supabase.from("profiles").upsert({ id: anonData.user.id }, { onConflict: "id" });
-        }
-      }
+    void supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
       setReady(true);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {});
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setReady(true);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <div className="grid min-h-screen place-items-center text-sm text-muted">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!session) return <Auth />;
 
   return (
     <BrowserRouter>
@@ -56,6 +65,7 @@ export default function App() {
           <Route path="/search" element={<SearchFood />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/weight" element={<WeightLogPage />} />
+          <Route path="/auth" element={<Navigate to="/" replace />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

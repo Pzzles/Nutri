@@ -64,20 +64,23 @@ const DASHBOARD_NO_PHASE = {
 
 // Stub auth so the app doesn't try to sign in.
 async function stubAuth(page: Page) {
+  const session = {
+    access_token: "stub-token",
+    token_type: "bearer",
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    refresh_token: "stub-refresh",
+    user: { id: "user-001", email: "test@test.local", aud: "authenticated" },
+  };
+  await page.addInitScript((storedSession) => {
+    localStorage.setItem("sb-ipdrzvqhprboqqjhjldj-auth-token", JSON.stringify(storedSession));
+    localStorage.setItem("sb-127-auth-token", JSON.stringify(storedSession));
+  }, session);
+
   await page.route("**/auth/v1/**", (route) => {
     const url = route.request().url();
-    if (url.includes("/token")) {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          access_token: "stub-token",
-          token_type: "bearer",
-          expires_in: 3600,
-          refresh_token: "stub-refresh",
-          user: { id: "user-001", email: "test@test.local" },
-        }),
-      });
+    if (url.includes("/user")) {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(session.user) });
     }
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });

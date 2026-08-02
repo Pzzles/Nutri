@@ -32,7 +32,7 @@ Nine implementation phases complete. Version 0.1.0.
 - `delete-account` — permanently deletes all user data with explicit confirmation
 
 **Frontend (React 18 + Vite + TypeScript + Tailwind CSS)**
-- Anonymous auth with magic-link email upgrade (no password required)
+- Email/password sign-up and sign-in, with in-place upgrade for existing anonymous accounts
 - Meal logging flow, dashboard, weight progress, goal phases, account management
 - Data export and account deletion UI in the Account page
 

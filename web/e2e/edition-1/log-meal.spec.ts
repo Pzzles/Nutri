@@ -72,8 +72,20 @@ async function mockParseAndResolve(page: Page, resolveOverrides: object = {}) {
 
 // Navigate to /log and wait until the textarea is visible (auth complete).
 async function goToLogMeal(page: Page) {
+  const session = {
+    access_token: "stub-token",
+    token_type: "bearer",
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    refresh_token: "stub-refresh",
+    user: { id: "user-001", email: "test@test.local", aud: "authenticated" },
+  };
+  await page.addInitScript((storedSession) => {
+    localStorage.setItem("sb-ipdrzvqhprboqqjhjldj-auth-token", JSON.stringify(storedSession));
+    localStorage.setItem("sb-127-auth-token", JSON.stringify(storedSession));
+  }, session);
   await page.goto("/log");
-  await expect(page.getByRole("textbox")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("textarea")).toBeVisible({ timeout: 15_000 });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
