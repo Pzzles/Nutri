@@ -482,6 +482,24 @@ async function authenticatePersona(connection, entry) {
   return { client, session: data.session };
 }
 
+async function fetchAuthenticatedFunction(connection, session, functionName) {
+  let lastStatus = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(`${connection.url}/functions/v1/${functionName}`, {
+        headers: { Authorization: `Bearer ${session.access_token}`, apikey: connection.anonKey },
+        signal: AbortSignal.timeout(30_000),
+      });
+      lastStatus = response.status;
+      if (response.ok) return await response.json();
+      if (response.status < 500) break;
+    } catch {
+      // Retry transient transport failures; persistent failures are reported below.
+    }
+  }
+  throw new Error(`${functionName} returned ${lastStatus ? `HTTP ${lastStatus}` : "a transport error"}.`);
+}
+
 async function verifyPersonas(admin, connection, provisioned) {
   const summaries = [];
   for (const entry of provisioned) {
@@ -515,13 +533,20 @@ async function verifyPersonas(admin, connection, provisioned) {
       throw new Error(`Weight history does not span ${fixture.history_days} days for ${entry.persona.id}.`);
     }
 
-    const response = await fetch(`${connection.url}/functions/v1/get-adaptive-maintenance`, {
-      headers: { Authorization: `Bearer ${session.access_token}`, apikey: connection.anonKey },
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) throw new Error(`Maintenance endpoint returned HTTP ${response.status} for ${entry.persona.id}.`);
-    const body = await response.json();
-    const maintenanceStatus = body?.data?.status ?? body?.status ?? "unknown";
+    const maintenanceBody = await fetchAuthenticatedFunction(connection, session, "get-adaptive-maintenance");
+    const maintenanceStatus = maintenanceBody?.data?.status ?? maintenanceBody?.status ?? "unknown";
+    let goalFeedbackState = "not_checked";
+    if (entry.persona.expected_goal_feedback_state) {
+      const feedbackBody = await fetchAuthenticatedFunction(connection, session, "get-goal-feedback");
+      goalFeedbackState = feedbackBody?.data?.progress_state ?? "unknown";
+      const feedbackAction = feedbackBody?.data?.feedback_action ?? "unknown";
+      if (goalFeedbackState !== entry.persona.expected_goal_feedback_state) {
+        throw new Error(`Goal-feedback state mismatch for ${entry.persona.id}: ${goalFeedbackState}.`);
+      }
+      if (feedbackAction !== entry.persona.expected_feedback_action) {
+        throw new Error(`Goal-feedback action mismatch for ${entry.persona.id}: ${feedbackAction}.`);
+      }
+    }
     summaries.push({
       id: entry.persona.id,
       mode: entry.persona.phase.mode,
@@ -529,6 +554,7 @@ async function verifyPersonas(admin, connection, provisioned) {
       meals: meals.count,
       classifiedDays: statuses.count,
       maintenanceStatus,
+      goalFeedbackState,
     });
   }
   return summaries;
@@ -536,7 +562,7 @@ async function verifyPersonas(admin, connection, provisioned) {
 
 async function main() {
   const options = parseArguments(process.argv.slice(2));
-  if (PERSONA_COUNT !== 8) throw new Error(`Expected exactly 8 persona fixtures, found ${PERSONA_COUNT}.`);
+  if (PERSONA_COUNT !== 10) throw new Error(`Expected exactly 10 persona fixtures, found ${PERSONA_COUNT}.`);
   const connection = resolveConnection(options);
   assertConnection(connection);
   const admin = adminClient(connection);

@@ -82,6 +82,30 @@
       "weight": { "ending_weight_kg": 87.3, "cadence_days": 3, "noise_kg": [0.0, 0.2, -0.16, 0.12, -0.1, 0.08], "trajectory": "plateau_last_35_days" },
       "nutrition": { "average_daily_kcal": 1890, "complete_day_offsets": [1,2,4,5,6,8,9,11,12,13,15,16,18,19,20,22,23,25,26,27], "probably_complete_day_offsets": [3,10,17,24] },
       "snapshot": { "age_years": 39, "activity_multiplier": 1.375, "fixture_bmr_kcal": 1570, "fixture_tdee_kcal": 2350 }
+    },
+    {
+      "id": "rapid_cut",
+      "selector_label": "Jules — unexpectedly rapid cut",
+      "description": "Larger starting profile losing substantially faster than the planned cut rate.",
+      "expected_goal_feedback_state": "faster_than_planned",
+      "expected_feedback_action": "consider_less_aggressive_goal",
+      "profile": { "display_name": "[TEST] Jules — unexpectedly rapid cut", "birth_date": "1991-03-07", "sex": "female", "height_cm": 176, "activity_level": "moderate", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "cut", "starting_weight_kg": 101.0, "target_weight_kg": 84.0, "target_change_kg_per_week": -0.4, "target_calories": 2150, "target_protein_g": 165, "target_carbs_g": 225, "target_fat_g": 66, "target_fibre_g": 32, "manual_maintenance_kcal": 2570 },
+      "weight": { "ending_weight_kg": 89.6, "cadence_days": 3, "noise_kg": [0.0, 0.22, -0.18, 0.12, -0.24, 0.08], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 2130, "complete_day_offsets": [1,2,3,4,5,6,8,9,10,11,12,13,15,16,17,18,19,20,22,23,24,25,26,27], "probably_complete_day_offsets": [7,14,21] },
+      "snapshot": { "age_years": 35, "activity_multiplier": 1.55, "fixture_bmr_kcal": 1640, "fixture_tdee_kcal": 2570 }
+    },
+    {
+      "id": "rapid_bulk",
+      "selector_label": "Morgan — unexpectedly rapid bulk",
+      "description": "Smaller starting profile gaining substantially faster than the planned bulk rate.",
+      "expected_goal_feedback_state": "faster_than_planned",
+      "expected_feedback_action": "review_goal_assumptions",
+      "profile": { "display_name": "[TEST] Morgan — unexpectedly rapid bulk", "birth_date": "1998-10-19", "sex": "male", "height_cm": 169, "activity_level": "active", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "bulk", "starting_weight_kg": 58.5, "target_weight_kg": 66.0, "target_change_kg_per_week": 0.25, "target_calories": 2580, "target_protein_g": 130, "target_carbs_g": 355, "target_fat_g": 72, "target_fibre_g": 29, "manual_maintenance_kcal": 2300 },
+      "weight": { "ending_weight_kg": 67.5, "cadence_days": 3, "noise_kg": [0.0, -0.16, 0.2, -0.1, 0.18, -0.12], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 2600, "complete_day_offsets": [1,2,3,4,5,6,8,9,10,11,12,13,15,16,17,18,19,20,22,23,24,25,26,27], "probably_complete_day_offsets": [7,14,21] },
+      "snapshot": { "age_years": 27, "activity_multiplier": 1.725, "fixture_bmr_kcal": 1450, "fixture_tdee_kcal": 2300 }
     }
   ]
 }

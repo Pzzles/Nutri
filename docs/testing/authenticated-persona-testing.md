@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented for Progress and Maintenance testing with eight accounts. See
+Implemented for Progress, Maintenance, and Goal Feedback testing with ten accounts. See
 [`authenticated-progress-personas.md`](./authenticated-progress-personas.md) for the commands,
 fixture matrix, login selector, safeguards, and browser acceptance test.
 

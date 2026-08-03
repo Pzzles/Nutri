@@ -1,6 +1,6 @@
 # Authenticated Progress Personas
 
-This suite provisions eight real, non-anonymous Supabase Auth users for repeatable Progress testing.
+This suite provisions ten real, non-anonymous Supabase Auth users for repeatable Progress testing.
 Each account has a complete fictional profile, an active cut, maintenance, or bulk phase, 84 days of
 weight history, and 28 days of deliberately varied nutrition-log coverage.
 
@@ -20,6 +20,8 @@ domain. Fixture values are test data, not calorie recommendations or body-compos
 | Frankie — provisional bulk | Bulk | Slower gain and incomplete nutrition coverage |
 | Gray — sparse maintenance | Maintenance | Weekly weights and sparse complete food logs |
 | Harper — cut plateau | Cut | Early loss followed by a recent plateau |
+| Jules — unexpectedly rapid cut | Cut | Loss substantially faster than the planned rate |
+| Morgan — unexpectedly rapid bulk | Bulk | Gain substantially faster than the planned rate |
 
 ## Seed the hosted test project
 
@@ -34,7 +36,7 @@ updates only the marked accounts, resets their owned rows, seeds the datasets, a
 persona, and calls the real maintenance endpoint. It then writes credentials to
 `web/.env.personas.local`, which Git ignores. Emails and passwords are never printed.
 
-Rerunning `seed` is intentionally destructive only for these eight marked test identities: manual
+Rerunning `seed` is intentionally destructive only for these ten marked test identities: manual
 changes made while testing them are replaced by the canonical fixture.
 
 To target a running local Supabase stack, replace the project option with `--local`.
@@ -60,9 +62,10 @@ npm run personas:verify -- --project-ref ipdrzvqhprboqqjhjldj
 npm run personas:reset -- --project-ref ipdrzvqhprboqqjhjldj
 ```
 
-`verify` signs into all eight accounts, validates profile/phase/history counts, and calls the real
-maintenance function. `reset` retains the Auth users and ignored credentials but removes their
-seeded application data and recreates empty marked profiles.
+`verify` signs into all ten accounts, validates profile/phase/history counts, calls the real
+maintenance function, and proves that Jules and Morgan produce `faster_than_planned` Goal Feedback
+with the mode-appropriate review action. `reset` retains the Auth users and ignored credentials but
+removes their seeded application data and recreates empty marked profiles.
 
 To restore the full fixtures after a reset, run `personas:seed` again.
 
@@ -87,4 +90,4 @@ Destruction is separate and requires the suite marker as explicit confirmation:
 npm run personas:destroy -- --project-ref ipdrzvqhprboqqjhjldj --confirm authenticated_progress_personas_v1
 ```
 
-This deletes only the eight revalidated marked users and removes the ignored credential file.
+This deletes only the ten revalidated marked users and removes the ignored credential file.
