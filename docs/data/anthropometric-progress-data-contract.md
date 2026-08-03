@@ -1,9 +1,13 @@
 # Anthropometric Progress Data Contract
 
 **Phase:** 10 — Anthropometric Progress Tracking<br>
-**Contract:** `anthropometry_data_contract_v2`<br>
+**Current contract:** `anthropometry_data_contract_v3`<br>
 **Protocol:** `anthropometry_protocol_v1`<br>
-**Status:** Gate 5 trends and cross-signal interpretation implemented
+**Status:** Remediation Gate 1 hybrid representative contract implemented
+
+> The lifecycle material below documents the original v2 implementation. For
+> current representative fields, quality states, acknowledgements, and legacy
+> handling, see [the v3 remediation contract](../algorithms/phase-10-anthropometric-representative-v3.md).
 
 ## 1. Contract principles
 

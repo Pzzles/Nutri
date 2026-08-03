@@ -90,11 +90,11 @@ export const OUTLIER_MAX_SINGLE_DAY_FRACTION = 0.10 as const; // 10% of body wei
 // ── Phase 10: Anthropometric Progress Tracking ───────────────────────────────
 
 export const ANTHROPOMETRY_DATA_CONTRACT_VERSION =
-  "anthropometry_data_contract_v2" as const;
+  "anthropometry_data_contract_v3" as const;
 export const ANTHROPOMETRY_PROTOCOL_VERSION =
   "anthropometry_protocol_v1" as const;
 export const ANTHROPOMETRY_REPRESENTATIVE_VERSION =
-  "anthropometry_representative_v2" as const;
+  "anthropometry_representative_v3" as const;
 export const ANTHROPOMETRY_THRESHOLDS_VERSION =
   "anthropometry_repeatability_thresholds_v2" as const;
 export const ANTHROPOMETRY_CHANGE_VERSION =

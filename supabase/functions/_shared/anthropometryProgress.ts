@@ -40,6 +40,12 @@ export interface AnthropometryProgressInputPoint {
   logged_date: string;
   representative_cm: number;
   quality: AnthropometryQuality;
+  selected_reading_indices?: number[] | null;
+  selected_pair_spread_cm?: number | null;
+  warning_codes?: string[] | null;
+  eligible_for_interpretation?: boolean | null;
+  algorithm_version?: string | null;
+  raw_readings?: Array<{ id: string; reading_index: number; value_cm: number }>;
 }
 
 export interface AnthropometryProgressPoint extends AnthropometryProgressInputPoint {}
@@ -276,7 +282,10 @@ function compareCandidate(
       mayFallback: true,
     };
   }
-  if (start.quality === "repeatability_warning" || end.quality === "repeatability_warning") {
+  if (
+    start.quality === "repeatability_warning" || end.quality === "repeatability_warning" ||
+    start.eligible_for_interpretation === false || end.eligible_for_interpretation === false
+  ) {
     return {
       comparison: ineligible(
         siteCode,

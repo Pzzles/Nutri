@@ -41,12 +41,16 @@ export const ANTHROPOMETRY_SITE_CODES = [
 ] as const;
 
 export type AnthropometrySiteCode = typeof ANTHROPOMETRY_SITE_CODES[number];
-export type AnthropometryRepresentativeMethod = "mean_of_two" | "median_of_three";
+export type AnthropometryRepresentativeMethod = "mean_of_two" | "mean_of_closest_pair";
 export type AnthropometryQuality =
+  | "pair_agree"
+  | "pair_agree_with_isolated_reading"
+  | "high_variability"
   | "within_repeatability_threshold"
   | "repeatability_warning";
-export type AnthropometryQualityFlag =
-  "initial_pair_exceeds_repeatability_threshold";
+export type AnthropometryWarningCode =
+  | "isolated_reading_excluded"
+  | "no_pair_within_repeatability_threshold";
 
 export type AnthropometryValidationCode =
   | "VALIDATION_ERROR"
@@ -54,26 +58,37 @@ export type AnthropometryValidationCode =
   | "DUPLICATE_SITE"
   | "READING_OUT_OF_RANGE"
   | "INVALID_READING_PRECISION"
+  | "SECOND_READING_REQUIRED"
   | "THIRD_READING_REQUIRED"
-  | "RETAKE_SITE_REQUIRED"
-  | "UNEXPECTED_THIRD_READING"
   | "INVALID_READING_COUNT";
+
+export interface AnthropometryReadingInput {
+  id: string;
+  reading_index: 1 | 2 | 3;
+  value_cm: number;
+}
 
 export interface AnthropometrySiteInput {
   site_code: string;
-  readings_cm: readonly number[];
+  readings: readonly AnthropometryReadingInput[];
 }
 
 export interface AnthropometryRepresentative {
   site_code: AnthropometrySiteCode;
-  readings_cm: number[];
   representative_cm: number;
   method: AnthropometryRepresentativeMethod;
   reading_count: 2 | 3;
+  source_reading_ids: [string, string];
+  selected_reading_indices: [number, number];
+  unselected_reading_id: string | null;
+  selected_pair_spread_cm: number;
+  pairwise_differences: { d12: number; d13: number | null; d23: number | null };
+  warning_codes: AnthropometryWarningCode[];
+  eligible_for_interpretation: boolean;
   initial_pair_difference_cm: number;
   all_readings_range_cm: number;
   quality: AnthropometryQuality;
-  quality_flags: AnthropometryQualityFlag[];
+  quality_flags: AnthropometryWarningCode[];
   algorithm_version: typeof ANTHROPOMETRY_REPRESENTATIVE_VERSION;
 }
 
@@ -163,28 +178,52 @@ export function calculateAnthropometryRepresentative(
   assertSiteCode(input.site_code);
   const siteCode = input.site_code;
 
-  if (!Array.isArray(input.readings_cm)) {
+  if (!Array.isArray(input.readings)) {
     throw new AnthropometryValidationError(
       "VALIDATION_ERROR",
-      "readings_cm must be an array",
+      "readings must be an array",
       siteCode,
     );
   }
 
-  if (input.readings_cm.length < 2 || input.readings_cm.length > 3) {
+  if (input.readings.length === 1) {
+    throw new AnthropometryValidationError(
+      "SECOND_READING_REQUIRED",
+      "A second reading is required",
+      siteCode,
+    );
+  }
+  if (input.readings.length < 1 || input.readings.length > 3) {
     throw new AnthropometryValidationError(
       "INVALID_READING_COUNT",
-      "Each site must contain exactly two or three readings",
+      "Each finalised site must contain one to three readings",
       siteCode,
     );
   }
 
-  const tenths = input.readings_cm.map((reading) => toTenths(reading, siteCode));
-  const initialPairDifferenceTenths = Math.abs(tenths[1] - tenths[0]);
-  const firstPairPasses =
-    initialPairDifferenceTenths <= ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS;
+  const readings = input.readings.map((reading, offset) => {
+    if (!reading || typeof reading.id !== "string" || reading.id.length === 0 ||
+      reading.reading_index !== offset + 1) {
+      throw new AnthropometryValidationError(
+        "VALIDATION_ERROR",
+        "Reading identifiers and indices must be present in original order",
+        siteCode,
+      );
+    }
+    return { ...reading, tenths: toTenths(reading.value_cm, siteCode) };
+  });
+  if (new Set(readings.map((reading) => reading.id)).size !== readings.length) {
+    throw new AnthropometryValidationError(
+      "VALIDATION_ERROR",
+      "Reading identifiers must be unique",
+      siteCode,
+    );
+  }
 
-  if (!firstPairPasses && tenths.length === 2) {
+  const tenths = readings.map((reading) => reading.tenths);
+  const initialPairDifferenceTenths = Math.abs(tenths[1] - tenths[0]);
+  if (tenths.length === 2 &&
+    initialPairDifferenceTenths > ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS) {
     throw new AnthropometryValidationError(
       "THIRD_READING_REQUIRED",
       "A third reading is required when the first two differ by more than 1.0 cm",
@@ -192,59 +231,61 @@ export function calculateAnthropometryRepresentative(
     );
   }
 
-  if (firstPairPasses && tenths.length === 3) {
-    throw new AnthropometryValidationError(
-      "UNEXPECTED_THIRD_READING",
-      "A third reading is not accepted when the first two are within 1.0 cm",
-      siteCode,
-    );
-  }
-
   const minTenths = Math.min(...tenths);
   const maxTenths = Math.max(...tenths);
-
-  if (firstPairPasses) {
-    return {
-      site_code: siteCode,
-      readings_cm: tenths.map(fromTenths),
-      representative_cm: (tenths[0] + tenths[1]) / 20,
-      method: "mean_of_two",
-      reading_count: 2,
-      initial_pair_difference_cm: fromTenths(initialPairDifferenceTenths),
-      all_readings_range_cm: fromTenths(maxTenths - minTenths),
-      quality: "within_repeatability_threshold",
-      quality_flags: [],
-      algorithm_version: ANTHROPOMETRY_REPRESENTATIVE_VERSION,
-    };
-  }
-
-  const hasAgreeingPair = [
-    Math.abs(tenths[0] - tenths[1]),
-    Math.abs(tenths[0] - tenths[2]),
-    Math.abs(tenths[1] - tenths[2]),
-  ].some((difference) =>
-    difference <= ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS
+  const pairwise = {
+    d12: Math.abs(tenths[0] - tenths[1]),
+    d13: tenths.length === 3 ? Math.abs(tenths[0] - tenths[2]) : null,
+    d23: tenths.length === 3 ? Math.abs(tenths[1] - tenths[2]) : null,
+  };
+  const candidates = tenths.length === 2
+    ? [{ indices: [0, 1] as const, spread: pairwise.d12 }]
+    : [
+      { indices: [0, 1] as const, spread: pairwise.d12 },
+      { indices: [0, 2] as const, spread: pairwise.d13! },
+      { indices: [1, 2] as const, spread: pairwise.d23! },
+    ];
+  const selected = candidates.reduce((best, candidate) =>
+    candidate.spread < best.spread ? candidate : best
   );
-
-  if (!hasAgreeingPair) {
-    throw new AnthropometryValidationError(
-      "RETAKE_SITE_REQUIRED",
-      "No two readings agreed within 1.0 cm. Retake this measurement site",
-      siteCode,
-    );
-  }
-
-  const orderedTenths = [...tenths].sort((left, right) => left - right);
+  const [left, right] = selected.indices;
+  const unselectedIndex = tenths.length === 3
+    ? [0, 1, 2].find((index) => index !== left && index !== right)!
+    : null;
+  const pairAgrees = selected.spread <= ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS;
+  const isolated = pairAgrees && unselectedIndex !== null &&
+    Math.abs(tenths[unselectedIndex] - tenths[left]) > ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS &&
+    Math.abs(tenths[unselectedIndex] - tenths[right]) > ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS;
+  const quality: AnthropometryQuality = !pairAgrees
+    ? "high_variability"
+    : isolated
+    ? "pair_agree_with_isolated_reading"
+    : "pair_agree";
+  const warningCodes: AnthropometryWarningCode[] = !pairAgrees
+    ? ["no_pair_within_repeatability_threshold"]
+    : isolated
+    ? ["isolated_reading_excluded"]
+    : [];
   return {
     site_code: siteCode,
-    readings_cm: tenths.map(fromTenths),
-    representative_cm: fromTenths(orderedTenths[1]),
-    method: "median_of_three",
-    reading_count: 3,
+    representative_cm: (tenths[left] + tenths[right]) / 20,
+    method: tenths.length === 2 ? "mean_of_two" : "mean_of_closest_pair",
+    reading_count: tenths.length as 2 | 3,
+    source_reading_ids: [readings[left].id, readings[right].id],
+    selected_reading_indices: [left + 1, right + 1],
+    unselected_reading_id: unselectedIndex === null ? null : readings[unselectedIndex].id,
+    selected_pair_spread_cm: fromTenths(selected.spread),
+    pairwise_differences: {
+      d12: fromTenths(pairwise.d12),
+      d13: pairwise.d13 === null ? null : fromTenths(pairwise.d13),
+      d23: pairwise.d23 === null ? null : fromTenths(pairwise.d23),
+    },
+    warning_codes: warningCodes,
+    eligible_for_interpretation: pairAgrees,
     initial_pair_difference_cm: fromTenths(initialPairDifferenceTenths),
     all_readings_range_cm: fromTenths(maxTenths - minTenths),
-    quality: "repeatability_warning",
-    quality_flags: ["initial_pair_exceeds_repeatability_threshold"],
+    quality,
+    quality_flags: warningCodes,
     algorithm_version: ANTHROPOMETRY_REPRESENTATIVE_VERSION,
   };
 }

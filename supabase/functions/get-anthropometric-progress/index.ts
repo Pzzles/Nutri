@@ -25,6 +25,17 @@ interface SessionRow {
     site_code: AnthropometrySiteCode;
     representative_cm: number | string;
     quality: AnthropometryQuality;
+    selected_reading_indices: number[] | null;
+    selected_pair_spread_cm: number | string | null;
+    warning_codes: string[] | null;
+    eligible_for_interpretation: boolean | null;
+    algorithm_version: string;
+  }>;
+  anthropometric_readings: Array<{
+    id: string;
+    site_code: AnthropometrySiteCode;
+    reading_number: number;
+    value_cm: number | string;
   }>;
 }
 
@@ -57,7 +68,7 @@ async function loadAnthropometryPoints(
   let offset = 0;
   while (true) {
     let query = service.from("anthropometric_sessions").select(
-      "id, measured_at, logged_date, anthropometric_representatives(site_code, representative_cm, quality)",
+      "id, measured_at, logged_date, anthropometric_representatives(site_code, representative_cm, quality, selected_reading_indices, selected_pair_spread_cm, warning_codes, eligible_for_interpretation, algorithm_version), anthropometric_readings(id, site_code, reading_number, value_cm)",
     )
       .eq("user_id", userId)
       .eq("status", "finalized")
@@ -84,6 +95,21 @@ async function loadAnthropometryPoints(
         logged_date: session.logged_date,
         representative_cm: Number(representative.representative_cm),
         quality: representative.quality,
+        selected_reading_indices: representative.selected_reading_indices,
+        selected_pair_spread_cm: representative.selected_pair_spread_cm === null
+          ? null
+          : Number(representative.selected_pair_spread_cm),
+        warning_codes: representative.warning_codes,
+        eligible_for_interpretation: representative.eligible_for_interpretation,
+        algorithm_version: representative.algorithm_version,
+        raw_readings: (session.anthropometric_readings ?? [])
+          .filter((reading) => reading.site_code === representative.site_code)
+          .sort((left, right) => left.reading_number - right.reading_number)
+          .map((reading) => ({
+            id: reading.id,
+            reading_index: reading.reading_number,
+            value_cm: Number(reading.value_cm),
+          })),
       }))
   );
 }

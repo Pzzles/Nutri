@@ -1,0 +1,15 @@
+{
+  "algorithm_version": "anthropometry_representative_v3",
+  "threshold_cm": 1.0,
+  "tie_order": [[1, 2], [1, 3], [2, 3]],
+  "fixtures": [
+    { "id": "A", "readings_cm": [82.0, 82.4], "representative_cm": 82.2, "selected": [1, 2], "quality": "pair_agree", "eligible": true },
+    { "id": "B", "readings_cm": [82.0, 84.0, 82.3], "representative_cm": 82.15, "selected": [1, 3], "quality": "pair_agree_with_isolated_reading", "eligible": true },
+    { "id": "C", "readings_cm": [80.0, 80.2, 50.0], "representative_cm": 80.1, "selected": [1, 2], "quality": "pair_agree_with_isolated_reading", "eligible": true },
+    { "id": "D", "readings_cm": [80.0, 81.0, 82.0], "representative_cm": 80.5, "selected": [1, 2], "quality": "pair_agree", "eligible": true },
+    { "id": "E", "readings_cm": [80.0, 82.0, 84.5], "representative_cm": 81.0, "selected": [1, 2], "quality": "high_variability", "eligible": false },
+    { "id": "F", "readings_cm": [90.0, 90.0, 90.0], "representative_cm": 90.0, "selected": [1, 2], "quality": "pair_agree", "eligible": true }
+  ],
+  "invalid_fixture_G": ["NaN", "Infinity", 0, -5, 300.1, "precision finer than 0.1 cm", "zero or four readings"],
+  "immutability_fixture_H": "Input array and reading objects are unchanged"
+}

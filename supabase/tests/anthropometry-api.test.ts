@@ -24,6 +24,7 @@ type SaveBody = {
   notes?: string;
   protocol_version: "anthropometry_protocol_v1";
   idempotency_key?: string;
+  high_variability_acknowledgements?: Array<{ site_code: string; acknowledged: true }>;
   sites: Array<{ site_code: string; readings_cm: number[] }>;
   representatives?: unknown;
 };
@@ -291,7 +292,11 @@ describe("draft and server-authoritative finalization", () => {
     sessionId = result.body.data!.session.id;
     expect(result.body.data!.session.status).toBe("draft");
     expect(result.body.data!.session.notes).toBe("morning draft");
-    expect(result.body.data!.sites).toEqual([{ site_code: "waist", readings_cm: [90.1] }]);
+    expect(result.body.data!.sites).toEqual([expect.objectContaining({
+      site_code: "waist",
+      readings_cm: [90.1],
+      raw_readings: [expect.objectContaining({ reading_index: 1, value_cm: 90.1 })],
+    })]);
   });
 
   it("replaces draft readings rather than merging stale values", async () => {
@@ -325,13 +330,16 @@ describe("draft and server-authoritative finalization", () => {
     expect(sites.find((row) => row.site_code === "waist")).toMatchObject({
       representative_cm: 90.4,
       method: "mean_of_two",
-      quality: "within_repeatability_threshold",
+      quality: "pair_agree",
+      selected_reading_indices: [1, 2],
+      eligible_for_interpretation: true,
+      algorithm_version: "anthropometry_representative_v3",
     });
     expect(sites.find((row) => row.site_code === "abdomen_navel")).toMatchObject({
-      representative_cm: 96,
-      method: "median_of_three",
-      quality: "repeatability_warning",
-      quality_flags: ["initial_pair_exceeds_repeatability_threshold"],
+      representative_cm: 95.5,
+      method: "mean_of_closest_pair",
+      quality: "pair_agree",
+      selected_reading_indices: [1, 3],
     });
   });
 
@@ -345,6 +353,7 @@ describe("draft and server-authoritative finalization", () => {
         site_code: "waist",
         readings_cm: [90, 90.8],
         representative_cm: 1,
+        quality: "high_variability",
       } as unknown as { site_code: string; readings_cm: number[] }],
     });
     expect(result.status).toBe(422);
@@ -387,11 +396,11 @@ describe("draft and server-authoritative finalization", () => {
     expect(readings?.map((row) => Number(row.value_cm))).toEqual([99.1]);
   });
 
-  it("blocks finalization and preserves the draft when no pair of three readings agrees", async () => {
+  it("requires acknowledgement, then saves high variability as interpretation-ineligible", async () => {
     const draft = await save(tokenA, {
       status: "draft",
       protocol_version: "anthropometry_protocol_v1",
-      sites: [{ site_code: "waist", readings_cm: [80, 81.2, 50] }],
+      sites: [{ site_code: "waist", readings_cm: [80, 82, 84.5] }],
     });
     const draftId = draft.body.data!.session.id;
 
@@ -400,11 +409,21 @@ describe("draft and server-authoritative finalization", () => {
       measured_at: "2026-07-03T07:00:00Z",
       protocol_version: "anthropometry_protocol_v1",
       idempotency_key: `low-confidence-${Date.now()}`,
-      sites: [{ site_code: "waist", readings_cm: [80, 81.2, 50] }],
+      sites: [{ site_code: "waist", readings_cm: [80, 82, 84.5] }],
     });
 
     expect(failed.status).toBe(422);
-    expect(failed.body.error?.code).toBe("RETAKE_SITE_REQUIRED");
+    expect(failed.body.error?.code).toBe("HIGH_VARIABILITY_CONFIRMATION_REQUIRED");
+    expect(failed.body.data).toMatchObject({
+      sites: [{
+        representative_cm: 81,
+        selected_reading_indices: [1, 2],
+        selected_pair_spread_cm: 2,
+        quality: "high_variability",
+        eligible_for_interpretation: false,
+        warning_codes: ["no_pair_within_repeatability_threshold"],
+      }],
+    });
     const { data: session } = await svcClient().from("anthropometric_sessions")
       .select("status").eq("id", draftId).single();
     const { data: readings } = await svcClient().from("anthropometric_readings")
@@ -414,8 +433,84 @@ describe("draft and server-authoritative finalization", () => {
       .select("site_code", { count: "exact", head: true })
       .eq("session_id", draftId);
     expect(session?.status).toBe("draft");
-    expect(readings?.map((row) => Number(row.value_cm))).toEqual([80, 81.2, 50]);
+    expect(readings?.map((row) => Number(row.value_cm))).toEqual([80, 82, 84.5]);
     expect(representativeCount).toBe(0);
+
+    const saved = await finalize(tokenA, {
+      session_id: draftId,
+      measured_at: "2026-07-03T07:00:00Z",
+      protocol_version: "anthropometry_protocol_v1",
+      idempotency_key: `low-confidence-save-${Date.now()}`,
+      sites: [{ site_code: "waist", readings_cm: [80, 82, 84.5] }],
+      high_variability_acknowledgements: [{ site_code: "waist", acknowledged: true }],
+    });
+    expect(saved.status).toBe(201);
+    expect(saved.body.data!.sites[0]).toMatchObject({
+      representative_cm: 81,
+      selected_reading_indices: [1, 2],
+      quality: "high_variability",
+      eligible_for_interpretation: false,
+      quality_acknowledgement_version: "anthropometry_high_variability_ack_v1",
+    });
+    expect(saved.body.data!.sites[0].quality_acknowledged_at).toEqual(expect.any(String));
+  });
+
+  it("returns the stable second-reading error for a one-reading finalization", async () => {
+    const failed = await finalize(tokenA, {
+      measured_at: "2026-07-03T07:30:00Z",
+      protocol_version: "anthropometry_protocol_v1",
+      idempotency_key: `second-required-${Date.now()}`,
+      sites: [{ site_code: "waist", readings_cm: [80] }],
+    });
+    expect(failed.status).toBe(422);
+    expect(failed.body.error?.code).toBe("SECOND_READING_REQUIRED");
+  });
+
+  it("preserves an isolated reading and persists the exact selected source IDs", async () => {
+    const result = await save(tokenA, finalBody(
+      `isolated-${Date.now()}`,
+      "2026-07-03T08:00:00Z",
+      [{ site_code: "waist", readings_cm: [80, 80.2, 50] }],
+    ));
+    expect(result.status).toBe(201);
+    const site = result.body.data!.sites[0];
+    expect(site).toMatchObject({
+      readings_cm: [80, 80.2, 50],
+      representative_cm: 80.1,
+      selected_reading_indices: [1, 2],
+      quality: "pair_agree_with_isolated_reading",
+      warning_codes: ["isolated_reading_excluded"],
+      eligible_for_interpretation: true,
+    });
+    const raw = site.raw_readings as Array<{ id: string; reading_index: number }>;
+    expect(site.source_reading_ids).toEqual([raw[0].id, raw[1].id]);
+    expect(site.unselected_reading_id).toBe(raw[2].id);
+  });
+
+  it("persists the frozen closest-pair tie as readings 1 and 2", async () => {
+    const result = await save(tokenA, finalBody(
+      `tie-${Date.now()}`,
+      "2026-07-03T09:00:00Z",
+      [{ site_code: "hips", readings_cm: [80, 81, 82] }],
+    ));
+    expect(result.status).toBe(201);
+    expect(result.body.data!.sites[0]).toMatchObject({
+      representative_cm: 80.5,
+      selected_reading_indices: [1, 2],
+      quality: "pair_agree",
+    });
+  });
+
+  it("rejects acknowledgements that do not match a server-calculated high-variability site", async () => {
+    const result = await finalize(tokenA, {
+      measured_at: "2026-07-03T10:00:00Z",
+      protocol_version: "anthropometry_protocol_v1",
+      idempotency_key: `invalid-ack-${Date.now()}`,
+      sites: [{ site_code: "waist", readings_cm: [80, 80.2] }],
+      high_variability_acknowledgements: [{ site_code: "waist", acknowledged: true }],
+    });
+    expect(result.status).toBe(422);
+    expect(result.body.error?.code).toBe("INVALID_HIGH_VARIABILITY_ACKNOWLEDGEMENT");
   });
 
   it("replays the same idempotent finalization without another row", async () => {
@@ -507,12 +602,70 @@ describe("draft and server-authoritative finalization", () => {
       p_timezone: null,
       p_idempotency_key: null,
       p_payload_hash: null,
-      p_data_contract_version: "anthropometry_data_contract_v2",
+      p_data_contract_version: "anthropometry_data_contract_v3",
       p_protocol_version: "anthropometry_protocol_v1",
       p_representative_algorithm_version: null,
       p_thresholds_version: null,
     });
     expect(error).toBeTruthy();
+  });
+
+  it("keeps historical v2 values/version intact with explicitly unavailable v3 provenance", async () => {
+    const service = svcClient();
+    const sessionId = crypto.randomUUID();
+    const firstId = crypto.randomUUID();
+    const secondId = crypto.randomUUID();
+    const { error: draftError } = await service.from("anthropometric_sessions").insert({
+      id: sessionId,
+      user_id: userIdA,
+      status: "draft",
+      measured_at: "2026-05-01T06:00:00Z",
+      data_contract_version: "anthropometry_data_contract_v2",
+      protocol_version: "anthropometry_protocol_v1",
+    });
+    if (draftError) throw draftError;
+    const { error: readingsError } = await service.from("anthropometric_readings").insert([
+      { id: firstId, session_id: sessionId, site_code: "neck", reading_number: 1, value_cm: 40 },
+      { id: secondId, session_id: sessionId, site_code: "neck", reading_number: 2, value_cm: 40.4 },
+    ]);
+    if (readingsError) throw readingsError;
+    const { error: finalError } = await service.from("anthropometric_sessions").update({
+      status: "finalized",
+      logged_date: "2026-05-01",
+      timezone: "Africa/Johannesburg",
+      representative_algorithm_version: "anthropometry_representative_v2",
+      thresholds_version: "anthropometry_repeatability_thresholds_v2",
+      idempotency_key: `legacy-v2-${Date.now()}`,
+      payload_hash: "legacy-v2-fixture",
+      finalized_at: new Date().toISOString(),
+    }).eq("id", sessionId);
+    if (finalError) throw finalError;
+    const { error: representativeError } = await service.from("anthropometric_representatives").insert({
+      session_id: sessionId,
+      site_code: "neck",
+      representative_cm: 40.2,
+      method: "mean_of_two",
+      reading_count: 2,
+      initial_pair_difference_cm: 0.4,
+      all_readings_range_cm: 0.4,
+      quality: "within_repeatability_threshold",
+      quality_flags: [],
+      algorithm_version: "anthropometry_representative_v2",
+    });
+    if (representativeError) throw representativeError;
+
+    const { data, error } = await service.from("anthropometric_representatives")
+      .select("representative_cm, quality, algorithm_version, source_reading_ids, selected_reading_indices, eligible_for_interpretation")
+      .eq("session_id", sessionId).single();
+    if (error) throw error;
+    expect(data).toMatchObject({
+      quality: "within_repeatability_threshold",
+      algorithm_version: "anthropometry_representative_v2",
+      source_reading_ids: null,
+      selected_reading_indices: null,
+      eligible_for_interpretation: null,
+    });
+    expect(Number(data.representative_cm)).toBe(40.2);
   });
 });
 
@@ -658,6 +811,12 @@ describe("history pagination and explicit deletion", () => {
     expect(exported.data.anthropometric_sessions.length).toBeGreaterThan(0);
     expect(exported.data.anthropometric_readings.length).toBeGreaterThan(0);
     expect(exported.data.anthropometric_representatives.length).toBeGreaterThan(0);
+    expect(exported.data.anthropometric_representatives.some((row) =>
+      row.algorithm_version === "anthropometry_representative_v3" &&
+      Array.isArray(row.source_reading_ids) &&
+      Array.isArray(row.selected_reading_indices) &&
+      Object.prototype.hasOwnProperty.call(row, "eligible_for_interpretation")
+    )).toBe(true);
     expect(exported.data.anthropometric_sessions.every((row) => row.user_id === userIdA)).toBe(true);
   });
 });

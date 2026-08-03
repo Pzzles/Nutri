@@ -1,12 +1,15 @@
 # Phase 10 — Anthropometric Progress Tracking Specification
 
 **Protocol:** `anthropometry_protocol_v1`<br>
-**Representative algorithm:** `anthropometry_representative_v2`<br>
+**Representative algorithm:** `anthropometry_representative_v3` (current; this document retains the original v2 freeze below)<br>
 **Repeatability thresholds:** `anthropometry_repeatability_thresholds_v2`<br>
 **Longitudinal change algorithm:** `anthropometry_change_v1`<br>
 **Cross-signal description:** `anthropometry_weight_comparison_v1`<br>
 **Status:** Gate 1 frozen; persisted-draft lifecycle amended by Gate 2<br>
 **Scope:** Gate 1 scientific specification plus Gate 2 lifecycle/schema amendment; no authenticated API or production UI changes
+
+> The v2 median/mandatory-retake section is retained as historical design
+> context. It is superseded for new finalisations by [the v3 hybrid representative protocol](phase-10-anthropometric-representative-v3.md).
 
 ## 1. Purpose and interpretation boundary
 

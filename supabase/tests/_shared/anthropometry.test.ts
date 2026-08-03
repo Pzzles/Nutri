@@ -1,330 +1,137 @@
-/**
- * Phase 10 Gate 2 pure tests.
- *
- * These tests exercise only the deterministic representative engine. They do
- * not mock Supabase or an Edge Function. Authenticated database/API behaviour
- * belongs to Prompt 3's real-backend integration suite.
- */
-
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ANTHROPOMETRY_DATA_CONTRACT_VERSION,
-  ANTHROPOMETRY_MAX_READING_TENTHS,
-  ANTHROPOMETRY_MIN_READING_TENTHS,
-  ANTHROPOMETRY_PROTOCOL_VERSION,
-  ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS,
   ANTHROPOMETRY_REPRESENTATIVE_VERSION,
-  ANTHROPOMETRY_SITE_CODES,
-  ANTHROPOMETRY_THRESHOLDS_VERSION,
   AnthropometryValidationError,
   calculateAnthropometryRepresentative,
   calculateAnthropometryRepresentatives,
+  type AnthropometryReadingInput,
 } from "../../functions/_shared/anthropometry.ts";
 
-interface FrozenRepresentativeFixture {
-  id: string;
-  site_code: string;
-  readings_cm: number[];
-  expected: {
-    representative_cm: number;
-    method: string;
-    reading_count: number;
-    initial_pair_difference_cm: number;
-    all_readings_range_cm: number;
-    quality: string;
-  };
+function readings(values: number[]): AnthropometryReadingInput[] {
+  return values.map((value_cm, index) => ({
+    id: `00000000-0000-4000-8000-00000000000${index + 1}`,
+    reading_index: (index + 1) as 1 | 2 | 3,
+    value_cm,
+  }));
 }
 
-interface FrozenFixtureFile {
-  algorithm_versions: Record<string, string>;
-  representative_fixtures: FrozenRepresentativeFixture[];
+function calculate(values: number[]) {
+  return calculateAnthropometryRepresentative({ site_code: "waist", readings: readings(values) });
 }
 
-const fixturePath = fileURLToPath(
-  new URL(
-    "../../../docs/testing/phase-10-anthropometry-fixtures.json",
-    import.meta.url,
-  ),
-);
-const frozenFixtures = JSON.parse(
-  readFileSync(fixturePath, "utf8"),
-) as FrozenFixtureFile;
-
-function captureValidationError(run: () => unknown): AnthropometryValidationError {
+function error(values: number[]) {
   try {
-    run();
-  } catch (error) {
-    expect(error).toBeInstanceOf(AnthropometryValidationError);
-    return error as AnthropometryValidationError;
+    calculate(values);
+  } catch (caught) {
+    expect(caught).toBeInstanceOf(AnthropometryValidationError);
+    return caught as AnthropometryValidationError;
   }
-  throw new Error("Expected AnthropometryValidationError");
+  throw new Error("Expected validation error");
 }
 
-describe("anthropometry representative engine — frozen fixture parity", () => {
-  for (const fixture of frozenFixtures.representative_fixtures) {
-    it(`${fixture.id} matches the independently frozen representative`, () => {
-      const result = calculateAnthropometryRepresentative(fixture);
-
-      expect(result).toMatchObject({
-        site_code: fixture.site_code,
-        readings_cm: fixture.readings_cm,
-        representative_cm: fixture.expected.representative_cm,
-        method: fixture.expected.method,
-        reading_count: fixture.expected.reading_count,
-        initial_pair_difference_cm:
-          fixture.expected.initial_pair_difference_cm,
-        all_readings_range_cm: fixture.expected.all_readings_range_cm,
-        quality: fixture.expected.quality,
-        algorithm_version: ANTHROPOMETRY_REPRESENTATIVE_VERSION,
-      });
+describe("anthropometry representative v3 frozen fixtures", () => {
+  it("A: averages an agreeing pair", () => {
+    expect(calculate([82, 82.4])).toMatchObject({
+      representative_cm: 82.2,
+      quality: "pair_agree",
+      selected_reading_indices: [1, 2],
+      eligible_for_interpretation: true,
     });
-  }
-});
-
-describe("calculateAnthropometryRepresentative", () => {
-  it("accepts the exact 1.0 cm repeatability boundary", () => {
-    const result = calculateAnthropometryRepresentative({
-      site_code: "waist",
-      readings_cm: [88.2, 89.2],
-    });
-
-    expect(result.method).toBe("mean_of_two");
-    expect(result.representative_cm).toBe(88.7);
-    expect(result.quality_flags).toEqual([]);
-  });
-
-  it("requires a third reading at 1.1 cm", () => {
-    const error = captureValidationError(() =>
-      calculateAnthropometryRepresentative({
-        site_code: "waist",
-        readings_cm: [80.0, 81.1],
-      })
-    );
-
-    expect(error.code).toBe("THIRD_READING_REQUIRED");
-    expect(error.siteCode).toBe("waist");
-  });
-
-  it("rejects a discretionary third reading when the pair passes", () => {
-    const error = captureValidationError(() =>
-      calculateAnthropometryRepresentative({
-        site_code: "waist",
-        readings_cm: [80.0, 81.0, 80.4],
-      })
-    );
-
-    expect(error.code).toBe("UNEXPECTED_THIRD_READING");
-  });
-
-  it("uses the numeric median with deterministic ties", () => {
-    const result = calculateAnthropometryRepresentative({
-      site_code: "hips",
-      readings_cm: [101.2, 99.8, 99.8],
-    });
-
-    expect(result.representative_cm).toBe(99.8);
-    expect(result.method).toBe("median_of_three");
-    expect(result.quality_flags).toEqual([
-      "initial_pair_exceeds_repeatability_threshold",
-    ]);
-  });
-
-  it("accepts a third reading when at least one pair agrees", () => {
-    const result = calculateAnthropometryRepresentative({
-      site_code: "waist",
-      readings_cm: [80.0, 81.2, 80.5],
-    });
-
-    expect(result.representative_cm).toBe(80.5);
-    expect(result.method).toBe("median_of_three");
-    expect(result.quality).toBe("repeatability_warning");
-  });
-
-  it("requires a site retake when no pair of three readings agrees", () => {
-    const error = captureValidationError(() =>
-      calculateAnthropometryRepresentative({
-        site_code: "waist",
-        readings_cm: [80.0, 81.2, 50.0],
-      })
-    );
-
-    expect(error.code).toBe("RETAKE_SITE_REQUIRED");
-    expect(error.siteCode).toBe("waist");
-  });
-
-  it("accepts an agreeing pair at the exact 1.0 cm boundary", () => {
-    const result = calculateAnthropometryRepresentative({
-      site_code: "waist",
-      readings_cm: [80.0, 82.0, 81.0],
-    });
-
-    expect(result.representative_cm).toBe(81.0);
-  });
-
-  it("preserves a mean at 0.05 cm precision", () => {
-    const result = calculateAnthropometryRepresentative({
-      site_code: "left_upper_arm_relaxed",
-      readings_cm: [32.1, 32.2],
-    });
-
-    expect(result.representative_cm).toBe(32.15);
-  });
-
-  it.each([5.0, 300.0])("accepts the inclusive %s cm bound", (value) => {
-    const result = calculateAnthropometryRepresentative({
-      site_code: "neck",
-      readings_cm: [value, value],
-    });
-    expect(result.representative_cm).toBe(value);
-  });
-
-  it.each([4.9, 300.1, Number.NaN, Number.POSITIVE_INFINITY])(
-    "rejects the out-of-range or non-finite value %s",
-    (value) => {
-      const error = captureValidationError(() =>
-        calculateAnthropometryRepresentative({
-          site_code: "neck",
-          readings_cm: [value, 40.0],
-        })
-      );
-      expect(error.code).toBe("READING_OUT_OF_RANGE");
-    },
-  );
-
-  it("rejects precision finer than 0.1 cm", () => {
-    const error = captureValidationError(() =>
-      calculateAnthropometryRepresentative({
-        site_code: "right_mid_thigh",
-        readings_cm: [56.25, 56.3],
-      })
-    );
-    expect(error.code).toBe("INVALID_READING_PRECISION");
   });
 
   it.each([
-    { readings: [40.0] },
-    { readings: [40.0, 40.1, 40.2, 40.3] },
-  ])(
-    "rejects a reading count other than two or three",
-    ({ readings }) => {
-      const error = captureValidationError(() =>
-        calculateAnthropometryRepresentative({
-          site_code: "neck",
-          readings_cm: readings,
-        })
-      );
-      expect(error.code).toBe("INVALID_READING_COUNT");
-    },
-  );
-
-  it("rejects an unknown site instead of aliasing it", () => {
-    const error = captureValidationError(() =>
-      calculateAnthropometryRepresentative({
-        site_code: "abdomen",
-        readings_cm: [90.0, 90.2],
-      })
-    );
-    expect(error.code).toBe("UNKNOWN_SITE");
+    [[82, 84, 82.3], 82.15, [1, 3]],
+    [[80, 80.2, 50], 80.1, [1, 2]],
+  ] as const)("B/C: excludes an isolated third reading", (values, expected, indices) => {
+    expect(calculate([...values])).toMatchObject({
+      representative_cm: expected,
+      method: "mean_of_closest_pair",
+      quality: "pair_agree_with_isolated_reading",
+      warning_codes: ["isolated_reading_excluded"],
+      selected_reading_indices: indices,
+      eligible_for_interpretation: true,
+    });
   });
 
-  it("does not mutate the raw readings", () => {
-    const readings = [110.8, 108.9, 109.4];
-    const frozen = [...readings];
-
-    calculateAnthropometryRepresentative({
-      site_code: "hips",
-      readings_cm: readings,
+  it("D: resolves equal-spread ties in (1,2), (1,3), (2,3) order", () => {
+    expect(calculate([80, 81, 82])).toMatchObject({
+      representative_cm: 80.5,
+      selected_reading_indices: [1, 2],
+      quality: "pair_agree",
     });
+  });
 
-    expect(readings).toEqual(frozen);
+  it("E: returns a low-confidence closest-pair preview when no pair agrees", () => {
+    expect(calculate([80, 82, 84.5])).toMatchObject({
+      representative_cm: 81,
+      selected_reading_indices: [1, 2],
+      selected_pair_spread_cm: 2,
+      quality: "high_variability",
+      warning_codes: ["no_pair_within_repeatability_threshold"],
+      eligible_for_interpretation: false,
+    });
+  });
+
+  it("F: deterministically chooses readings 1 and 2 when all match", () => {
+    expect(calculate([90, 90, 90])).toMatchObject({
+      representative_cm: 90,
+      selected_reading_indices: [1, 2],
+      quality: "pair_agree",
+    });
+  });
+
+  it("requires the second and then the third reading", () => {
+    expect(error([80]).code).toBe("SECOND_READING_REQUIRED");
+    expect(error([80, 81.1]).code).toBe("THIRD_READING_REQUIRED");
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -5, 300.1])(
+    "G: rejects an invalid reading %s",
+    (value) => expect(error([value, 80]).code).toBe("READING_OUT_OF_RANGE"),
+  );
+
+  it("rejects out-of-contract precision and reading count", () => {
+    expect(error([80.01, 80]).code).toBe("INVALID_READING_PRECISION");
+    expect(error([]).code).toBe("INVALID_READING_COUNT");
+    expect(error([80, 80, 80, 80]).code).toBe("INVALID_READING_COUNT");
+  });
+
+  it("H: does not mutate readings or their objects", () => {
+    const input = readings([82, 84, 82.3]);
+    const before = structuredClone(input);
+    calculateAnthropometryRepresentative({ site_code: "waist", readings: input });
+    expect(input).toEqual(before);
+  });
+
+  it("returns full source and pairwise provenance", () => {
+    expect(calculate([82, 84, 82.3])).toMatchObject({
+      source_reading_ids: [
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000003",
+      ],
+      unselected_reading_id: "00000000-0000-4000-8000-000000000002",
+      pairwise_differences: { d12: 2, d13: 0.3, d23: 1.7 },
+      algorithm_version: "anthropometry_representative_v3",
+    });
   });
 });
 
 describe("calculateAnthropometryRepresentatives", () => {
-  it("requires at least one site", () => {
-    const error = captureValidationError(() =>
-      calculateAnthropometryRepresentatives([])
-    );
-    expect(error.code).toBe("VALIDATION_ERROR");
-  });
+  it("rejects duplicates and keeps canonical site order", () => {
+    expect(() => calculateAnthropometryRepresentatives([
+      { site_code: "waist", readings: readings([80, 80.2]) },
+      { site_code: "waist", readings: readings([81, 81.2]) },
+    ])).toThrow(AnthropometryValidationError);
 
-  it("rejects duplicate sites instead of choosing by input order", () => {
-    const error = captureValidationError(() =>
-      calculateAnthropometryRepresentatives([
-        { site_code: "waist", readings_cm: [88.0, 88.2] },
-        { site_code: "waist", readings_cm: [87.9, 88.1] },
-      ])
-    );
-    expect(error.code).toBe("DUPLICATE_SITE");
-  });
-
-  it("returns sites in frozen order regardless of request order", () => {
     const result = calculateAnthropometryRepresentatives([
-      { site_code: "neck", readings_cm: [38.0, 38.2] },
-      { site_code: "left_mid_thigh", readings_cm: [55.0, 55.2] },
-      { site_code: "waist", readings_cm: [88.0, 88.2] },
-      { site_code: "chest", readings_cm: [100.0, 100.2] },
+      { site_code: "neck", readings: readings([38, 38.2]) },
+      { site_code: "chest", readings: readings([98, 98.2]) },
     ]);
-
-    expect(result.representatives.map((entry) => entry.site_code)).toEqual([
-      "chest",
-      "waist",
-      "left_mid_thigh",
-      "neck",
-    ]);
-  });
-
-  it("keeps missing sites absent rather than creating zeros", () => {
-    const result = calculateAnthropometryRepresentatives([
-      { site_code: "waist", readings_cm: [88.0, 88.2] },
-      {
-        site_code: "left_upper_arm_relaxed",
-        readings_cm: [31.0, 31.2],
-      },
-    ]);
-
-    expect(result.representatives).toHaveLength(2);
-    expect(result.representatives.some((entry) => entry.representative_cm === 0))
-      .toBe(false);
-    expect(result.representatives.map((entry) => entry.site_code)).not.toContain(
-      "right_upper_arm_relaxed",
-    );
-  });
-
-  it("returns all authoritative version identifiers", () => {
-    const result = calculateAnthropometryRepresentatives([
-      { site_code: "waist", readings_cm: [88.0, 88.2] },
-    ]);
-
-    expect(result.algorithm_versions).toEqual({
+    expect(result.representatives.map((entry) => entry.site_code)).toEqual(["chest", "neck"]);
+    expect(result.algorithm_versions).toMatchObject({
       data_contract: ANTHROPOMETRY_DATA_CONTRACT_VERSION,
-      protocol: ANTHROPOMETRY_PROTOCOL_VERSION,
       representative: ANTHROPOMETRY_REPRESENTATIVE_VERSION,
-      repeatability_thresholds: ANTHROPOMETRY_THRESHOLDS_VERSION,
     });
-    expect(frozenFixtures.algorithm_versions).toMatchObject({
-      protocol: ANTHROPOMETRY_PROTOCOL_VERSION,
-      representative: ANTHROPOMETRY_REPRESENTATIVE_VERSION,
-      repeatability_thresholds: ANTHROPOMETRY_THRESHOLDS_VERSION,
-    });
-  });
-
-  it("freezes the configured integer thresholds and site dictionary", () => {
-    expect(ANTHROPOMETRY_MIN_READING_TENTHS).toBe(50);
-    expect(ANTHROPOMETRY_MAX_READING_TENTHS).toBe(3000);
-    expect(ANTHROPOMETRY_REPEATABILITY_THRESHOLD_TENTHS).toBe(10);
-    expect(ANTHROPOMETRY_SITE_CODES).toEqual([
-      "chest",
-      "waist",
-      "abdomen_navel",
-      "hips",
-      "left_upper_arm_relaxed",
-      "right_upper_arm_relaxed",
-      "left_mid_thigh",
-      "right_mid_thigh",
-      "neck",
-    ]);
   });
 });

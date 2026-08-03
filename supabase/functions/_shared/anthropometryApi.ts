@@ -3,8 +3,12 @@ import {
   ANTHROPOMETRY_MAX_READING_TENTHS,
   ANTHROPOMETRY_MIN_READING_TENTHS,
   AnthropometryValidationError,
-  type AnthropometrySiteInput,
 } from "./anthropometry.ts";
+
+export interface AnthropometryRawSiteInput {
+  site_code: string;
+  readings_cm: number[];
+}
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SITE_ORDER = new Map<string, number>(
@@ -35,13 +39,13 @@ export function normalizeNotes(value: unknown): string | null {
   return notes || null;
 }
 
-export function normalizeSites(value: unknown): AnthropometrySiteInput[] {
+export function normalizeSites(value: unknown): AnthropometryRawSiteInput[] {
   if (!Array.isArray(value)) {
     throw new AnthropometryValidationError("VALIDATION_ERROR", "sites must be an array");
   }
 
   const seen = new Set<string>();
-  const sites: AnthropometrySiteInput[] = value.map((raw) => {
+  const sites: AnthropometryRawSiteInput[] = value.map((raw) => {
     if (!raw || typeof raw !== "object") {
       throw new AnthropometryValidationError("VALIDATION_ERROR", "Each site must be an object");
     }
@@ -109,9 +113,10 @@ export function normalizeSites(value: unknown): AnthropometrySiteInput[] {
   );
 }
 
-export function flattenReadings(sites: readonly AnthropometrySiteInput[]) {
+export function flattenReadings(sites: readonly AnthropometryRawSiteInput[]) {
   return sites.flatMap((site) =>
     site.readings_cm.map((valueCm, index) => ({
+      id: crypto.randomUUID(),
       site_code: site.site_code,
       reading_number: index + 1,
       value_cm: valueCm,

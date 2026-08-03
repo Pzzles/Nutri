@@ -312,6 +312,29 @@ describe("anthropometry_weight_comparison_v1 frozen fixtures", () => {
     expect(comparison.description).toContain("abdomen at navel");
   });
 
+  it("keeps high-variability points visible but excludes them from cross-signal interpretation", () => {
+    const start = point("start", "2026-07-01T06:00:00Z", "waist", 90);
+    const end = {
+      ...point("end", "2026-08-01T06:00:00Z", "waist", 87),
+      quality: "high_variability" as const,
+      eligible_for_interpretation: false,
+    };
+    const series = buildAnthropometrySeries([start, end]);
+    expect(series[0].points).toHaveLength(2);
+    const comparison = buildWeightComparison(series, trendFromFixture({
+      status: "usable",
+      confidence: "high",
+      trend_points: [
+        { measured_at: start.measured_at, trend_weight_kg: 80 },
+        { measured_at: end.measured_at, trend_weight_kg: 79 },
+      ],
+    }));
+    expect(comparison).toMatchObject({
+      eligible: false,
+      reason_codes: ["circumference_repeatability_warning"],
+    });
+  });
+
   it("returns all frozen versions and display-only limitations", () => {
     const result = buildAnthropometryProgress([], null);
     expect(result.algorithm_versions).toMatchObject({

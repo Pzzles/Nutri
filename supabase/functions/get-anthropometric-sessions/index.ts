@@ -94,10 +94,10 @@ Deno.serve(async (req) => {
     if (ids.length > 0) {
       const [readingsResult, representativesResult] = await Promise.all([
         service.from("anthropometric_readings")
-          .select("session_id, site_code, reading_number, value_cm").in("session_id", ids)
+          .select("id, session_id, site_code, reading_number, value_cm").in("session_id", ids)
           .order("site_code").order("reading_number"),
         service.from("anthropometric_representatives").select(
-          "session_id, site_code, representative_cm, method, reading_count, initial_pair_difference_cm, all_readings_range_cm, quality, quality_flags, algorithm_version, created_at",
+          "session_id, site_code, representative_cm, method, reading_count, initial_pair_difference_cm, all_readings_range_cm, quality, quality_flags, algorithm_version, source_reading_ids, selected_reading_indices, unselected_reading_id, selected_pair_spread_cm, pairwise_differences, warning_codes, eligible_for_interpretation, quality_acknowledged_at, quality_acknowledgement_version, created_at",
         ).in("session_id", ids)
           .order("site_code"),
       ]);
@@ -131,6 +131,9 @@ Deno.serve(async (req) => {
           representative_cm: Number(representative.representative_cm),
           initial_pair_difference_cm: Number(representative.initial_pair_difference_cm),
           all_readings_range_cm: Number(representative.all_readings_range_cm),
+          selected_pair_spread_cm: representative.selected_pair_spread_cm == null
+            ? null
+            : Number(representative.selected_pair_spread_cm),
         }));
       return { ...session, readings: sessionReadings, representatives: sessionRepresentatives };
     });
