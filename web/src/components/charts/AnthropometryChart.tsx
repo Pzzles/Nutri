@@ -54,6 +54,12 @@ function ChartTooltip({
       {point.source.quality === "repeatability_warning" && (
         <p className="mt-1 text-amber-600 dark:text-amber-300">Repeatability note</p>
       )}
+      {point.source.quality === "pair_agree_with_isolated_reading" && (
+        <p className="mt-1 text-amber-600 dark:text-amber-300">Isolated reading excluded</p>
+      )}
+      {point.source.quality === "high_variability" && (
+        <p className="mt-1 text-amber-600 dark:text-amber-300">Low confidence; interpretation ineligible</p>
+      )}
     </div>
   );
 }

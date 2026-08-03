@@ -102,6 +102,44 @@ describe("AnthropometryTrends", () => {
     expect(screen.getByText(/value retained with a repeatability note/i)).toBeVisible();
   });
 
+  it("shows v3 quality, eligibility, selected indices, version, and expanded raw readings", async () => {
+    mockGetProgress.mockResolvedValue({
+      ...RESPONSE,
+      series: [{
+        site_code: "waist",
+        points: [{
+          session_id: "v3-low",
+          site_code: "waist",
+          measured_at: "2026-08-02T06:00:00Z",
+          logged_date: "2026-08-02",
+          representative_cm: 81,
+          quality: "high_variability",
+          selected_reading_indices: [1, 2],
+          selected_pair_spread_cm: 2,
+          warning_codes: ["no_pair_within_repeatability_threshold"],
+          eligible_for_interpretation: false,
+          algorithm_version: "anthropometry_representative_v3",
+          raw_readings: [
+            { id: "r1", reading_index: 1, value_cm: 80 },
+            { id: "r2", reading_index: 2, value_cm: 82 },
+            { id: "r3", reading_index: 3, value_cm: 84.5 },
+          ],
+        }],
+        previous_change: null,
+        since_first_change: null,
+      }],
+      weight_comparison: null,
+    });
+    const user = userEvent.setup();
+    render(<AnthropometryTrends unit="cm" />);
+    expect(await screen.findByText(/low confidence; excluded from progress interpretation/i)).toBeVisible();
+    await user.click(screen.getByText(/raw readings and calculation provenance/i));
+    expect(screen.getByText("1: 80.0 cm · 2: 82.0 cm · 3: 84.5 cm")).toBeVisible();
+    expect(screen.getByText("1 and 2")).toBeVisible();
+    expect(screen.getByText("anthropometry_representative_v3")).toBeVisible();
+    expect(screen.getByText("No")).toBeVisible();
+  });
+
   it("shows both numeric changes without inventing a sentence for a stable-band pattern", async () => {
     mockGetProgress.mockResolvedValue({
       ...RESPONSE,

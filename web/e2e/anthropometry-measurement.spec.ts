@@ -43,9 +43,9 @@ function savedResponse(status: "draft" | "finalized", sites: unknown[] = []) {
     sites,
     replayed: false,
     algorithm_versions: {
-      data_contract: "anthropometry_data_contract_v2",
+      data_contract: "anthropometry_data_contract_v3",
       protocol: "anthropometry_protocol_v1",
-      representative: status === "finalized" ? "anthropometry_representative_v2" : null,
+      representative: status === "finalized" ? "anthropometry_representative_v3" : null,
       repeatability_thresholds:
         status === "finalized" ? "anthropometry_repeatability_thresholds_v2" : null,
     },
@@ -73,13 +73,17 @@ test("mobile guided circuit completes with an accessible third-reading warning",
     await fulfill(route, savedResponse("finalized", [{
       site_code: "waist",
       readings_cm: [80, 81.2, 80.5],
-      representative_cm: 80.5,
-      method: "median_of_three",
+      representative_cm: 80.25,
+      method: "mean_of_closest_pair",
       reading_count: 3,
       initial_pair_difference_cm: 1.2,
       all_readings_range_cm: 1.2,
-      quality: "repeatability_warning",
-      quality_flags: ["initial_pair_exceeds_repeatability_threshold"],
+      quality: "pair_agree",
+      quality_flags: [],
+      selected_reading_indices: [1, 3],
+      selected_pair_spread_cm: 0.5,
+      warning_codes: [],
+      eligible_for_interpretation: true,
     }]));
   });
 
@@ -109,8 +113,7 @@ test("mobile guided circuit completes with an accessible third-reading warning",
   await expect(page.getByRole("heading", { name: /check your raw readings/i })).toBeVisible();
   await page.getByRole("button", { name: /Finalize session/i }).click();
   await expect(page.getByRole("heading", { name: /session finalized/i })).toBeVisible();
-  await expect(page.getByText("80.5 cm")).toBeVisible();
-  await expect(page.getByText(/measurement technique or normal variation/i)).toBeVisible();
+  await expect(page.getByText("80.3 cm")).toBeVisible();
   expect(draftBodies.length).toBe(4);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });

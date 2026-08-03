@@ -117,13 +117,34 @@ export interface AnthropometrySitePayload {
 }
 
 export interface AnthropometrySavedSite extends AnthropometrySitePayload {
+  raw_readings?: Array<{ id: string; reading_index: number; value_cm: number }>;
   representative_cm?: number;
-  method?: "mean_of_two" | "median_of_three";
+  method?: "mean_of_two" | "median_of_three" | "mean_of_closest_pair";
   reading_count?: 2 | 3;
   initial_pair_difference_cm?: number;
   all_readings_range_cm?: number;
-  quality?: "within_repeatability_threshold" | "repeatability_warning";
+  quality?: AnthropometryQuality;
   quality_flags?: string[];
+  source_reading_ids?: string[] | null;
+  selected_reading_indices?: number[] | null;
+  unselected_reading_id?: string | null;
+  selected_pair_spread_cm?: number | null;
+  pairwise_differences?: { d12: number; d13: number | null; d23: number | null } | null;
+  warning_codes?: string[] | null;
+  eligible_for_interpretation?: boolean | null;
+  quality_acknowledged_at?: string | null;
+  quality_acknowledgement_version?: string | null;
+  algorithm_version?: string;
+}
+
+export interface AnthropometryRepresentativePreview extends Omit<AnthropometrySavedSite, "readings_cm"> {
+  site_code: AnthropometrySiteCode;
+  representative_cm: number;
+  selected_reading_indices: number[];
+  selected_pair_spread_cm: number;
+  warning_codes: string[];
+  eligible_for_interpretation: boolean;
+  quality: AnthropometryQuality;
 }
 
 export interface AnthropometrySaveResponse {
@@ -135,6 +156,7 @@ export interface AnthropometrySaveResponse {
     finalized_at: string | null;
   };
   sites: AnthropometrySavedSite[];
+  previews?: AnthropometryRepresentativePreview[];
   replayed: boolean;
   algorithm_versions: {
     data_contract: string;
@@ -146,7 +168,10 @@ export interface AnthropometrySaveResponse {
 
 export type AnthropometryQuality =
   | "within_repeatability_threshold"
-  | "repeatability_warning";
+  | "repeatability_warning"
+  | "pair_agree"
+  | "pair_agree_with_isolated_reading"
+  | "high_variability";
 
 export interface AnthropometryProgressPoint {
   session_id: string;
@@ -155,6 +180,12 @@ export interface AnthropometryProgressPoint {
   logged_date: string;
   representative_cm: number;
   quality: AnthropometryQuality;
+  selected_reading_indices?: number[] | null;
+  selected_pair_spread_cm?: number | null;
+  warning_codes?: string[] | null;
+  eligible_for_interpretation?: boolean | null;
+  algorithm_version?: string | null;
+  raw_readings?: Array<{ id: string; reading_index: number; value_cm: number }>;
 }
 
 export interface AnthropometryChange {
@@ -227,6 +258,11 @@ interface SessionRequestBase {
   sites: AnthropometrySitePayload[];
 }
 
+export interface HighVariabilityAcknowledgement {
+  site_code: AnthropometrySiteCode;
+  acknowledged: true;
+}
+
 export function saveAnthropometryDraft(input: SessionRequestBase) {
   return callFunction<AnthropometrySaveResponse>("save-anthropometric-session", {
     ...input,
@@ -236,7 +272,11 @@ export function saveAnthropometryDraft(input: SessionRequestBase) {
 }
 
 export function finalizeAnthropometrySession(
-  input: SessionRequestBase & { measured_at: string; idempotency_key: string },
+  input: SessionRequestBase & {
+    measured_at: string;
+    idempotency_key: string;
+    high_variability_acknowledgements?: HighVariabilityAcknowledgement[];
+  },
 ) {
   return callFunction<AnthropometrySaveResponse>("finalize-anthropometric-session", {
     ...input,
@@ -275,18 +315,6 @@ export function needsThirdReading(readingsCm: readonly number[]): boolean {
   const rightTenths = Math.round(readingsCm[1] * 10);
   return Math.abs(leftTenths - rightTenths) >
     ANTHROPOMETRY_REPEATABILITY_THRESHOLD_CM * 10;
-}
-
-export function hasRepeatablePair(readingsCm: readonly number[]): boolean {
-  if (readingsCm.length !== 3) return false;
-  const tenths = readingsCm.map((reading) => Math.round(reading * 10));
-  return [
-    Math.abs(tenths[0] - tenths[1]),
-    Math.abs(tenths[0] - tenths[2]),
-    Math.abs(tenths[1] - tenths[2]),
-  ].some((difference) =>
-    difference <= ANTHROPOMETRY_REPEATABILITY_THRESHOLD_CM * 10
-  );
 }
 
 export function inputToCentimetres(

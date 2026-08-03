@@ -8,12 +8,12 @@ import {
   finalizeAnthropometrySession,
   formatMeasurement,
   formatMeasurementInput,
-  hasRepeatablePair,
   inputToCentimetres,
   needsThirdReading,
   saveAnthropometryDraft,
   siteDefinition,
   type AnthropometrySaveResponse,
+  type AnthropometryRepresentativePreview,
   type AnthropometrySiteCode,
   type AnthropometrySitePayload,
   type MeasurementUnit,
@@ -53,7 +53,9 @@ export default function Measurements() {
   const [resolutionSites, setResolutionSites] = useState<AnthropometrySiteCode[]>([]);
   const [retakeSite, setRetakeSite] = useState<AnthropometrySiteCode | null>(null);
   const [retakeResumeIndex, setRetakeResumeIndex] = useState<number | null>(null);
-  const [lowConfidenceSite, setLowConfidenceSite] = useState<AnthropometrySiteCode | null>(null);
+  const [qualityDecision, setQualityDecision] = useState<AnthropometryRepresentativePreview | null>(null);
+  const [qualityConfirmed, setQualityConfirmed] = useState(false);
+  const [acknowledgedSites, setAcknowledgedSites] = useState<AnthropometrySiteCode[]>([]);
   const [readingInput, setReadingInput] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -156,7 +158,9 @@ export default function Measurements() {
       setResolutionSites([]);
       setRetakeSite(null);
       setRetakeResumeIndex(null);
-      setLowConfidenceSite(null);
+      setQualityDecision(null);
+      setQualityConfirmed(false);
+      setAcknowledgedSites([]);
       setStatusMessage("Draft started. First reading circuit.");
       setPhase("measure");
     } catch (cause) {
@@ -175,6 +179,7 @@ export default function Measurements() {
       sites: payloadFor(nextReadings),
     });
     if (!sessionId) setSessionId(result.session.id);
+    return result;
   }
 
   async function submitReading(event: React.FormEvent) {
@@ -220,15 +225,24 @@ export default function Measurements() {
 
     setBusy(true);
     try {
-      await persistDraft(nextReadings);
+      const draftResult = await persistDraft(nextReadings);
       setReadings(nextReadings);
       setReadingInput("");
 
-      if (circuit === 3 && !hasRepeatablePair(nextSiteReadings)) {
+      const preview = circuit === 3
+        ? draftResult.previews?.find((entry) => entry.site_code === currentSiteCode)
+        : undefined;
+      if (preview && (
+        preview.quality === "pair_agree_with_isolated_reading" ||
+        preview.quality === "high_variability"
+      )) {
         if (!retakeSite) setRetakeResumeIndex(siteIndex);
-        setLowConfidenceSite(currentSiteCode);
+        setQualityDecision(preview);
+        setQualityConfirmed(false);
         setStatusMessage(
-          `${siteDefinition(currentSiteCode).label} has low measurement confidence and must be retaken.`,
+          preview.quality === "high_variability"
+            ? `${siteDefinition(currentSiteCode).label} has low measurement confidence. Choose whether to retake or explicitly save it.`
+            : `${siteDefinition(currentSiteCode).label} has one isolated reading. Choose whether to retake or continue with the agreeing pair.`,
         );
         return;
       }
@@ -283,16 +297,18 @@ export default function Measurements() {
     }
   }
 
-  async function retakeLowConfidenceSite() {
-    if (busy || !lowConfidenceSite) return;
-    const siteCode = lowConfidenceSite;
+  async function retakeQualityDecisionSite() {
+    if (busy || !qualityDecision) return;
+    const siteCode = qualityDecision.site_code;
     const nextReadings: ReadingState = { ...readings, [siteCode]: [] };
     setBusy(true);
     setError(null);
     try {
       await persistDraft(nextReadings);
       setReadings(nextReadings);
-      setLowConfidenceSite(null);
+      setQualityDecision(null);
+      setQualityConfirmed(false);
+      setAcknowledgedSites((current) => current.filter((code) => code !== siteCode));
       setRetakeSite(siteCode);
       setCircuit(1);
       setSiteIndex(0);
@@ -303,6 +319,36 @@ export default function Measurements() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function continueAfterQualityDecision() {
+    if (!qualityDecision) return;
+    const siteCode = qualityDecision.site_code;
+    if (qualityDecision.quality === "high_variability") {
+      if (!qualityConfirmed) return;
+      setAcknowledgedSites((current) => current.includes(siteCode) ? current : [...current, siteCode]);
+    }
+    setQualityDecision(null);
+    setQualityConfirmed(false);
+    setRetakeSite(null);
+    setRetakeResumeIndex(null);
+    if (retakeResumeIndex != null && retakeResumeIndex < resolutionSites.length - 1) {
+      setCircuit(3);
+      setSiteIndex(retakeResumeIndex + 1);
+      setStatusMessage("Decision saved. Continue the resolution circuit.");
+    } else {
+      setStatusMessage("All required readings are saved. Review your session.");
+      setPhase("review");
+    }
+  }
+
+  function addOptionalThirdReading(siteCode: AnthropometrySiteCode) {
+    setResolutionSites([siteCode]);
+    setRetakeResumeIndex(0);
+    setCircuit(3);
+    setSiteIndex(0);
+    setPhase("measure");
+    setStatusMessage(`Add an optional third reading for ${siteDefinition(siteCode).label}.`);
   }
 
   function goBack() {
@@ -356,6 +402,10 @@ export default function Measurements() {
         notes: notes.trim() || undefined,
         idempotency_key: idempotencyKey,
         sites: payloadFor(readings),
+        high_variability_acknowledgements: acknowledgedSites.map((site_code) => ({
+          site_code,
+          acknowledged: true as const,
+        })),
       });
       setCompleted(result);
       setStatusMessage("Measurement session finalized.");
@@ -376,7 +426,9 @@ export default function Measurements() {
     setResolutionSites([]);
     setRetakeSite(null);
     setRetakeResumeIndex(null);
-    setLowConfidenceSite(null);
+    setQualityDecision(null);
+    setQualityConfirmed(false);
+    setAcknowledgedSites([]);
     setReadingInput("");
     setNotes("");
     setPrepared(false);
@@ -467,7 +519,7 @@ export default function Measurements() {
         />
       )}
 
-      {phase === "measure" && currentSite && !lowConfidenceSite && (
+      {phase === "measure" && currentSite && !qualityDecision && (
         <MeasurementPanel
           site={currentSite}
           circuit={circuit}
@@ -487,14 +539,18 @@ export default function Measurements() {
         />
       )}
 
-      {phase === "measure" && lowConfidenceSite && (
-        <LowConfidencePanel
-          site={siteDefinition(lowConfidenceSite)}
-          readings={readings[lowConfidenceSite] ?? []}
+      {phase === "measure" && qualityDecision && (
+        <QualityDecisionPanel
+          preview={qualityDecision}
+          site={siteDefinition(qualityDecision.site_code)}
+          readings={readings[qualityDecision.site_code] ?? []}
           unit={unit}
           busy={busy}
           error={error}
-          onRetake={() => void retakeLowConfidenceSite()}
+          confirmed={qualityConfirmed}
+          onConfirmedChange={setQualityConfirmed}
+          onRetake={() => void retakeQualityDecisionSite()}
+          onContinue={continueAfterQualityDecision}
           onDiscard={() => setDiscardConfirm(true)}
         />
       )}
@@ -509,6 +565,7 @@ export default function Measurements() {
           busy={busy}
           error={error}
           onNotesChange={setNotes}
+          onAddThird={addOptionalThirdReading}
           onBack={backFromReview}
           onFinish={() => void finishSession()}
           onDiscard={() => setDiscardConfirm(true)}
@@ -716,7 +773,9 @@ function MeasurementPanel(props: MeasurementPanelProps) {
 
         {props.circuit === 3 && (
           <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100" role="status">
-            The first two readings were more than 1.0 cm apart. Tape position, posture, breathing and normal measurement variation can contribute. Take one more reading at the same landmark; Nutri will use the median of all three.
+            {props.isRetake
+              ? "Take one more reading at the same landmark."
+              : "The first two readings differed, or you chose an optional check. Tape position, posture, breathing and normal measurement variation can contribute."} Nutri will preserve all three and use the mean of the closest pair.
           </div>
         )}
 
@@ -778,17 +837,22 @@ function MeasurementPanel(props: MeasurementPanelProps) {
   );
 }
 
-interface LowConfidencePanelProps {
+interface QualityDecisionPanelProps {
+  preview: AnthropometryRepresentativePreview;
   site: (typeof ANTHROPOMETRY_SITES)[number];
   readings: number[];
   unit: MeasurementUnit;
   busy: boolean;
   error: string | null;
+  confirmed: boolean;
+  onConfirmedChange: (value: boolean) => void;
   onRetake: () => void;
+  onContinue: () => void;
   onDiscard: () => void;
 }
 
-function LowConfidencePanel(props: LowConfidencePanelProps) {
+function QualityDecisionPanel(props: QualityDecisionPanelProps) {
+  const highVariability = props.preview.quality === "high_variability";
   return (
     <section
       className="mt-6 rounded-xl border border-border bg-surface p-4 sm:p-6"
@@ -796,20 +860,34 @@ function LowConfidencePanel(props: LowConfidencePanelProps) {
       aria-live="polite"
     >
       <p className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-100">
-        Measurement confidence: Low
+        {highVariability ? "Measurement confidence: Low" : "One reading was isolated"}
       </p>
       <h2 id="low-confidence-heading" className="mt-3 font-display text-2xl font-semibold text-ink">
-        Retake {props.site.label}
+        Review {props.site.label}
       </h2>
       <p className="mt-2 text-sm leading-6 text-muted">
-        No two readings were within 1.0 cm of each other. Normal differences in tape position, posture, breathing, or reading technique can cause this. Nutri will not calculate or finalize this site from these readings.
+        {highVariability
+          ? "No pair was within 1.0 cm. Tape position, posture, breathing, or ordinary measurement variation may have contributed. You can retake this site or explicitly save the closest-pair value with low confidence."
+          : `Readings ${props.preview.selected_reading_indices?.join(" and ")} formed the closest agreeing pair. The remaining reading is preserved but excluded from the representative. You may retake the site or continue with the agreeing pair.`}
       </p>
       <p className="mt-4 rounded-lg bg-background p-3 text-sm text-muted">
         Recorded: {props.readings.map((value) => formatMeasurement(value, props.unit)).join(" · ")}
       </p>
       <p className="mt-4 text-sm leading-6 text-muted">
-        Recheck the named landmark, let the tape lie flat and snug without compression, then take a fresh set for this site only.
+        Server representative preview: {formatMeasurement(props.preview.representative_cm, props.unit)} from readings {props.preview.selected_reading_indices?.join(" and ")}.
       </p>
+
+      {highVariability && (
+        <label className="mt-4 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100">
+          <input
+            type="checkbox"
+            checked={props.confirmed}
+            onChange={(event) => props.onConfirmedChange(event.target.checked)}
+            className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
+          />
+          <span>I understand this value has low measurement confidence and will not be used for progress interpretation.</span>
+        </label>
+      )}
 
       {props.error && <div className="mt-4"><ErrorMessage message={props.error} /></div>}
 
@@ -821,6 +899,14 @@ function LowConfidencePanel(props: LowConfidencePanelProps) {
           className="min-h-12 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-50"
         >
           {props.busy ? "Preparing retake…" : "Retake this site"}
+        </button>
+        <button
+          type="button"
+          onClick={props.onContinue}
+          disabled={props.busy || (highVariability && !props.confirmed)}
+          className="min-h-12 rounded-lg border border-border px-5 py-3 text-sm font-semibold text-ink hover:bg-background disabled:opacity-40"
+        >
+          {highVariability ? "Save with low confidence" : "Continue with agreeing pair"}
         </button>
         <button type="button" onClick={props.onDiscard} disabled={props.busy} className="min-h-12 rounded-lg px-4 py-3 text-sm font-medium text-muted hover:text-ink disabled:opacity-50 sm:ml-auto">
           Discard draft
@@ -839,6 +925,7 @@ interface ReviewPanelProps {
   busy: boolean;
   error: string | null;
   onNotesChange: (value: string) => void;
+  onAddThird: (siteCode: AnthropometrySiteCode) => void;
   onBack: () => void;
   onFinish: () => void;
   onDiscard: () => void;
@@ -862,6 +949,16 @@ function ReviewPanel(props: ReviewPanelProps) {
                 <dd className="mt-1 text-sm text-muted sm:mt-0 sm:text-right">
                   <span>{siteReadings.map((value) => formatMeasurement(value, props.unit)).join(" · ")}</span>
                   {needsThird && <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">Third reading used because the first pair differed by more than 1.0 cm.</span>}
+                  {siteReadings.length === 2 && (
+                    <button
+                      type="button"
+                      onClick={() => props.onAddThird(code)}
+                      disabled={props.busy}
+                      className="mt-2 block min-h-11 text-sm font-semibold text-primary underline-offset-2 hover:underline sm:ml-auto"
+                    >
+                      Add optional third reading
+                    </button>
+                  )}
                 </dd>
               </div>
             );
@@ -923,6 +1020,16 @@ function CompletedPanel({ result, unit, onNewSession, onOpenTrends }: { result: 
             {site.quality === "repeatability_warning" && (
               <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
                 The first readings differed. The value is kept, with a quality note because measurement technique or normal variation may have contributed.
+              </p>
+            )}
+            {site.quality === "pair_agree_with_isolated_reading" && (
+              <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                One reading was preserved but excluded. Readings {site.selected_reading_indices?.join(" and ")} supplied the representative.
+              </p>
+            )}
+            {site.quality === "high_variability" && (
+              <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                Saved with explicit low-confidence acknowledgement. This value is ineligible for progress interpretation.
               </p>
             )}
           </div>

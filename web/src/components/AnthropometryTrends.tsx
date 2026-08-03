@@ -222,7 +222,8 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
           <h2 id="measurement-history-heading" className="font-display text-xl font-semibold text-ink">{selectedDefinition.label} history</h2>
           <ol className="mt-3 divide-y divide-border">
             {[...selectedSeries.points].reverse().map((point) => (
-              <li key={`${point.session_id}-${point.site_code}`} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <li key={`${point.session_id}-${point.site_code}`} className="py-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium text-ink">{formatDate(point.measured_at)}</p>
                   <p className="text-xs text-muted">Finalized representative</p>
@@ -232,7 +233,26 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
                   {point.quality === "repeatability_warning" && (
                     <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Readings varied; value retained with a repeatability note.</p>
                   )}
+                  {point.quality === "pair_agree_with_isolated_reading" && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">One isolated reading was preserved and excluded.</p>
+                  )}
+                  {point.quality === "high_variability" && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Low confidence; excluded from progress interpretation.</p>
+                  )}
                 </div>
+                </div>
+                <details className="mt-2 rounded-lg bg-background p-2 text-xs text-muted">
+                  <summary className="min-h-11 cursor-pointer py-3 font-medium text-ink">Raw readings and calculation provenance</summary>
+                  <dl className="grid gap-2 pb-2 sm:grid-cols-2">
+                    <div><dt>Raw readings</dt><dd>{point.raw_readings?.map((reading) => `${reading.reading_index}: ${formatMeasurement(reading.value_cm, unit)}`).join(" · ") || "Unavailable for this historical row"}</dd></div>
+                    <div><dt>Selected readings</dt><dd>{point.selected_reading_indices?.join(" and ") ?? "Legacy calculation"}</dd></div>
+                    <div><dt>Quality</dt><dd>{point.quality.replace(/_/g, " ")}</dd></div>
+                    <div><dt>Selected-pair spread</dt><dd>{point.selected_pair_spread_cm == null ? "Legacy calculation" : formatMeasurement(point.selected_pair_spread_cm, unit)}</dd></div>
+                    <div><dt>Warnings</dt><dd>{point.warning_codes?.map((code) => code.replace(/_/g, " ")).join(", ") || "None"}</dd></div>
+                    <div><dt>Interpretation eligible</dt><dd>{point.eligible_for_interpretation == null ? "Legacy rule" : point.eligible_for_interpretation ? "Yes" : "No"}</dd></div>
+                    <div className="sm:col-span-2"><dt>Algorithm</dt><dd className="font-mono">{point.algorithm_version ?? "Legacy calculation"}</dd></div>
+                  </dl>
+                </details>
               </li>
             ))}
           </ol>
