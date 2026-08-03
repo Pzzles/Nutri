@@ -1,6 +1,7 @@
 // Phase 10, Gate 3 — real Supabase integration tests.
 // Requires: supabase start + supabase functions serve
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import pg from "pg";
 import {
   ANON_KEY,
   SUPABASE_URL,
@@ -37,6 +38,8 @@ let tokenA = "";
 let tokenB = "";
 let clientA: Awaited<ReturnType<typeof signInAs>>["client"];
 let clientB: Awaited<ReturnType<typeof signInAs>>["client"];
+const DB_URL = process.env.SUPABASE_DB_URL ??
+  "postgresql://postgres:postgres@127.0.0.1:54422/postgres";
 
 async function tokenFor(client: typeof clientA): Promise<string> {
   const { data, error } = await client.auth.getSession();
@@ -575,8 +578,8 @@ describe("draft and server-authoritative finalization", () => {
     const { data: rlsUpdateRows, error: rlsUpdateError } = await clientA
       .from("anthropometric_sessions")
       .update({ notes: "changed" }).eq("id", sessionId).select("id");
-    expect(rlsUpdateError).toBeNull();
-    expect(rlsUpdateRows).toHaveLength(0);
+    expect(rlsUpdateError).toBeTruthy();
+    expect(rlsUpdateRows).toBeNull();
     const { error: privilegedUpdateError } = await svcClient()
       .from("anthropometric_sessions").update({ notes: "changed" }).eq("id", sessionId);
     expect(privilegedUpdateError).toBeTruthy();
@@ -611,49 +614,54 @@ describe("draft and server-authoritative finalization", () => {
   });
 
   it("keeps historical v2 values/version intact with explicitly unavailable v3 provenance", async () => {
-    const service = svcClient();
     const sessionId = crypto.randomUUID();
     const firstId = crypto.randomUUID();
     const secondId = crypto.randomUUID();
-    const { error: draftError } = await service.from("anthropometric_sessions").insert({
-      id: sessionId,
-      user_id: userIdA,
-      status: "draft",
-      measured_at: "2026-05-01T06:00:00Z",
-      data_contract_version: "anthropometry_data_contract_v2",
-      protocol_version: "anthropometry_protocol_v1",
-    });
-    if (draftError) throw draftError;
-    const { error: readingsError } = await service.from("anthropometric_readings").insert([
-      { id: firstId, session_id: sessionId, site_code: "neck", reading_number: 1, value_cm: 40 },
-      { id: secondId, session_id: sessionId, site_code: "neck", reading_number: 2, value_cm: 40.4 },
-    ]);
-    if (readingsError) throw readingsError;
-    const { error: finalError } = await service.from("anthropometric_sessions").update({
-      status: "finalized",
-      logged_date: "2026-05-01",
-      timezone: "Africa/Johannesburg",
-      representative_algorithm_version: "anthropometry_representative_v2",
-      thresholds_version: "anthropometry_repeatability_thresholds_v2",
-      idempotency_key: `legacy-v2-${Date.now()}`,
-      payload_hash: "legacy-v2-fixture",
-      finalized_at: new Date().toISOString(),
-    }).eq("id", sessionId);
-    if (finalError) throw finalError;
-    const { error: representativeError } = await service.from("anthropometric_representatives").insert({
-      session_id: sessionId,
-      site_code: "neck",
-      representative_cm: 40.2,
-      method: "mean_of_two",
-      reading_count: 2,
-      initial_pair_difference_cm: 0.4,
-      all_readings_range_cm: 0.4,
-      quality: "within_repeatability_threshold",
-      quality_flags: [],
-      algorithm_version: "anthropometry_representative_v2",
-    });
-    if (representativeError) throw representativeError;
+    const db = new pg.Client({ connectionString: DB_URL });
+    await db.connect();
+    try {
+      await db.query("BEGIN");
+      await db.query(
+        `INSERT INTO public.anthropometric_sessions
+          (id, user_id, status, measured_at, data_contract_version, protocol_version)
+         VALUES ($1, $2, 'draft', '2026-05-01T06:00:00Z',
+           'anthropometry_data_contract_v2', 'anthropometry_protocol_v1')`,
+        [sessionId, userIdA],
+      );
+      await db.query(
+        `INSERT INTO public.anthropometric_readings
+          (id, session_id, user_id, site_code, reading_number, value_cm)
+         VALUES ($1, $3, $4, 'neck', 1, 40), ($2, $3, $4, 'neck', 2, 40.4)`,
+        [firstId, secondId, sessionId, userIdA],
+      );
+      await db.query(
+        `UPDATE public.anthropometric_sessions SET status = 'finalized',
+           logged_date = '2026-05-01', timezone = 'Africa/Johannesburg',
+           representative_algorithm_version = 'anthropometry_representative_v2',
+           thresholds_version = 'anthropometry_repeatability_thresholds_v2',
+           idempotency_key = $2, payload_hash = 'legacy-v2-fixture', finalized_at = now()
+         WHERE id = $1 AND user_id = $3`,
+        [sessionId, `legacy-v2-${Date.now()}`, userIdA],
+      );
+      await db.query("SELECT set_config('app.anthropometry_finalizing_session', $1, true)", [sessionId]);
+      await db.query(
+        `INSERT INTO public.anthropometric_representatives
+          (session_id, user_id, site_code, representative_cm, method, reading_count,
+           initial_pair_difference_cm, all_readings_range_cm, quality, quality_flags,
+           algorithm_version)
+         VALUES ($1, $2, 'neck', 40.2, 'mean_of_two', 2, 0.4, 0.4,
+           'within_repeatability_threshold', '[]'::jsonb, 'anthropometry_representative_v2')`,
+        [sessionId, userIdA],
+      );
+      await db.query("COMMIT");
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      await db.end();
+    }
 
+    const service = svcClient();
     const { data, error } = await service.from("anthropometric_representatives")
       .select("representative_cm, quality, algorithm_version, source_reading_ids, selected_reading_indices, eligible_for_interpretation")
       .eq("session_id", sessionId).single();
@@ -730,6 +738,7 @@ describe("cross-user isolation", () => {
       "delete-anthropometric-session", tokenB, "DELETE", { session_id: privateSessionId },
     );
     expect(deletion.status).toBe(404);
+    expect(deletion.body.error?.code).toBe("SESSION_NOT_FOUND");
     const { data } = await svcClient().from("anthropometric_sessions")
       .select("id").eq("id", privateSessionId).single();
     expect(data?.id).toBe(privateSessionId);

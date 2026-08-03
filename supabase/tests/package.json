@@ -11,9 +11,11 @@
     "personas:destroy": "node scripts/authenticated-personas.mjs destroy"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "^2.45.0",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
+    "@types/pg": "^8.20.3",
     "vitest": "^1.6.1"
   }
 }
