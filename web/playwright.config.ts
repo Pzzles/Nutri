@@ -8,6 +8,11 @@ if (process.env.SUPABASE_URL) supabaseEnv.VITE_SUPABASE_URL = process.env.SUPABA
 if (process.env.SUPABASE_ANON_KEY) supabaseEnv.VITE_SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:5173";
 const vitePort = new URL(baseURL).port || "5173";
+const viteMode = process.env.E2E_VITE_MODE;
+if (viteMode && !/^[a-z0-9_-]+$/i.test(viteMode)) {
+  throw new Error("E2E_VITE_MODE contains unsupported characters.");
+}
+const viteModeArgument = viteMode ? ` --mode ${viteMode}` : "";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -37,7 +42,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run dev -- --port ${vitePort}`,
+    command: `npm run dev -- --port ${vitePort}${viteModeArgument}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

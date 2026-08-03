@@ -4,7 +4,11 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "personas:seed": "node scripts/authenticated-personas.mjs seed",
+    "personas:verify": "node scripts/authenticated-personas.mjs verify",
+    "personas:reset": "node scripts/authenticated-personas.mjs reset",
+    "personas:destroy": "node scripts/authenticated-personas.mjs destroy"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0"

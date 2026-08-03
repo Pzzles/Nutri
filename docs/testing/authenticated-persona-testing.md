@@ -2,12 +2,9 @@
 
 ## Status
 
-Deferred until the application has a real sign-in flow and a practical way to sign out or switch
-accounts.
-
-When that prerequisite is complete, this plan must be proposed again and implemented. It replaces
-the temporary anonymous-user workflow in `supabase/seeds/maintenance_personas_demo.sql` and
-`supabase/seeds/maintenance_personas_cleanup.sql` for end-to-end product testing.
+Implemented for Progress and Maintenance testing with eight accounts. See
+[`authenticated-progress-personas.md`](./authenticated-progress-personas.md) for the commands,
+fixture matrix, login selector, safeguards, and browser acceptance test.
 
 The anonymous scripts may remain useful for isolated backend inspection, but they are not the
 acceptance test for authenticated product behavior.
