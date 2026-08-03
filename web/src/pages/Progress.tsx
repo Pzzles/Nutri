@@ -6,9 +6,15 @@ import { GoalFeedbackCard } from "../components/GoalFeedbackCard";
 import Measurements from "./Measurements";
 
 type Tab = "goals" | "weight" | "measurements" | "maintenance" | "feedback";
+const PROGRESS_TABS: Tab[] = ["goals", "weight", "measurements", "maintenance", "feedback"];
+
+function initialTab(): Tab {
+  const requestedTab = new URLSearchParams(window.location.search).get("tab");
+  return PROGRESS_TABS.includes(requestedTab as Tab) ? requestedTab as Tab : "goals";
+}
 
 export default function Progress() {
-  const [tab, setTab] = useState<Tab>("goals");
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   function handleTabKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;

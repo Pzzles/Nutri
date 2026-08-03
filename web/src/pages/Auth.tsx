@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
+import {
+  TEST_PERSONAS,
+  TEST_PERSONA_CONFIGURATION_ERROR,
+} from "../lib/testPersonas";
 
 type AuthMode = "sign_in" | "sign_up";
 
@@ -8,8 +12,39 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [selectedPersonaId, setSelectedPersonaId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function handlePersonaSelect(personaId: string) {
+    setSelectedPersonaId(personaId);
+    setError(null);
+    if (!personaId) return;
+
+    const persona = TEST_PERSONAS.find((candidate) => candidate.id === personaId);
+    if (!persona) {
+      setError("That test persona is not configured.");
+      return;
+    }
+
+    const previousLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    setLoading(true);
+    window.history.replaceState(null, "", "/progress?tab=maintenance");
+
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: persona.email,
+        password: persona.password,
+      });
+      if (signInError) throw signInError;
+    } catch (err: unknown) {
+      window.history.replaceState(null, "", previousLocation);
+      setSelectedPersonaId("");
+      setError(err instanceof Error ? err.message : "Test persona sign-in failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,6 +118,37 @@ export default function Auth() {
             Create account
           </button>
         </div>
+
+        {mode === "sign_in" && TEST_PERSONAS.length > 0 && (
+          <div className="mt-5 rounded-lg border border-primary/30 bg-primary/5 p-3">
+            <label htmlFor="test-persona" className="block text-sm font-medium text-ink">
+              Test persona (development only)
+            </label>
+            <p className="mt-1 text-xs text-muted">
+              Selecting a persona signs in immediately and opens Progress → Maintenance.
+            </p>
+            <select
+              id="test-persona"
+              value={selectedPersonaId}
+              disabled={loading}
+              onChange={(event) => void handlePersonaSelect(event.target.value)}
+              className="mt-3 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+            >
+              <option value="">{loading ? "Signing in…" : "Choose a test persona"}</option>
+              {TEST_PERSONAS.map((persona) => (
+                <option key={persona.id} value={persona.id}>
+                  {persona.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {mode === "sign_in" && TEST_PERSONA_CONFIGURATION_ERROR && (
+          <p role="alert" className="mt-4 text-sm text-confidence-low">
+            Test persona setup is incomplete. Run the authenticated persona seed command again.
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           <label className="block">

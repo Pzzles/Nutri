@@ -1,0 +1,111 @@
+{
+  "suite_version": "authenticated_progress_personas_v1",
+  "history_days": 84,
+  "nutrition_window_days": 28,
+  "personas": [
+    {
+      "id": "steady_cut",
+      "selector_label": "Alex — steady cut",
+      "description": "Tall, heavier starting profile with consistent loss and high logging coverage.",
+      "profile": { "display_name": "[TEST] Alex — steady cut", "birth_date": "1988-04-18", "sex": "male", "height_cm": 184, "activity_level": "moderate", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "cut", "starting_weight_kg": 105.0, "target_weight_kg": 92.0, "target_change_kg_per_week": -0.55, "target_calories": 2450, "target_protein_g": 185, "target_carbs_g": 255, "target_fat_g": 75, "target_fibre_g": 34, "manual_maintenance_kcal": 3050 },
+      "weight": { "ending_weight_kg": 98.4, "cadence_days": 3, "noise_kg": [0.0, -0.18, 0.12, -0.08, 0.2, -0.1], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 2440, "complete_day_offsets": [1,2,3,4,5,6,8,9,10,11,12,13,15,16,17,18,19,20,22,23,24,25,26,27], "probably_complete_day_offsets": [7,21] },
+      "snapshot": { "age_years": 38, "activity_multiplier": 1.55, "fixture_bmr_kcal": 1960, "fixture_tdee_kcal": 3050 }
+    },
+    {
+      "id": "variable_cut",
+      "selector_label": "Bea — variable cut",
+      "description": "Shorter, lighter profile with gradual loss and noisier scale readings.",
+      "profile": { "display_name": "[TEST] Bea — variable cut", "birth_date": "1995-11-02", "sex": "female", "height_cm": 158, "activity_level": "light", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "cut", "starting_weight_kg": 67.8, "target_weight_kg": 61.0, "target_change_kg_per_week": -0.3, "target_calories": 1650, "target_protein_g": 120, "target_carbs_g": 175, "target_fat_g": 52, "target_fibre_g": 27, "manual_maintenance_kcal": 1980 },
+      "weight": { "ending_weight_kg": 64.5, "cadence_days": 4, "noise_kg": [0.0, 0.42, -0.3, 0.25, -0.38, 0.18], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 1680, "complete_day_offsets": [1,2,4,5,6,8,9,11,12,13,15,16,18,19,20,22,23,25,26,27], "probably_complete_day_offsets": [3,10,17,24] },
+      "snapshot": { "age_years": 30, "activity_multiplier": 1.375, "fixture_bmr_kcal": 1360, "fixture_tdee_kcal": 1980 }
+    },
+    {
+      "id": "stable_maintenance",
+      "selector_label": "Casey — stable maintenance",
+      "description": "Medium-height profile with stable weight and high logging coverage.",
+      "profile": { "display_name": "[TEST] Casey — stable maintenance", "birth_date": "1983-08-21", "sex": "female", "height_cm": 171, "activity_level": "moderate", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "maintenance", "starting_weight_kg": 72.2, "target_weight_kg": 72.2, "target_change_kg_per_week": 0, "target_calories": 2240, "target_protein_g": 125, "target_carbs_g": 270, "target_fat_g": 72, "target_fibre_g": 30, "manual_maintenance_kcal": 2240 },
+      "weight": { "ending_weight_kg": 72.1, "cadence_days": 3, "noise_kg": [0.0, 0.16, -0.12, 0.08, -0.2, 0.14], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 2250, "complete_day_offsets": [1,2,3,4,5,6,8,9,10,11,12,13,15,16,17,18,19,20,22,23,24,25,26,27], "probably_complete_day_offsets": [7,14] },
+      "snapshot": { "age_years": 42, "activity_multiplier": 1.55, "fixture_bmr_kcal": 1430, "fixture_tdee_kcal": 2240 }
+    },
+    {
+      "id": "maintenance_drift",
+      "selector_label": "Devon — maintenance drift",
+      "description": "Very tall, heavier profile with a sustained upward weight drift.",
+      "profile": { "display_name": "[TEST] Devon — maintenance drift", "birth_date": "1979-02-13", "sex": "male", "height_cm": 196, "activity_level": "light", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "maintenance", "starting_weight_kg": 116.0, "target_weight_kg": 116.0, "target_change_kg_per_week": 0, "target_calories": 3100, "target_protein_g": 190, "target_carbs_g": 365, "target_fat_g": 95, "target_fibre_g": 36, "manual_maintenance_kcal": 2920 },
+      "weight": { "ending_weight_kg": 119.0, "cadence_days": 3, "noise_kg": [0.0, -0.16, 0.2, -0.06, 0.12, -0.1], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 3130, "complete_day_offsets": [1,2,4,5,6,8,9,11,12,13,15,16,18,19,20,22,23,25,26,27], "probably_complete_day_offsets": [3,10,17,24] },
+      "snapshot": { "age_years": 47, "activity_multiplier": 1.375, "fixture_bmr_kcal": 2190, "fixture_tdee_kcal": 2920 }
+    },
+    {
+      "id": "steady_bulk",
+      "selector_label": "Ellis — steady bulk",
+      "description": "Average-height, lighter starting profile with consistent gain and high coverage.",
+      "profile": { "display_name": "[TEST] Ellis — steady bulk", "birth_date": "2000-06-09", "sex": "male", "height_cm": 175, "activity_level": "active", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "bulk", "starting_weight_kg": 68.8, "target_weight_kg": 75.0, "target_change_kg_per_week": 0.3, "target_calories": 2860, "target_protein_g": 150, "target_carbs_g": 390, "target_fat_g": 78, "target_fibre_g": 32, "manual_maintenance_kcal": 2530 },
+      "weight": { "ending_weight_kg": 72.5, "cadence_days": 3, "noise_kg": [0.0, 0.14, -0.1, 0.2, -0.16, 0.08], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 2840, "complete_day_offsets": [1,2,3,4,5,6,8,9,10,11,12,13,15,16,17,18,19,20,22,23,24,25,26,27], "probably_complete_day_offsets": [7,21] },
+      "snapshot": { "age_years": 26, "activity_multiplier": 1.725, "fixture_bmr_kcal": 1640, "fixture_tdee_kcal": 2530 }
+    },
+    {
+      "id": "provisional_bulk",
+      "selector_label": "Frankie — provisional bulk",
+      "description": "Tall profile with slower gain and deliberately incomplete nutrition coverage.",
+      "profile": { "display_name": "[TEST] Frankie — provisional bulk", "birth_date": "1992-12-30", "sex": "female", "height_cm": 180, "activity_level": "moderate", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "bulk", "starting_weight_kg": 74.6, "target_weight_kg": 79.0, "target_change_kg_per_week": 0.2, "target_calories": 2580, "target_protein_g": 145, "target_carbs_g": 330, "target_fat_g": 76, "target_fibre_g": 31, "manual_maintenance_kcal": 2360 },
+      "weight": { "ending_weight_kg": 76.2, "cadence_days": 4, "noise_kg": [0.0, -0.24, 0.3, -0.12, 0.18, -0.28], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 2590, "complete_day_offsets": [1,3,5,7,9,11,13,15,17,19,21,23,25,27], "probably_complete_day_offsets": [2,6,10,14,18,22,26] },
+      "snapshot": { "age_years": 33, "activity_multiplier": 1.55, "fixture_bmr_kcal": 1530, "fixture_tdee_kcal": 2360 }
+    },
+    {
+      "id": "sparse_maintenance",
+      "selector_label": "Gray — sparse maintenance",
+      "description": "Shorter profile with weekly weigh-ins and sparse completed food logs.",
+      "profile": { "display_name": "[TEST] Gray — sparse maintenance", "birth_date": "1968-05-26", "sex": "male", "height_cm": 165, "activity_level": "sedentary", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "maintenance", "starting_weight_kg": 63.4, "target_weight_kg": 63.4, "target_change_kg_per_week": 0, "target_calories": 2010, "target_protein_g": 105, "target_carbs_g": 235, "target_fat_g": 68, "target_fibre_g": 26, "manual_maintenance_kcal": 2010 },
+      "weight": { "ending_weight_kg": 63.2, "cadence_days": 7, "noise_kg": [0.0, 0.38, -0.32, 0.24, -0.2], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 1990, "complete_day_offsets": [1,4,8,12,16,20,24,28], "probably_complete_day_offsets": [2,6,10,14,18,22,26] },
+      "snapshot": { "age_years": 58, "activity_multiplier": 1.2, "fixture_bmr_kcal": 1510, "fixture_tdee_kcal": 2010 }
+    },
+    {
+      "id": "cut_plateau",
+      "selector_label": "Harper — cut plateau",
+      "description": "Medium-height, heavier profile with early loss followed by a recent plateau.",
+      "profile": { "display_name": "[TEST] Harper — cut plateau", "birth_date": "1986-09-14", "sex": "female", "height_cm": 168, "activity_level": "light", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "cut", "starting_weight_kg": 92.0, "target_weight_kg": 78.0, "target_change_kg_per_week": -0.45, "target_calories": 1860, "target_protein_g": 145, "target_carbs_g": 190, "target_fat_g": 62, "target_fibre_g": 29, "manual_maintenance_kcal": 2350 },
+      "weight": { "ending_weight_kg": 87.3, "cadence_days": 3, "noise_kg": [0.0, 0.2, -0.16, 0.12, -0.1, 0.08], "trajectory": "plateau_last_35_days" },
+      "nutrition": { "average_daily_kcal": 1890, "complete_day_offsets": [1,2,4,5,6,8,9,11,12,13,15,16,18,19,20,22,23,25,26,27], "probably_complete_day_offsets": [3,10,17,24] },
+      "snapshot": { "age_years": 39, "activity_multiplier": 1.375, "fixture_bmr_kcal": 1570, "fixture_tdee_kcal": 2350 }
+    },
+    {
+      "id": "rapid_cut",
+      "selector_label": "Jules — unexpectedly rapid cut",
+      "description": "Larger starting profile losing substantially faster than the planned cut rate.",
+      "expected_goal_feedback_state": "faster_than_planned",
+      "expected_feedback_action": "consider_less_aggressive_goal",
+      "profile": { "display_name": "[TEST] Jules — unexpectedly rapid cut", "birth_date": "1991-03-07", "sex": "female", "height_cm": 176, "activity_level": "moderate", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "cut", "starting_weight_kg": 101.0, "target_weight_kg": 84.0, "target_change_kg_per_week": -0.4, "target_calories": 2150, "target_protein_g": 165, "target_carbs_g": 225, "target_fat_g": 66, "target_fibre_g": 32, "manual_maintenance_kcal": 2570 },
+      "weight": { "ending_weight_kg": 89.6, "cadence_days": 3, "noise_kg": [0.0, 0.22, -0.18, 0.12, -0.24, 0.08], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 2130, "complete_day_offsets": [1,2,3,4,5,6,8,9,10,11,12,13,15,16,17,18,19,20,22,23,24,25,26,27], "probably_complete_day_offsets": [7,14,21] },
+      "snapshot": { "age_years": 35, "activity_multiplier": 1.55, "fixture_bmr_kcal": 1640, "fixture_tdee_kcal": 2570 }
+    },
+    {
+      "id": "rapid_bulk",
+      "selector_label": "Morgan — unexpectedly rapid bulk",
+      "description": "Smaller starting profile gaining substantially faster than the planned bulk rate.",
+      "expected_goal_feedback_state": "faster_than_planned",
+      "expected_feedback_action": "review_goal_assumptions",
+      "profile": { "display_name": "[TEST] Morgan — unexpectedly rapid bulk", "birth_date": "1998-10-19", "sex": "male", "height_cm": 169, "activity_level": "active", "timezone": "Africa/Johannesburg" },
+      "phase": { "mode": "bulk", "starting_weight_kg": 58.5, "target_weight_kg": 66.0, "target_change_kg_per_week": 0.25, "target_calories": 2580, "target_protein_g": 130, "target_carbs_g": 355, "target_fat_g": 72, "target_fibre_g": 29, "manual_maintenance_kcal": 2300 },
+      "weight": { "ending_weight_kg": 67.5, "cadence_days": 3, "noise_kg": [0.0, -0.16, 0.2, -0.1, 0.18, -0.12], "trajectory": "linear" },
+      "nutrition": { "average_daily_kcal": 2600, "complete_day_offsets": [1,2,3,4,5,6,8,9,10,11,12,13,15,16,17,18,19,20,22,23,24,25,26,27], "probably_complete_day_offsets": [7,14,21] },
+      "snapshot": { "age_years": 27, "activity_multiplier": 1.725, "fixture_bmr_kcal": 1450, "fixture_tdee_kcal": 2300 }
+    }
+  ]
+}
