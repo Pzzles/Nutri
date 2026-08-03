@@ -137,15 +137,20 @@ function containsForbiddenClientField(value: unknown): boolean {
   );
 }
 
-async function loadSession(service: ReturnType<typeof getServiceClient>, sessionId: string) {
+async function loadOwnedSession(
+  service: ReturnType<typeof getServiceClient>,
+  authenticatedUserId: string,
+  sessionId: string,
+) {
   const [sessionResult, readingsResult, representativesResult] = await Promise.all([
     service.from("anthropometric_sessions").select(
       "id, status, measured_at, logged_date, timezone, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, finalized_at, created_at, updated_at",
-    ).eq("id", sessionId).single(),
+    ).eq("id", sessionId).eq("user_id", authenticatedUserId).single(),
     service.from("anthropometric_readings").select("id, site_code, reading_number, value_cm")
-      .eq("session_id", sessionId).order("site_code").order("reading_number"),
+      .eq("session_id", sessionId).eq("user_id", authenticatedUserId)
+      .order("site_code").order("reading_number"),
     service.from("anthropometric_representatives").select("*")
-      .eq("session_id", sessionId).order("site_code"),
+      .eq("session_id", sessionId).eq("user_id", authenticatedUserId).order("site_code"),
   ]);
   if (sessionResult.error || readingsResult.error || representativesResult.error) {
     throw new Error("Failed to load saved anthropometric session");
@@ -390,12 +395,16 @@ export async function handleAnthropometricSessionSave(
       if (rpcError.message.includes("IMMUTABLE") || rpcError.message.includes("immutable")) {
         return fail("SESSION_IMMUTABLE", "Finalized sessions cannot be changed", 409);
       }
-      console.error(rpcError);
+      console.error(JSON.stringify({
+        event: "anthropometric_session_save_failed",
+        user_id_prefix: userId.slice(0, 8),
+        error_code: "PERSISTENCE_FAILED",
+      }));
       return fail("INTERNAL_ERROR", "Failed to save anthropometric session", 500);
     }
 
     const result = rpcData as { session_id: string; replayed: boolean };
-    const saved = await loadSession(service, result.session_id);
+    const saved = await loadOwnedSession(service, userId, result.session_id);
     return ok(
       {
         ...saved,
@@ -418,7 +427,10 @@ export async function handleAnthropometricSessionSave(
         : 400;
       return fail(error.code, error.message, status);
     }
-    console.error(error);
+    console.error(JSON.stringify({
+      event: "anthropometric_session_save_failed",
+      error_code: "UNEXPECTED_ERROR",
+    }));
     return fail("INTERNAL_ERROR", "Unexpected error saving anthropometric session", 500);
   }
 }

@@ -81,7 +81,11 @@ Deno.serve(async (req) => {
         `measured_at.lt.${cursor.measured_at},and(measured_at.eq.${cursor.measured_at},id.lt.${cursor.id})`,
       );
     }
-    if (siteCode) query = query.eq("anthropometric_representatives.site_code", siteCode);
+    if (siteCode) {
+      query = query
+        .eq("anthropometric_representatives.user_id", userData.user.id)
+        .eq("anthropometric_representatives.site_code", siteCode);
+    }
 
     const { data: rows, error: sessionsError } = await query;
     if (sessionsError) throw sessionsError;
@@ -94,11 +98,12 @@ Deno.serve(async (req) => {
     if (ids.length > 0) {
       const [readingsResult, representativesResult] = await Promise.all([
         service.from("anthropometric_readings")
-          .select("id, session_id, site_code, reading_number, value_cm").in("session_id", ids)
+          .select("id, session_id, site_code, reading_number, value_cm")
+          .eq("user_id", userData.user.id).in("session_id", ids)
           .order("site_code").order("reading_number"),
         service.from("anthropometric_representatives").select(
           "session_id, site_code, representative_cm, method, reading_count, initial_pair_difference_cm, all_readings_range_cm, quality, quality_flags, algorithm_version, source_reading_ids, selected_reading_indices, unselected_reading_id, selected_pair_spread_cm, pairwise_differences, warning_codes, eligible_for_interpretation, quality_acknowledged_at, quality_acknowledgement_version, created_at",
-        ).in("session_id", ids)
+        ).eq("user_id", userData.user.id).in("session_id", ids)
           .order("site_code"),
       ]);
       if (readingsResult.error) throw readingsResult.error;
@@ -153,7 +158,10 @@ Deno.serve(async (req) => {
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error(JSON.stringify({
+      event: "anthropometric_history_failed",
+      error_code: "UNEXPECTED_ERROR",
+    }));
     return fail("INTERNAL_ERROR", "Unexpected error fetching anthropometric history", 500);
   }
 });

@@ -20,16 +20,28 @@ Deno.serve(async (req) => {
     if (!sessionId) return fail("VALIDATION_ERROR", "session_id is required");
 
     const service = getServiceClient();
-    const { data, error } = await service.from("anthropometric_sessions")
-      .delete().eq("id", sessionId).eq("user_id", userData.user.id).select("id").maybeSingle();
+    const { error } = await service.rpc("fn_delete_anthropometric_session", {
+      p_user_id: userData.user.id,
+      p_session_id: sessionId,
+    });
+    if (error?.message.includes("ANTHROPOMETRIC_SESSION_NOT_FOUND")) {
+      return fail("SESSION_NOT_FOUND", "Anthropometric session not found", 404);
+    }
     if (error) throw error;
-    if (!data) return fail("NOT_FOUND", "Anthropometric session not found", 404);
+    console.log(JSON.stringify({
+      event: "anthropometric_session_deleted",
+      user_id_prefix: userData.user.id.slice(0, 8),
+      status: "complete",
+    }));
     return ok({ deleted_session_id: sessionId });
   } catch (error) {
     if (error instanceof AnthropometryValidationError) {
       return fail(error.code, error.message);
     }
-    console.error(error);
+    console.error(JSON.stringify({
+      event: "anthropometric_session_delete_failed",
+      error_code: "UNEXPECTED_ERROR",
+    }));
     return fail("INTERNAL_ERROR", "Unexpected error deleting anthropometric session", 500);
   }
 });

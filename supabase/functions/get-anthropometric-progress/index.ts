@@ -71,6 +71,8 @@ async function loadAnthropometryPoints(
       "id, measured_at, logged_date, anthropometric_representatives(site_code, representative_cm, quality, selected_reading_indices, selected_pair_spread_cm, warning_codes, eligible_for_interpretation, algorithm_version), anthropometric_readings(id, site_code, reading_number, value_cm)",
     )
       .eq("user_id", userId)
+      .eq("anthropometric_representatives.user_id", userId)
+      .eq("anthropometric_readings.user_id", userId)
       .eq("status", "finalized")
       .lte("measured_at", toIso)
       .order("measured_at", { ascending: true })
@@ -231,7 +233,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error(JSON.stringify({
       event: "anthropometric_progress_failed",
-      error: String(error),
+      error_code: "UNEXPECTED_ERROR",
     }));
     return fail("INTERNAL_ERROR", "Unexpected error fetching anthropometric progress", 500);
   }

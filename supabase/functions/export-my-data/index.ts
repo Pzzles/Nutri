@@ -59,17 +59,24 @@ Deno.serve(async (req) => {
       svc.from("daily_log_status").select("*").eq("user_id", userId).order("logged_date", { ascending: true }),
       svc.from("foods").select("*").eq("owner_user_id", userId),
       svc.from("user_food_cache").select("*").eq("user_id", userId),
-      svc.from("goal_feedback_assessments").select("*").eq("user_id", userId).order("assessment_date", { ascending: true }),
+      svc.from("goal_feedback_assessments").select("*").eq("user_id", userId).order("assessed_at", { ascending: true }),
       svc.from("anthropometric_sessions").select("*").eq("user_id", userId)
         .order("measured_at", { ascending: true, nullsFirst: true })
         .order("id", { ascending: true }),
     ]);
+    const directQueryError = [
+      profileRes, weightLogsRes, goalPhasesRes, snapshotsRes, mealsRes,
+      dailyLogStatusRes, userFoodsRes, userFoodCacheRes, feedbackRes,
+      anthropometricSessionsRes,
+    ].find((result) => result.error)?.error;
+    if (directQueryError) throw new Error("EXPORT_QUERY_FAILED");
 
     // meal_items must be fetched via meal_id — chunk to avoid URL length limits.
     const mealIds: string[] = (mealsRes.data ?? []).map((m: Record<string, unknown>) => m.id as string);
     let mealItems: unknown[] = [];
     if (mealIds.length > 0) {
-      const { data } = await svc.from("meal_items").select("*").in("meal_id", mealIds);
+      const { data, error } = await svc.from("meal_items").select("*").in("meal_id", mealIds);
+      if (error) throw new Error("EXPORT_QUERY_FAILED");
       mealItems = data ?? [];
     }
 
@@ -80,12 +87,17 @@ Deno.serve(async (req) => {
     if (anthropometricSessionIds.length > 0) {
       const [readingsRes, representativesRes] = await Promise.all([
         svc.from("anthropometric_readings").select("*")
+          .eq("user_id", userId)
           .in("session_id", anthropometricSessionIds)
           .order("session_id").order("site_code").order("reading_number"),
         svc.from("anthropometric_representatives").select("*")
+          .eq("user_id", userId)
           .in("session_id", anthropometricSessionIds)
           .order("session_id").order("site_code"),
       ]);
+      if (readingsRes.error || representativesRes.error) {
+        throw new Error("EXPORT_QUERY_FAILED");
+      }
       anthropometricReadings = readingsRes.data ?? [];
       anthropometricRepresentatives = representativesRes.data ?? [];
     }
@@ -119,8 +131,11 @@ Deno.serve(async (req) => {
         ...corsHeaders,
       },
     });
-  } catch (err) {
-    console.error(err);
+  } catch (_err) {
+    console.error(JSON.stringify({
+      event: "data_export_failed",
+      error_code: "EXPORT_FAILED",
+    }));
     return fail("INTERNAL_ERROR", "Failed to export data", 500);
   }
 });
