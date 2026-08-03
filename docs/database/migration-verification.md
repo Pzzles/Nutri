@@ -43,6 +43,9 @@ The Phase 9 baseline is retained below. Phase 10 migrations `0031` and `0032` ar
 | 0030 | `0030_defer_goal_phase_supersession_fk.sql` | **Migration-history repair**: canonical placement of the deferred goal-phase supersession FK |
 | 0031 | `0031_anthropometric_progress_model.sql` | **Phase 10 Gate 2**: draft/finalised anthropometric sessions, preserved readings, representatives, lifecycle guards and RLS |
 | 0032 | `0032_anthropometric_api_rpcs.sql` | **Phase 10 Gate 3**: service-only atomic draft replacement/finalisation RPC with serialised idempotency |
+| 0033 | `0033_anthropometry_confidence_retake.sql` | **Phase 10 remediation Gate 1**: confidence/retake persistence contract |
+| 0034 | `0034_anthropometry_hybrid_representative_v3.sql` | **Phase 10 remediation Gate 1**: hybrid closest-pair representative v3 |
+| 0035 | `0035_anthropometry_transaction_and_ownership_integrity.sql` | **Phase 10 remediation Gate 2**: parent locking, explicit child ownership, read-only direct privileges, and Auth-delete cascades |
 
 ---
 
@@ -61,9 +64,9 @@ All user-data tables have RLS enabled and at minimum one policy:
 | daily_log_status | `daily_log_status_all_own` | `auth.uid() = user_id` |
 | user_food_cache | `user_food_cache_all_own` | `auth.uid() = user_id` |
 | goal_feedback_assessments | `goal_feedback_assessments_all_own` | `auth.uid() = user_id` |
-| anthropometric_sessions | four operation-specific policies | owner read/write for drafts; owner read-only after finalisation |
-| anthropometric_readings | four parent-scoped policies | owner access through a session; writes only while draft |
-| anthropometric_representatives | `anthropometric_representatives_select_own` | owner read through the parent session; server-owned writes |
+| anthropometric_sessions | `anthropometric_sessions_select_own` | `auth.uid() = user_id`; direct mutations revoked |
+| anthropometric_readings | `anthropometric_readings_select_own` | `auth.uid() = user_id`; direct mutations revoked |
+| anthropometric_representatives | `anthropometric_representatives_select_own` | `auth.uid() = user_id`; direct mutations revoked |
 
 `foods` table: global foods have `owner_user_id IS NULL`; user-created foods have `owner_user_id = auth.uid()`.
 
