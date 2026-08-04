@@ -7,10 +7,10 @@
   --color-background: 245 246 250;   /* #F5F6FA */
   --color-surface: 255 255 255;      /* #FFFFFF */
   --color-ink: 24 24 35;             /* #181823 */
-  --color-muted: 107 114 128;        /* #6B7280 */
+  --color-muted: 95 102 116;         /* #5F6674 */
   --color-border: 220 223 234;       /* #DCDFE A */
-  --color-primary: 0 148 255;        /* #0094FF */
-  --color-primary-dark: 0 112 204;   /* #0070CC */
+  --color-primary: 0 107 184;        /* #006BB8 */
+  --color-primary-dark: 0 82 148;    /* #005294 */
   --color-primary-light: 232 244 255; /* #E8F4FF */
 }
 

@@ -20,7 +20,7 @@ const EMPTY_HEALTH_PROFILE: HealthProfileForm = {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
-export default function AccountLink() {
+export default function AccountLink({ onAccountDeleted }: { onAccountDeleted?: () => void }) {
   // ── Account flow ───────────────────────────────────────────────────────────
   const [phase, setPhase] = useState<Phase>("idle");
   const [accountUser, setAccountUser] = useState<User | null>(null);
@@ -263,8 +263,11 @@ export default function AccountLink() {
         throw new Error((json as any)?.error?.message ?? "Deletion failed");
       }
 
-      await supabase.auth.signOut();
       setDeletePhase("deleted");
+      onAccountDeleted?.();
+      // Server deletion is already committed. Local sign-out is best-effort and
+      // must not turn a successful destructive operation into a false failure.
+      await supabase.auth.signOut({ scope: "local" });
     } catch (err: any) {
       setDeleteError(err.message ?? "Account deletion failed.");
       setDeletePhase("confirming");

@@ -95,7 +95,7 @@ export function AnthropometryChart({
     <div role="img" aria-label={label} data-testid="anthropometry-chart">
       <div aria-hidden="true">
         <ResponsiveContainer width="100%" height={220}>
-          <ScatterChart margin={{ top: 12, right: 10, bottom: 4, left: -12 }}>
+          <ScatterChart accessibilityLayer={false} margin={{ top: 12, right: 10, bottom: 4, left: -12 }}>
             <XAxis
               type="number"
               dataKey="timestamp"

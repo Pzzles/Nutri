@@ -66,6 +66,9 @@ async function fulfill(route: Route, data: unknown, status = 200) {
 test("mobile guided circuit completes with an accessible third-reading warning", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await stubAuth(page);
+  await page.route("**/functions/v1/get-anthropometric-sessions?status=draft**", (route) =>
+    fulfill(route, { sessions: [], next_cursor: null })
+  );
 
   const draftBodies: Array<Record<string, unknown>> = [];
   await page.route("**/functions/v1/save-anthropometric-session", async (route) => {

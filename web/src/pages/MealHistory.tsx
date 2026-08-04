@@ -379,6 +379,7 @@ export default function MealHistory({ embedded = false }: { embedded?: boolean }
             return (
               <div
                 key={meal.id}
+                data-meal-id={meal.id}
                 className="rounded-xl border border-border bg-surface overflow-hidden"
               >
                 {/* Meal header */}

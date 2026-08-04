@@ -19,7 +19,11 @@ import {
   ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
 } from "../_shared/anthropometryProgress.ts";
 
-type Cursor = { measured_at: string; id: string };
+type Cursor = {
+  sort_at: string;
+  id: string;
+  status: "draft" | "finalized";
+};
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SITE_ORDER = new Map<string, number>(
   ANTHROPOMETRY_SITE_CODES.map((siteCode, index) => [siteCode, index]),
@@ -37,10 +41,9 @@ function decodeCursor(raw: string): Cursor | null {
     const padded = raw.replaceAll("-", "+").replaceAll("_", "/") + "===".slice((raw.length + 3) % 4);
     const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
     const value = JSON.parse(new TextDecoder().decode(bytes)) as Cursor;
-    if (
-      !value || typeof value.id !== "string" || typeof value.measured_at !== "string" ||
-      !UUID_PATTERN.test(value.id) || Number.isNaN(new Date(value.measured_at).getTime())
-    ) return null;
+    if (!value || typeof value.id !== "string" || typeof value.sort_at !== "string" ||
+      (value.status !== "draft" && value.status !== "finalized") ||
+      !UUID_PATTERN.test(value.id) || Number.isNaN(new Date(value.sort_at).getTime())) return null;
     return value;
   } catch {
     return null;
@@ -65,6 +68,10 @@ Deno.serve(async (req) => {
     if (limit < 1 || limit > 100) {
       return fail("VALIDATION_ERROR", "limit must be between 1 and 100");
     }
+    const status = url.searchParams.get("status") ?? "finalized";
+    if (status !== "draft" && status !== "finalized") {
+      return fail("VALIDATION_ERROR", "status must be draft or finalized");
+    }
     const siteCode = url.searchParams.get("site_code");
     if (siteCode && !ANTHROPOMETRY_SITE_CODES.includes(
       siteCode as typeof ANTHROPOMETRY_SITE_CODES[number],
@@ -74,6 +81,9 @@ Deno.serve(async (req) => {
     const rawCursor = url.searchParams.get("before");
     const cursor = rawCursor ? decodeCursor(rawCursor) : null;
     if (rawCursor && !cursor) return fail("INVALID_CURSOR", "cursor is invalid");
+    if (cursor && cursor.status !== status) {
+      return fail("INVALID_CURSOR", "cursor does not match the requested status");
+    }
 
     const service = getServiceClient();
     const sessionColumns =
@@ -83,12 +93,13 @@ Deno.serve(async (req) => {
         ? `${sessionColumns}, anthropometric_representatives!inner(site_code)`
         : sessionColumns,
     )
-      .eq("user_id", userData.user.id).eq("status", "finalized")
-      .order("measured_at", { ascending: false }).order("id", { ascending: false })
-      .limit(limit + 1);
+      .eq("user_id", userData.user.id).eq("status", status)
+      .order(status === "draft" ? "updated_at" : "measured_at", { ascending: false })
+      .order("id", { ascending: false }).limit(limit + 1);
     if (cursor) {
+      const sortColumn = status === "draft" ? "updated_at" : "measured_at";
       query = query.or(
-        `measured_at.lt.${cursor.measured_at},and(measured_at.eq.${cursor.measured_at},id.lt.${cursor.id})`,
+        `${sortColumn}.lt.${cursor.sort_at},and(${sortColumn}.eq.${cursor.sort_at},id.lt.${cursor.id})`,
       );
     }
     if (siteCode) {
@@ -159,7 +170,11 @@ Deno.serve(async (req) => {
     });
     const last = hydrated.at(-1);
     const nextCursor = hasMore && last
-      ? encodeCursor({ measured_at: last.measured_at as string, id: last.id as string })
+      ? encodeCursor({
+        sort_at: (status === "draft" ? last.updated_at : last.measured_at) as string,
+        id: last.id as string,
+        status,
+      })
       : null;
 
     return ok({

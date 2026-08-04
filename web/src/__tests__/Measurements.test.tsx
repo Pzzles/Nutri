@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import Measurements from "../pages/Measurements";
 import type {
   AnthropometrySaveResponse,
+  AnthropometryHistorySession,
   AnthropometryRepresentativePreview,
   AnthropometrySiteCode,
 } from "../lib/anthropometry";
@@ -15,6 +16,7 @@ vi.mock("../lib/anthropometry", async (importOriginal) => {
     saveAnthropometryDraft: vi.fn(),
     finalizeAnthropometrySession: vi.fn(),
     deleteAnthropometrySession: vi.fn(),
+    getAnthropometryDrafts: vi.fn(),
     getAnthropometricProgress: vi.fn(),
   };
 });
@@ -22,6 +24,7 @@ vi.mock("../lib/anthropometry", async (importOriginal) => {
 import {
   deleteAnthropometrySession,
   finalizeAnthropometrySession,
+  getAnthropometryDrafts,
   getAnthropometricProgress,
   saveAnthropometryDraft,
 } from "../lib/anthropometry";
@@ -29,6 +32,7 @@ import {
 const mockSaveDraft = vi.mocked(saveAnthropometryDraft);
 const mockFinalize = vi.mocked(finalizeAnthropometrySession);
 const mockDelete = vi.mocked(deleteAnthropometrySession);
+const mockGetDrafts = vi.mocked(getAnthropometryDrafts);
 const mockGetProgress = vi.mocked(getAnthropometricProgress);
 
 function response(
@@ -57,10 +61,37 @@ function response(
   };
 }
 
+function savedDraft(
+  readings: AnthropometryHistorySession["readings"] = [
+    { id: "reading-1", session_id: "draft-session", site_code: "waist", reading_number: 1, value_cm: 80 },
+    { id: "reading-2", session_id: "draft-session", site_code: "waist", reading_number: 2, value_cm: 80.4 },
+  ],
+): AnthropometryHistorySession {
+  return {
+    id: "draft-session",
+    status: "draft",
+    measured_at: "2026-08-02T08:00:00.000Z",
+    notes: "Synthetic recovery note",
+    updated_at: "2026-08-02T08:05:00.000Z",
+    measurement_context: {
+      version: "anthropometry_measurement_context_v1",
+      local_time: "10:00:00",
+      meal_timing: "after_food",
+      after_bathroom: true,
+      exercise_within_previous_12_hours: false,
+      measurement_assistance: "assisted",
+      clothing_level: "light",
+    },
+    readings,
+    representatives: [],
+  };
+}
+
 beforeEach(() => {
   mockSaveDraft.mockReset();
   mockFinalize.mockReset();
   mockDelete.mockReset();
+  mockGetDrafts.mockReset();
   mockGetProgress.mockReset();
   mockSaveDraft.mockResolvedValue(response());
   mockFinalize.mockResolvedValue(response("finalized", [{
@@ -75,6 +106,7 @@ beforeEach(() => {
     quality_flags: [],
   }]));
   mockDelete.mockResolvedValue({ deleted_session_id: "session-001" });
+  mockGetDrafts.mockResolvedValue([]);
   mockGetProgress.mockResolvedValue({
     series: [],
     weight_comparison: null,
@@ -110,6 +142,71 @@ describe("structured measurement context", () => {
   });
 });
 
+describe("saved draft recovery", () => {
+  it("restores the existing session, raw readings, context and notes without creating another draft", async () => {
+    mockGetDrafts.mockResolvedValueOnce([savedDraft()]);
+    const user = userEvent.setup();
+    render(<Measurements />);
+    expect(await screen.findByRole("heading", { name: /saved measurement draft/i })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Resume" }));
+    expect(await screen.findByRole("heading", { name: /check your raw readings/i })).toBeVisible();
+    expect(mockSaveDraft).toHaveBeenCalledTimes(1);
+    expect(mockSaveDraft).toHaveBeenCalledWith(expect.objectContaining({
+      session_id: "draft-session",
+      notes: "Synthetic recovery note",
+      measurement_context: expect.objectContaining({
+        meal_timing: "after_food",
+        measurement_assistance: "assisted",
+        clothing_level: "light",
+      }),
+      sites: [{ site_code: "waist", readings_cm: [80, 80.4] }],
+    }));
+    expect(screen.getByRole("textbox", { name: /notes/i })).toHaveValue("Synthetic recovery note");
+  });
+
+  it("requires high-variability acknowledgement again after reload", async () => {
+    const draft = savedDraft([
+      { id: "reading-1", session_id: "draft-session", site_code: "waist", reading_number: 1, value_cm: 80 },
+      { id: "reading-2", session_id: "draft-session", site_code: "waist", reading_number: 2, value_cm: 82 },
+      { id: "reading-3", session_id: "draft-session", site_code: "waist", reading_number: 3, value_cm: 84.5 },
+    ]);
+    mockGetDrafts.mockResolvedValueOnce([draft]);
+    mockSaveDraft.mockResolvedValueOnce(response("draft", [], [{
+      site_code: "waist",
+      representative_cm: 81,
+      method: "mean_of_closest_pair",
+      reading_count: 3,
+      selected_reading_indices: [1, 2],
+      selected_pair_spread_cm: 2,
+      quality: "high_variability",
+      warning_codes: ["no_pair_within_repeatability_threshold"],
+      eligible_for_interpretation: false,
+    }]));
+    const user = userEvent.setup();
+    render(<Measurements />);
+    await user.click(await screen.findByRole("button", { name: "Resume" }));
+    expect(await screen.findByText(/measurement confidence: low/i)).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: /understand this value has low measurement confidence/i })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: /save with low confidence/i })).toBeDisabled();
+  });
+
+  it("discards a discovered draft and exposes the next saved draft", async () => {
+    mockGetDrafts.mockResolvedValueOnce([
+      savedDraft(),
+      { ...savedDraft([]), id: "older-draft", updated_at: "2026-08-01T08:05:00.000Z" },
+    ]);
+    mockDelete.mockResolvedValueOnce({ deleted_session_id: "draft-session" });
+    const user = userEvent.setup();
+    render(<Measurements />);
+    expect(await screen.findByRole("heading", { name: /2 saved measurement drafts/i })).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: "Discard" })[0]);
+    const dialog = screen.getByRole("alertdialog", { name: /discard this draft/i });
+    await user.click(within(dialog).getByRole("button", { name: /^Discard draft$/i }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith("draft-session"));
+    expect(screen.getByRole("heading", { name: /saved measurement draft/i })).toBeVisible();
+  });
+});
+
 async function beginWithSites(codes: AnthropometrySiteCode[]) {
   const user = userEvent.setup();
   render(<Measurements />);
@@ -142,8 +239,9 @@ async function enterReading(user: ReturnType<typeof userEvent.setup>, value: str
 }
 
 describe("measurement setup", () => {
-  it("shows all frozen sites, keeps neck off by default, and separates waist from navel", () => {
+  it("shows all frozen sites, keeps neck off by default, and separates waist from navel", async () => {
     render(<Measurements />);
+    await waitFor(() => expect(screen.queryByLabelText(/checking for saved measurement drafts/i)).not.toBeInTheDocument());
     expect(screen.getByRole("checkbox", { name: /^Neck/i })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: /^Chest\b/i })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: /^Waist \(WHO midpoint\)/i })).toBeChecked();

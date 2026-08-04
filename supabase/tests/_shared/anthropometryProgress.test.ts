@@ -176,7 +176,7 @@ describe("anthropometry_weight_comparison_v2", () => {
   it("enforces interval, confidence, staleness and seven-day alignment gates", () => {
     const short = point("short", "2026-06-14", 89);
     expect(buildWeightComparison(buildAnthropometrySeries([start, short]), trend(short.measured_at), short.measured_at).reason_codes)
-      .toEqual(["circumference_interval_too_short"]);
+      .toEqual(["sessions_too_close_for_interpretation"]);
     expect(buildWeightComparison(buildAnthropometrySeries([start, end]), trend(asOf, -0.2, null, null), asOf).reason_codes)
       .toEqual(["weight_rate_interval_unavailable"]);
     expect(buildWeightComparison(buildAnthropometrySeries([start, end]), trend(asOf, -0.2, -0.4, -0.1, { confidence: "low" }), asOf).reason_codes)

@@ -385,6 +385,61 @@ describe("draft and server-authoritative finalization", () => {
     });
   });
 
+  it("lists only the authenticated user's resumable drafts with context and raw readings", async () => {
+    const created = await save(tokenA, {
+      status: "draft",
+      measured_at: "2026-08-02T08:00:00Z",
+      notes: "recovery fixture",
+      measurement_context: {
+        meal_timing: "after_food",
+        after_bathroom: true,
+        exercise_within_previous_12_hours: false,
+        measurement_assistance: "assisted",
+        clothing_level: "light",
+      },
+      protocol_version: "anthropometry_protocol_v1",
+      sites: [{ site_code: "waist", readings_cm: [80, 80.4] }],
+    });
+    const draftId = created.body.data!.session.id;
+    const page = await callFunction<{
+      sessions: Array<{
+        id: string;
+        status: string;
+        notes: string | null;
+        measurement_context: Record<string, unknown>;
+        readings: Array<{ value_cm: number }>;
+        representatives: unknown[];
+      }>;
+      next_cursor: string | null;
+    }>("get-anthropometric-sessions", tokenA, "GET", undefined, "?status=draft&limit=100");
+    expect(page.status).toBe(200);
+    const restored = page.body.data!.sessions.find((session) => session.id === draftId);
+    expect(restored).toMatchObject({
+      status: "draft",
+      notes: "recovery fixture",
+      measurement_context: {
+        meal_timing: "after_food",
+        after_bathroom: true,
+        exercise_within_previous_12_hours: false,
+        measurement_assistance: "assisted",
+        clothing_level: "light",
+      },
+      readings: [{ value_cm: 80 }, { value_cm: 80.4 }],
+      representatives: [],
+    });
+    expect(page.body.data!.sessions.every((session) => session.status === "draft")).toBe(true);
+
+    const otherUser = await callFunction<{ sessions: Array<{ id: string }> }>(
+      "get-anthropometric-sessions", tokenB, "GET", undefined, "?status=draft&limit=100",
+    );
+    expect(otherUser.body.data!.sessions.some((session) => session.id === draftId)).toBe(false);
+    const invalid = await callFunction(
+      "get-anthropometric-sessions", tokenA, "GET", undefined, "?status=abandoned",
+    );
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error?.code).toBe("VALIDATION_ERROR");
+  });
+
   it("rejects malformed context and client-supplied canonical local time", async () => {
     const wrongType = await save(tokenA, {
       status: "draft", protocol_version: "anthropometry_protocol_v1", sites: [],
@@ -1035,6 +1090,7 @@ describe("history pagination above one thousand finalized sessions", () => {
     const sessions: Page["sessions"] = [];
     let cursor: string | null = null;
     let pageCount = 0;
+    const startedAt = performance.now();
     do {
       const page = await callFunction<Page>(
         "get-anthropometric-sessions", tokenPaging, "GET", undefined,
@@ -1057,5 +1113,11 @@ describe("history pagination above one thousand finalized sessions", () => {
       [...sessions].map((session) => session.measured_at).sort().reverse(),
     );
     expect(pageCount).toBe(11);
+    console.info(JSON.stringify({
+      fixture: "anthropometry_history_pagination",
+      rows: sessions.length,
+      pages: pageCount,
+      duration_ms: Number((performance.now() - startedAt).toFixed(1)),
+    }));
   }, 60_000);
 });

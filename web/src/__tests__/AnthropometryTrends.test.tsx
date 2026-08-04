@@ -6,12 +6,13 @@ import type { AnthropometryProgressResponse } from "../lib/anthropometry";
 
 vi.mock("../lib/anthropometry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/anthropometry")>();
-  return { ...actual, getAnthropometricProgress: vi.fn() };
+  return { ...actual, getAnthropometricProgress: vi.fn(), deleteAnthropometrySession: vi.fn() };
 });
 
-import { getAnthropometricProgress } from "../lib/anthropometry";
+import { deleteAnthropometrySession, getAnthropometricProgress } from "../lib/anthropometry";
 
 const mockGetProgress = vi.mocked(getAnthropometricProgress);
+const mockDeleteSession = vi.mocked(deleteAnthropometrySession);
 
 const RESPONSE: AnthropometryProgressResponse = {
   series: [
@@ -64,7 +65,9 @@ const RESPONSE: AnthropometryProgressResponse = {
 
 beforeEach(() => {
   mockGetProgress.mockReset();
+  mockDeleteSession.mockReset();
   mockGetProgress.mockResolvedValue(RESPONSE);
+  mockDeleteSession.mockResolvedValue({ deleted_session_id: "w3" });
 });
 
 describe("AnthropometryTrends", () => {
@@ -100,6 +103,22 @@ describe("AnthropometryTrends", () => {
     render(<AnthropometryTrends unit="cm" />);
     expect(await screen.findByText("89.8 cm")).toBeVisible();
     expect(screen.getByText(/value retained with a repeatability note/i)).toBeVisible();
+  });
+
+  it("confirms whole-session deletion, traps dismissal, and reloads history", async () => {
+    const user = userEvent.setup();
+    render(<AnthropometryTrends unit="cm" />);
+    const triggers = await screen.findAllByRole("button", { name: /delete this session/i });
+    await user.click(triggers[0]);
+    const dialog = screen.getByRole("alertdialog", { name: /delete this measurement session/i });
+    expect(dialog).toHaveTextContent(/including all sites and preserved raw readings/i);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(triggers[0]).toHaveFocus();
+    await user.click(triggers[0]);
+    await user.click(screen.getByRole("button", { name: /^Delete session$/i }));
+    await waitFor(() => expect(mockDeleteSession).toHaveBeenCalledWith("w3"));
+    expect(mockGetProgress).toHaveBeenCalledTimes(2);
   });
 
   it("renders server warning codes as cautions without hiding numeric history", async () => {

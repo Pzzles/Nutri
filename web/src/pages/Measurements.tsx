@@ -8,10 +8,12 @@ import {
   finalizeAnthropometrySession,
   formatMeasurement,
   formatMeasurementInput,
+  getAnthropometryDrafts,
   inputToCentimetres,
   needsThirdReading,
   saveAnthropometryDraft,
   siteDefinition,
+  type AnthropometryHistorySession,
   type AnthropometrySaveResponse,
   type AnthropometryRepresentativePreview,
   type AnthropometryMeasurementContextInput,
@@ -31,6 +33,10 @@ const STANDARD_SITE_CODES = ANTHROPOMETRY_SITES
 function localDateTimeValue(date = new Date()): string {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
+}
+
+function draftDateTimeValue(iso: string | null): string {
+  return iso ? localDateTimeValue(new Date(iso)) : localDateTimeValue();
 }
 
 function newIdempotencyKey(): string {
@@ -71,6 +77,10 @@ export default function Measurements() {
   const [statusMessage, setStatusMessage] = useState("");
   const [discardConfirm, setDiscardConfirm] = useState(false);
   const [completed, setCompleted] = useState<AnthropometrySaveResponse | null>(null);
+  const [availableDrafts, setAvailableDrafts] = useState<AnthropometryHistorySession[]>([]);
+  const [draftsLoading, setDraftsLoading] = useState(true);
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
+  const [recoveryDiscardId, setRecoveryDiscardId] = useState<string | null>(null);
   const readingInputRef = useRef<HTMLInputElement>(null);
 
   const circuitSites = retakeSite
@@ -97,6 +107,22 @@ export default function Measurements() {
     setError(null);
     requestAnimationFrame(() => readingInputRef.current?.focus());
   }, [phase, circuit, siteIndex, currentSiteCode, readingNumber]);
+
+  async function loadDrafts() {
+    setDraftsLoading(true);
+    setDraftLoadError(null);
+    try {
+      setAvailableDrafts(await getAnthropometryDrafts());
+    } catch (cause) {
+      setDraftLoadError(cause instanceof Error ? cause.message : "Could not check for saved drafts.");
+    } finally {
+      setDraftsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDrafts();
+  }, []);
 
   function measuredAtIso(): string | null {
     const date = new Date(measuredAtLocal);
@@ -135,6 +161,10 @@ export default function Measurements() {
   async function beginSession() {
     if (busy) return;
     setError(null);
+    if (draftsLoading || draftLoadError || availableDrafts.length > 0) {
+      setError("Resolve the saved draft before starting another session.");
+      return;
+    }
     if (selectedSites.length === 0) {
       setError("Select at least one measurement site.");
       return;
@@ -174,6 +204,122 @@ export default function Measurements() {
       setPhase("measure");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start the session.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resumeDraft(draft: AnthropometryHistorySession) {
+    if (busy || draft.status !== "draft") return;
+    setBusy(true);
+    setError(null);
+    try {
+      const nextReadings = Object.fromEntries(
+        ANTHROPOMETRY_SITES.map((site) => [
+          site.code,
+          draft.readings
+            .filter((reading) => reading.site_code === site.code)
+            .sort((left, right) => left.reading_number - right.reading_number)
+            .map((reading) => reading.value_cm),
+        ]).filter(([, values]) => (values as number[]).length > 0),
+      ) as ReadingState;
+      const restoredSites = ANTHROPOMETRY_SITES.map((site) => site.code)
+        .filter((code) => (nextReadings[code]?.length ?? 0) > 0);
+      const nextSelectedSites = restoredSites.length > 0 ? restoredSites : STANDARD_SITE_CODES;
+      const nextContext: AnthropometryMeasurementContextInput = {
+        meal_timing: draft.measurement_context?.meal_timing ?? "not_recorded",
+        after_bathroom: draft.measurement_context?.after_bathroom ?? null,
+        exercise_within_previous_12_hours:
+          draft.measurement_context?.exercise_within_previous_12_hours ?? null,
+        measurement_assistance:
+          draft.measurement_context?.measurement_assistance ?? "not_recorded",
+        clothing_level: draft.measurement_context?.clothing_level ?? "not_recorded",
+      };
+      const refreshed = await saveAnthropometryDraft({
+        session_id: draft.id,
+        measured_at: draft.measured_at ?? undefined,
+        notes: draft.notes ?? undefined,
+        measurement_context: nextContext,
+        sites: nextSelectedSites.map((siteCode) => ({
+          site_code: siteCode,
+          readings_cm: nextReadings[siteCode] ?? [],
+        })),
+      });
+
+      setSessionId(draft.id);
+      setSelectedSites(nextSelectedSites);
+      setReadings(nextReadings);
+      setMeasuredAtLocal(draftDateTimeValue(draft.measured_at));
+      setNotes(draft.notes ?? "");
+      setMeasurementContext(nextContext);
+      setPrepared(true);
+      setIdempotencyKey(newIdempotencyKey());
+      setAcknowledgedSites([]);
+      setQualityConfirmed(false);
+      setRetakeSite(null);
+      setAvailableDrafts((current) => current.filter((entry) => entry.id !== draft.id));
+
+      const firstMissing = nextSelectedSites.findIndex((code) =>
+        (nextReadings[code]?.length ?? 0) < 1
+      );
+      if (firstMissing >= 0) {
+        setCircuit(1);
+        setSiteIndex(firstMissing);
+        setResolutionSites([]);
+        setQualityDecision(null);
+        setPhase("measure");
+        setStatusMessage("Saved draft resumed. Continue the first reading circuit.");
+        return;
+      }
+      const secondMissing = nextSelectedSites.findIndex((code) =>
+        (nextReadings[code]?.length ?? 0) < 2
+      );
+      if (secondMissing >= 0) {
+        setCircuit(2);
+        setSiteIndex(secondMissing);
+        setResolutionSites([]);
+        setQualityDecision(null);
+        setPhase("measure");
+        setStatusMessage("Saved draft resumed. Continue the second reading circuit.");
+        return;
+      }
+
+      const nextResolutionSites = nextSelectedSites.filter((code) =>
+        needsThirdReading(nextReadings[code] ?? [])
+      );
+      const resolutionIndex = nextResolutionSites.findIndex((code) =>
+        (nextReadings[code]?.length ?? 0) < 3
+      );
+      setResolutionSites(nextResolutionSites);
+      if (resolutionIndex >= 0) {
+        setCircuit(3);
+        setSiteIndex(resolutionIndex);
+        setQualityDecision(null);
+        setPhase("measure");
+        setStatusMessage("Saved draft resumed. Continue the resolution circuit.");
+        return;
+      }
+
+      const pendingDecision = refreshed.previews?.find((preview) =>
+        preview.quality === "pair_agree_with_isolated_reading" ||
+        preview.quality === "high_variability"
+      );
+      if (pendingDecision) {
+        const pendingIndex = Math.max(0, nextResolutionSites.indexOf(pendingDecision.site_code));
+        setCircuit(3);
+        setSiteIndex(pendingIndex);
+        setRetakeResumeIndex(pendingIndex);
+        setQualityDecision(pendingDecision);
+        setPhase("measure");
+        setStatusMessage("Saved draft resumed. Review the measurement confidence decision again.");
+        return;
+      }
+
+      setQualityDecision(null);
+      setPhase("review");
+      setStatusMessage("Saved draft resumed. Review the preserved raw readings.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not resume the saved draft.");
     } finally {
       setBusy(false);
     }
@@ -463,8 +609,16 @@ export default function Measurements() {
     setBusy(true);
     setError(null);
     try {
-      if (sessionId) await deleteAnthropometrySession(sessionId);
-      resetLocalSession();
+      const targetId = recoveryDiscardId ?? sessionId;
+      if (targetId) await deleteAnthropometrySession(targetId);
+      if (recoveryDiscardId) {
+        setAvailableDrafts((current) => current.filter((draft) => draft.id !== recoveryDiscardId));
+        setRecoveryDiscardId(null);
+        setDiscardConfirm(false);
+        setStatusMessage("Saved draft discarded.");
+      } else {
+        resetLocalSession();
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not discard the draft.");
       setDiscardConfirm(false);
@@ -522,21 +676,40 @@ export default function Measurements() {
       <div id="measurements-panel-record" role="tabpanel" aria-labelledby="measurements-tab-record" className={view === "record" ? "" : "hidden"}>
 
       {phase === "setup" && (
-        <SetupPanel
-          selectedSites={selectedSites}
-          measuredAtLocal={measuredAtLocal}
-          prepared={prepared}
-          measurementContext={measurementContext}
-          busy={busy}
-          error={error}
-          onMeasuredAtChange={setMeasuredAtLocal}
-          onPreparedChange={setPrepared}
-          onMeasurementContextChange={setMeasurementContext}
-          onToggleSite={toggleSite}
-          onSelectStandard={() => setSelectedSites(STANDARD_SITE_CODES)}
-          onClear={() => setSelectedSites([])}
-          onBegin={() => void beginSession()}
-        />
+        <>
+          {draftsLoading && <DraftLoadingPanel />}
+          {!draftsLoading && draftLoadError ? (
+            <DraftLoadErrorPanel message={draftLoadError} onRetry={() => void loadDrafts()} />
+          ) : !draftsLoading && availableDrafts.length > 0 ? (
+            <DraftRecoveryPanel
+              drafts={availableDrafts}
+              busy={busy}
+              error={error}
+              onResume={(draft) => void resumeDraft(draft)}
+              onDiscard={(draft) => {
+                setRecoveryDiscardId(draft.id);
+                setDiscardConfirm(true);
+              }}
+            />
+          ) : null}
+          {(draftsLoading || (!draftLoadError && availableDrafts.length === 0)) && (
+            <SetupPanel
+              selectedSites={selectedSites}
+              measuredAtLocal={measuredAtLocal}
+              prepared={prepared}
+              measurementContext={measurementContext}
+              busy={busy || draftsLoading}
+              error={error}
+              onMeasuredAtChange={setMeasuredAtLocal}
+              onPreparedChange={setPrepared}
+              onMeasurementContextChange={setMeasurementContext}
+              onToggleSite={toggleSite}
+              onSelectStandard={() => setSelectedSites(STANDARD_SITE_CODES)}
+              onClear={() => setSelectedSites([])}
+              onBegin={() => void beginSession()}
+            />
+          )}
+        </>
       )}
 
       {phase === "measure" && currentSite && !qualityDecision && (
@@ -600,12 +773,78 @@ export default function Measurements() {
       {discardConfirm && phase !== "complete" && (
         <DiscardConfirmation
           busy={busy}
-          onCancel={() => setDiscardConfirm(false)}
+          onCancel={() => {
+            setDiscardConfirm(false);
+            setRecoveryDiscardId(null);
+          }}
           onConfirm={() => void discardDraft()}
         />
       )}
       </div>
     </main>
+  );
+}
+
+function DraftLoadingPanel() {
+  return (
+    <section className="mt-6 rounded-xl border border-border bg-surface p-5" aria-label="Checking for saved measurement drafts">
+      <div className="h-5 w-52 animate-pulse rounded bg-border/50" />
+      <div className="mt-3 h-12 animate-pulse rounded bg-border/30" />
+    </section>
+  );
+}
+
+function DraftLoadErrorPanel({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <section className="mt-6 rounded-xl border border-red-300 bg-red-50 p-5 dark:border-red-800 dark:bg-red-950/30" aria-labelledby="draft-load-error-heading">
+      <h2 id="draft-load-error-heading" className="font-display text-lg font-semibold text-red-900 dark:text-red-100">Could not check saved drafts</h2>
+      <p role="alert" className="mt-2 text-sm text-red-800 dark:text-red-200">{message}</p>
+      <p className="mt-2 text-sm leading-6 text-red-800 dark:text-red-200">Starting a new session is paused so an existing draft is not duplicated.</p>
+      <button type="button" onClick={onRetry} className="mt-4 min-h-11 rounded-lg border border-red-400 px-4 text-sm font-semibold text-red-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:text-red-100">Try again</button>
+    </section>
+  );
+}
+
+function DraftRecoveryPanel({
+  drafts,
+  busy,
+  error,
+  onResume,
+  onDiscard,
+}: {
+  drafts: AnthropometryHistorySession[];
+  busy: boolean;
+  error: string | null;
+  onResume: (draft: AnthropometryHistorySession) => void;
+  onDiscard: (draft: AnthropometryHistorySession) => void;
+}) {
+  return (
+    <section className="mt-6 rounded-xl border border-primary/40 bg-surface p-4 sm:p-6" aria-labelledby="saved-drafts-heading">
+      <p className="text-xs font-semibold uppercase tracking-wide text-primary">Recovery</p>
+      <h2 id="saved-drafts-heading" className="mt-1 font-display text-xl font-semibold text-ink">
+        {drafts.length === 1 ? "You have a saved measurement draft" : `You have ${drafts.length} saved measurement drafts`}
+      </h2>
+      <p className="mt-2 text-sm leading-6 text-muted">Resume preserved context and raw readings, or discard a draft before starting another session. Low-confidence acknowledgement is never restored and must be confirmed again.</p>
+      <ol className="mt-4 divide-y divide-border rounded-lg border border-border">
+        {drafts.map((draft, index) => (
+          <li key={draft.id} className="p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-ink">{index === 0 ? "Latest draft" : `Earlier draft ${index + 1}`}</p>
+                <p className="mt-1 break-words text-xs text-muted">
+                  {draft.measured_at ? new Date(draft.measured_at).toLocaleString() : "Measurement time not recorded"} · {draft.readings.length} preserved {draft.readings.length === 1 ? "reading" : "readings"}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button type="button" onClick={() => onResume(draft)} disabled={busy} className="min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">Resume</button>
+                <button type="button" onClick={() => onDiscard(draft)} disabled={busy} className="min-h-11 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-ink hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">Discard</button>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+      {error && <div className="mt-4"><ErrorMessage message={error} /></div>}
+    </section>
   );
 }
 
@@ -1074,21 +1313,21 @@ function CompletedPanel({ result, unit, onNewSession, onOpenTrends }: { result: 
             <dd className="mt-1 font-display text-2xl font-semibold text-ink">
               {site.representative_cm == null ? "—" : formatMeasurement(site.representative_cm, unit)}
             </dd>
-            <p className="mt-1 text-xs text-muted">Representative from {site.reading_count} preserved readings</p>
+            <dd className="mt-1 text-xs text-muted">Representative from {site.reading_count} preserved readings</dd>
             {site.quality === "repeatability_warning" && (
-              <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              <dd className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
                 The first readings differed. The value is kept, with a quality note because measurement technique or normal variation may have contributed.
-              </p>
+              </dd>
             )}
             {site.quality === "pair_agree_with_isolated_reading" && (
-              <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              <dd className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
                 One reading was preserved but excluded. Readings {site.selected_reading_indices?.join(" and ")} supplied the representative.
-              </p>
+              </dd>
             )}
             {site.quality === "high_variability" && (
-              <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              <dd className="mt-3 rounded-md bg-amber-50 p-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
                 Saved with explicit low-confidence acknowledgement. This value is ineligible for progress interpretation.
-              </p>
+              </dd>
             )}
           </div>
         ))}

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnthropometryChart } from "./charts/AnthropometryChart";
 import {
   ANTHROPOMETRY_SITES,
+  deleteAnthropometrySession,
   formatMeasurement,
   formatMeasurementChange,
   getAnthropometricProgress,
@@ -10,6 +11,7 @@ import {
   type AnthropometryChange,
   type AnthropometryComparisonReasonCode,
   type AnthropometryProgressResponse,
+  type AnthropometryProgressPoint,
   type AnthropometrySiteCode,
   type MeasurementUnit,
 } from "../lib/anthropometry";
@@ -45,10 +47,12 @@ function ChangeCard({
   return (
     <div className="rounded-lg border border-border p-3">
       <dt className="text-xs text-muted">{label}</dt>
-      <dd className="mt-1 font-display text-xl font-semibold text-ink">
-        {change ? formatMeasurementChange(change.change_cm, unit) : "Not enough data"}
+      <dd>
+        <span className="mt-1 block font-display text-xl font-semibold text-ink">
+          {change ? formatMeasurementChange(change.change_cm, unit) : "Not enough data"}
+        </span>
+        {change && <span className="mt-1 block text-xs text-muted">over {formatDuration(change.elapsed_days)}</span>}
       </dd>
-      {change && <p className="mt-1 text-xs text-muted">over {formatDuration(change.elapsed_days)}</p>}
     </div>
   );
 }
@@ -56,7 +60,7 @@ function ChangeCard({
 const REASON_MESSAGES: Record<AnthropometryComparisonReasonCode, string> = {
   insufficient_circumference_points:
     "At least two waist or abdomen-at-navel sessions are needed for a comparison.",
-  circumference_interval_too_short:
+  sessions_too_close_for_interpretation:
     "The circumference endpoints need to be at least 14 days apart.",
   circumference_quality_not_eligible:
     "The latest central measurement is retained but is not eligible for interpretation because of its quality result.",
@@ -83,6 +87,9 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSite, setSelectedSite] = useState<AnthropometrySiteCode>("waist");
+  const [deleteTarget, setDeleteTarget] = useState<AnthropometryProgressPoint | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -93,6 +100,21 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
       setError(cause instanceof Error ? cause.message : "Could not load measurement history.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteAnthropometrySession(deleteTarget.session_id);
+      setDeleteTarget(null);
+      await load();
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : "Could not delete the measurement session.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -196,8 +218,10 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
             <dl className="mt-4 grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg border border-border p-3">
                 <dt className="text-xs text-muted">Latest representative</dt>
-                <dd className="mt-1 font-display text-xl font-semibold text-ink">{formatMeasurement(latest.representative_cm, unit)}</dd>
-                <p className="mt-1 text-xs text-muted">{formatDate(latest.measured_at)}</p>
+                <dd>
+                  <span className="mt-1 block font-display text-xl font-semibold text-ink">{formatMeasurement(latest.representative_cm, unit)}</span>
+                  <span className="mt-1 block text-xs text-muted">{formatDate(latest.measured_at)}</span>
+                </dd>
               </div>
               <ChangeCard label="From previous comparable session" change={selectedSeries.change_summary?.previous ?? selectedSeries.previous_change ?? null} unit={unit} />
               <ChangeCard label={baseline ? `From comparable baseline (${formatDate(baseline.measured_at)})` : "From comparable baseline"} change={selectedSeries.change_summary?.baseline ?? selectedSeries.since_first_change ?? null} unit={unit} />
@@ -288,6 +312,16 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
                     <div className="sm:col-span-2"><dt>Algorithm</dt><dd className="font-mono">{point.algorithm_version ?? "Legacy calculation"}</dd></div>
                   </dl>
                 </details>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteTarget(point);
+                  }}
+                  className="mt-2 min-h-11 rounded-lg px-3 text-xs font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 dark:text-red-300 dark:hover:bg-red-950/30"
+                >
+                  Delete this session
+                </button>
               </li>
             ))}
           </ol>
@@ -307,6 +341,72 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
           <div><dt>Weight trend</dt><dd className="font-mono">{data.algorithm_versions.weight_trend}</dd></div>
         </dl>
       </details>
+      {deleteTarget && (
+        <DeleteSessionConfirmation
+          measuredAt={deleteTarget.measured_at}
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteSessionConfirmation({
+  measuredAt,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  measuredAt: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const returnFocusRef = useRef(
+    typeof document === "undefined" ? null : document.activeElement as HTMLElement | null,
+  );
+  useEffect(() => {
+    dialogRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    return () => returnFocusRef.current?.focus();
+  }, []);
+
+  function handleKeyDown(event: React.KeyboardEvent) {
+    if (event.key === "Escape" && !busy) {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const buttons = dialogRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+    if (!buttons?.length) return;
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-4 sm:place-items-center" role="presentation">
+      <section ref={dialogRef} onKeyDown={handleKeyDown} className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-surface p-5 shadow-xl" role="alertdialog" aria-modal="true" aria-labelledby="delete-session-title" aria-describedby="delete-session-description">
+        <h2 id="delete-session-title" className="font-display text-lg font-semibold text-ink">Delete this measurement session?</h2>
+        <p id="delete-session-description" className="mt-2 text-sm leading-6 text-muted">This permanently removes the {formatDate(measuredAt)} session, including all sites and preserved raw readings. This cannot be undone.</p>
+        {error && <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-300">{error}</p>}
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} disabled={busy} autoFocus className="min-h-11 rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">Keep session</button>
+          <button type="button" onClick={onConfirm} disabled={busy} className="min-h-11 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-700 disabled:opacity-50">{busy ? "Deleting…" : "Delete session"}</button>
+        </div>
+      </section>
     </div>
   );
 }

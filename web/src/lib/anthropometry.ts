@@ -234,6 +234,30 @@ export interface AnthropometryProgressSeries {
   since_first_change?: AnthropometryChange | null;
 }
 
+export interface AnthropometryHistoryReading {
+  id: string;
+  session_id: string;
+  site_code: AnthropometrySiteCode;
+  reading_number: number;
+  value_cm: number;
+}
+
+export interface AnthropometryHistorySession {
+  id: string;
+  status: "draft" | "finalized";
+  measured_at: string | null;
+  notes: string | null;
+  updated_at: string;
+  measurement_context: AnthropometryMeasurementContext;
+  readings: AnthropometryHistoryReading[];
+  representatives: Array<Record<string, unknown>>;
+}
+
+export interface AnthropometrySessionsResponse {
+  sessions: AnthropometryHistorySession[];
+  next_cursor: string | null;
+}
+
 export interface AnthropometryComparableValue {
   session_id: string;
   measured_at: string;
@@ -261,7 +285,7 @@ export type AnthropometrySignalDirection =
 
 export type AnthropometryComparisonReasonCode =
   | "insufficient_circumference_points"
-  | "circumference_interval_too_short"
+  | "sessions_too_close_for_interpretation"
   | "circumference_quality_not_eligible"
   | "incompatible_anthropometry_protocol"
   | "latest_central_measurement_not_at_weight_as_of"
@@ -368,6 +392,25 @@ export function deleteAnthropometrySession(sessionId: string) {
   return deleteFunction<{ deleted_session_id: string }>("delete-anthropometric-session", {
     session_id: sessionId,
   });
+}
+
+/** Load every resumable draft without exposing finalized history as a draft. */
+export async function getAnthropometryDrafts(): Promise<AnthropometryHistorySession[]> {
+  const drafts: AnthropometryHistorySession[] = [];
+  let cursor: string | null = null;
+  do {
+    const page: AnthropometrySessionsResponse = await getFunction<AnthropometrySessionsResponse>(
+      "get-anthropometric-sessions",
+      {
+        status: "draft",
+        limit: "100",
+        ...(cursor ? { before: cursor } : {}),
+      },
+    );
+    drafts.push(...page.sessions);
+    cursor = page.next_cursor;
+  } while (cursor);
+  return drafts;
 }
 
 export function getAnthropometricProgress(options: {

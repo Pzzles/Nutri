@@ -98,7 +98,7 @@ export type AnthropometryWeightMessageCode =
 
 export type WeightComparisonReasonCode =
   | "insufficient_circumference_points"
-  | "circumference_interval_too_short"
+  | "sessions_too_close_for_interpretation"
   | "circumference_quality_not_eligible"
   | "incompatible_anthropometry_protocol"
   | "latest_central_measurement_not_at_weight_as_of"
@@ -355,7 +355,7 @@ function candidate(
     return ineligible(site, "incompatible_anthropometry_protocol", trend, asOf, circumference);
   }
   if (circumference.elapsed_calendar_days < ANTHROPOMETRY_CROSS_SIGNAL_MIN_DAYS) {
-    return ineligible(site, "circumference_interval_too_short", trend, asOf, circumference);
+    return ineligible(site, "sessions_too_close_for_interpretation", trend, asOf, circumference);
   }
   if (trend?.status === "stale" || trend?.warnings.includes("stale_data")) {
     return ineligible(site, "weight_data_stale", trend, asOf, circumference);
