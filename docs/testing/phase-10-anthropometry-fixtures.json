@@ -26,7 +26,7 @@
   "context_time_warning": {
     "left": "07:30:00",
     "right": "13:00:01",
-    "expected": "local_time_difference_over_four_hours"
+    "expected": "time_of_day_differs_materially"
   },
   "pagination": { "finalized_sessions": 1005, "page_limit": 100, "expected_pages": 11 }
 }

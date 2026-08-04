@@ -1,6 +1,6 @@
 # Phase 10 anthropometry protocol and interpretation
 
-Status: Remediation Gates 1–3 implemented; Gate 4 pending.
+Status: Remediation Gates 1–3 implemented; Gate 4 final validation pending.
 
 ## Frozen versions
 
@@ -29,6 +29,11 @@ Direction uses the unrounded circumference delta: at most −0.5 cm is `decreasi
 
 Recorded differences generate cautions for meal timing, bathroom state, exercise within 12 hours, assistance, clothing, and local times more than four hours apart. Missing context creates no difference warning. Warnings do not invalidate measurements, alter representatives, or block a numeric change.
 
+The stable warning codes are `time_of_day_differs_materially`,
+`meal_timing_differs`, `bathroom_context_differs`,
+`recent_exercise_context_differs`, `measurement_assistance_differs`, and
+`clothing_level_differs`.
+
 ## Phase 6 comparison v2
 
 The comparison is calculated as of the latest eligible anthropometry session. Only weight logs at or before that timestamp enter the canonical Phase 6 `calculate()` pipeline. Direction comes only from the Phase 6 weekly-rate uncertainty interval:
@@ -38,6 +43,6 @@ The comparison is calculated as of the latest eligible anthropometry session. On
 - interval includes zero: `broadly_stable_or_uncertain`;
 - either bound missing: `unavailable`.
 
-Eligibility also requires a compatible central-site comparison at least 14 calendar days long, eligible representatives, Phase 6 `usable` or `provisional` status, medium/high confidence, a non-stale interval, and a latest weight no more than seven calendar days from the anthropometry session. The response includes rate, bounds, status, confidence, selected window, as-of time, latest weight time, evidence periods, eligibility, and stable reason codes.
+Eligibility also requires a compatible central-site comparison at least 14 calendar days long, eligible representatives, Phase 6 `usable` or `provisional` status, medium/high confidence, a non-stale interval, and a latest weight no more than seven calendar days from the anthropometry session. The response includes rate, bounds, status, confidence, selected window, as-of time, latest weight time, evidence periods, eligibility, stable reason codes, and a stable cross-signal message code.
 
 Descriptions are observational. Nutri never translates circumference change into fat, muscle, visceral fat, body-fat percentage, or recomposition claims. Anthropometry does not alter calorie targets, maintenance estimates, or goal feedback.

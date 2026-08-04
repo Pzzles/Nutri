@@ -142,8 +142,8 @@ describe("measurement context v1", () => {
       measurement_assistance: "assisted", clothing_level: "normal",
     });
     expect(warnings).toEqual([
-      "local_time_difference_over_four_hours", "meal_timing_differs",
-      "bathroom_state_differs", "recent_exercise_differs",
+      "time_of_day_differs_materially", "meal_timing_differs",
+      "bathroom_context_differs", "recent_exercise_context_differs",
       "measurement_assistance_differs", "clothing_level_differs",
     ]);
   });

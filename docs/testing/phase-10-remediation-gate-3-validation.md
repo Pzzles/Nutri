@@ -62,7 +62,7 @@ pass. Durations are wall-clock durations recorded by the verification wrapper.
 | API, >1,000 pagination, and export | `supabase/tests` | `npm test -- anthropometry-api.test.ts` | 0 | 37 | 0 | 0 | 17.308 s |
 | Mocked anthropometry Playwright | `web` | `npx playwright test e2e/anthropometry-measurement.spec.ts e2e/anthropometry-trends.spec.ts --project=mocked --workers=1` | 0 | 2 | 0 | 0 | 4.617 s |
 | Real authenticated anthropometry Playwright | `web` | `npx playwright test e2e/integration/anthropometry.spec.ts --project=integration --workers=1` | 0 | 7 | 0 | 0 | 29.567 s |
-| Full backend | `supabase/tests` | `npm test` | 0 | 423 | 0 | 0 | 120.777 s |
+| Full backend | `supabase/tests` | `npm test` | 0 | 423 | 0 | 0 | 104.155 s |
 | Full frontend | `web` | `npm test` | 0 | 1,008 | 0 | 0 | 16.342 s |
 | TypeScript typecheck | `web` | `npx tsc -b --pretty false` | 0 | 1 | 0 | 0 | 9.036 s |
 | Production build | `web` | `npm run build` | 0 | 1 | 0 | 0 | 20.070 s |

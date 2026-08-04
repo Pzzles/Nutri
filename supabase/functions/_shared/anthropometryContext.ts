@@ -38,10 +38,10 @@ export interface AnthropometryContextInput {
 }
 
 export type AnthropometryContextWarningCode =
-  | "local_time_difference_over_four_hours"
+  | "time_of_day_differs_materially"
   | "meal_timing_differs"
-  | "bathroom_state_differs"
-  | "recent_exercise_differs"
+  | "bathroom_context_differs"
+  | "recent_exercise_context_differs"
   | "measurement_assistance_differs"
   | "clothing_level_differs";
 
@@ -143,16 +143,16 @@ export function compareMeasurementContexts(
   if (leftSeconds !== null && rightSeconds !== null) {
     const direct = Math.abs(leftSeconds - rightSeconds);
     const circular = Math.min(direct, 86_400 - direct);
-    if (circular > 4 * 3600) warnings.push("local_time_difference_over_four_hours");
+    if (circular > 4 * 3600) warnings.push("time_of_day_differs_materially");
   }
   if (left.meal_timing !== "not_recorded" && right.meal_timing !== "not_recorded" &&
     left.meal_timing !== right.meal_timing) warnings.push("meal_timing_differs");
   if (left.after_bathroom !== null && right.after_bathroom !== null &&
-    left.after_bathroom !== right.after_bathroom) warnings.push("bathroom_state_differs");
+    left.after_bathroom !== right.after_bathroom) warnings.push("bathroom_context_differs");
   if (left.exercise_within_previous_12_hours !== null &&
     right.exercise_within_previous_12_hours !== null &&
     left.exercise_within_previous_12_hours !== right.exercise_within_previous_12_hours) {
-    warnings.push("recent_exercise_differs");
+    warnings.push("recent_exercise_context_differs");
   }
   if (left.measurement_assistance !== "not_recorded" &&
     right.measurement_assistance !== "not_recorded" &&
