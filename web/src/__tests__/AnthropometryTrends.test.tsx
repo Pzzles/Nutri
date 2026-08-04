@@ -81,7 +81,7 @@ describe("AnthropometryTrends", () => {
   it("renders only the server-authored descriptive comparison and boundaries", async () => {
     render(<AnthropometryTrends unit="cm" />);
     expect(await screen.findByText(RESPONSE.weight_comparison!.description!)).toBeVisible();
-    expect(screen.getByText(/nearby observed Phase 6 trend points only/i)).toBeVisible();
+    expect(screen.getByText(/canonical Phase 6 weekly-rate uncertainty range/i)).toBeVisible();
     expect(screen.getByText(/does not infer fat loss, muscle gain or body recomposition/i)).toBeVisible();
     expect(screen.getByText(/does not alter targets or goal feedback/i)).toBeVisible();
   });
@@ -100,6 +100,44 @@ describe("AnthropometryTrends", () => {
     render(<AnthropometryTrends unit="cm" />);
     expect(await screen.findByText("89.8 cm")).toBeVisible();
     expect(screen.getByText(/value retained with a repeatability note/i)).toBeVisible();
+  });
+
+  it("renders server warning codes as cautions without hiding numeric history", async () => {
+    const waist = RESPONSE.series[0];
+    mockGetProgress.mockResolvedValue({
+      ...RESPONSE,
+      series: [{
+        ...waist,
+        warning_codes: ["protocol_versions_not_comparable"],
+        change_summary: {
+          latest: {
+            session_id: "w3", measured_at: "2026-08-01T06:00:00Z", logged_date: "2026-08-01",
+            representative_cm: 88.6, quality: "within_repeatability_threshold",
+            protocol_version: "anthropometry_protocol_v1", representative_algorithm_version: "anthropometry_representative_v3",
+          },
+          previous: {
+            from: {
+              session_id: "w1", measured_at: "2026-06-01T06:00:00Z", logged_date: "2026-06-01",
+              representative_cm: 92, quality: "within_repeatability_threshold",
+              protocol_version: "anthropometry_protocol_v1", representative_algorithm_version: "anthropometry_representative_v2",
+            },
+            change_cm: -3.4,
+            elapsed_days: 61,
+            direction: "decreasing",
+            context_warning_codes: ["meal_timing_differs"],
+          },
+          baseline: null,
+          warning_codes: ["protocol_versions_not_comparable"],
+          algorithm_version: "anthropometry_change_summary_v2",
+          context_comparison_version: "anthropometry_context_comparison_v1",
+          protocol_compatibility_version: "anthropometry_protocol_compatibility_v1",
+        },
+      }],
+    });
+    render(<AnthropometryTrends unit="cm" />);
+    expect(await screen.findByText(/different protocols and are shown separately/i)).toBeVisible();
+    expect(screen.getByText(/sessions were measured under different conditions/i)).toBeVisible();
+    expect(screen.getAllByText("88.6 cm")[0]).toBeVisible();
   });
 
   it("shows v3 quality, eligibility, selected indices, version, and expanded raw readings", async () => {

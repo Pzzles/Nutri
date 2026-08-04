@@ -7,6 +7,9 @@ import { createClient, type Session, type SupabaseClient } from "@supabase/supab
 export const SUPABASE_URL =
   process.env.SUPABASE_URL ?? "http://localhost:54421";
 
+export const DB_URL =
+  process.env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54422/postgres";
+
 // Default to well-known local dev keys; override via env.
 export const ANON_KEY =
   process.env.SUPABASE_ANON_KEY ??

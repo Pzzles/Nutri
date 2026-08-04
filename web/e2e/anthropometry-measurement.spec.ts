@@ -39,15 +39,22 @@ function savedResponse(status: "draft" | "finalized", sites: unknown[] = []) {
       measured_at: new Date().toISOString(),
       notes: null,
       finalized_at: status === "finalized" ? new Date().toISOString() : null,
+      measurement_context: {
+        version: "anthropometry_measurement_context_v1", local_time: "07:00:00",
+        meal_timing: "after_food", after_bathroom: true,
+        exercise_within_previous_12_hours: false,
+        measurement_assistance: "assisted", clothing_level: "light",
+      },
     },
     sites,
     replayed: false,
     algorithm_versions: {
-      data_contract: "anthropometry_data_contract_v3",
+      data_contract: "anthropometry_data_contract_v4",
       protocol: "anthropometry_protocol_v1",
       representative: status === "finalized" ? "anthropometry_representative_v3" : null,
       repeatability_thresholds:
         status === "finalized" ? "anthropometry_repeatability_thresholds_v2" : null,
+      measurement_context: "anthropometry_measurement_context_v1",
     },
   };
 }
@@ -68,8 +75,14 @@ test("mobile guided circuit completes with an accessible third-reading warning",
   await page.route("**/functions/v1/finalize-anthropometric-session", async (route) => {
     const body = JSON.parse(route.request().postData() ?? "{}") as {
       sites: Array<{ site_code: string; readings_cm: number[] }>;
+      measurement_context: Record<string, unknown>;
     };
     expect(body.sites).toEqual([{ site_code: "waist", readings_cm: [80, 81.2, 80.5] }]);
+    expect(body.measurement_context).toEqual({
+      meal_timing: "after_food", after_bathroom: true,
+      exercise_within_previous_12_hours: false,
+      measurement_assistance: "assisted", clothing_level: "light",
+    });
     await fulfill(route, savedResponse("finalized", [{
       site_code: "waist",
       readings_cm: [80, 81.2, 80.5],
@@ -93,6 +106,11 @@ test("mobile guided circuit completes with an accessible third-reading warning",
 
   await page.getByRole("button", { name: "Clear" }).click();
   await page.getByRole("checkbox", { name: /^Waist \(WHO midpoint\)/i }).check();
+  await page.getByRole("combobox", { name: /food timing/i }).selectOption("after_food");
+  await page.getByRole("combobox", { name: /measurement help/i }).selectOption("assisted");
+  await page.getByRole("combobox", { name: /clothing level/i }).selectOption("light");
+  await page.getByRole("combobox", { name: /after using the bathroom/i }).selectOption("true");
+  await page.getByRole("combobox", { name: /exercise in the previous 12 hours/i }).selectOption("false");
   await page.getByRole("checkbox", { name: /reviewed the preparation/i }).check();
   await page.getByRole("button", { name: /Begin with 1 site/i }).click();
 

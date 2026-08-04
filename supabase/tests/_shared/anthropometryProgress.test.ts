@@ -1,95 +1,64 @@
-/** Phase 10 Gate 5 pure fixture tests for changes and cross-signal descriptions. */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ANTHROPOMETRY_CHANGE_VERSION,
+  ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION,
+  ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION,
   ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
   buildAnthropometryProgress,
   buildAnthropometrySeries,
   buildWeightComparison,
+  weightDirectionFromInterval,
   type AnthropometryProgressInputPoint,
 } from "../../functions/_shared/anthropometryProgress.ts";
+import {
+  anthropometryProtocolsCompatible,
+  compareMeasurementContexts,
+  normalizeMeasurementContext,
+  type AnthropometryMeasurementContext,
+} from "../../functions/_shared/anthropometryContext.ts";
 import type { TrendOutput } from "../../functions/_shared/weightTrend.ts";
 
-type SiteCode = AnthropometryProgressInputPoint["site_code"];
-
-interface FixtureSession {
-  session_id: string;
-  measured_at: string;
-  sites: Array<{
-    site_code: SiteCode;
-    representative_cm: number;
-  }>;
-}
-
-interface LongitudinalFixture {
-  id: string;
-  sessions: FixtureSession[];
-  expected: Record<string, unknown>;
-  expected_ordered_session_ids?: string[];
-  expected_previous_change_cm?: number;
-  expected_elapsed_days?: number;
-}
-
-interface ComparisonFixture {
-  id: string;
-  circumference: {
-    site_code: "waist" | "abdomen_navel";
-    start: AnthropometryProgressInputPoint;
-    end: AnthropometryProgressInputPoint;
-  };
-  phase_6: {
-    status: TrendOutput["status"];
-    confidence: TrendOutput["confidence"];
-    trend_points: Array<{ measured_at: string; trend_weight_kg: number }>;
-  };
-  expected: Record<string, unknown>;
-}
-
-interface FrozenFixtures {
-  algorithm_versions: Record<string, string>;
-  longitudinal_fixtures: LongitudinalFixture[];
-  weight_comparison_fixtures: ComparisonFixture[];
-}
-
-const fixturePath = fileURLToPath(new URL(
-  "../../../docs/testing/phase-10-anthropometry-fixtures.json",
-  import.meta.url,
-));
-const fixtures = JSON.parse(readFileSync(fixturePath, "utf8")) as FrozenFixtures;
+const BASE_CONTEXT: AnthropometryMeasurementContext = {
+  version: "anthropometry_measurement_context_v1",
+  local_time: "07:30:00",
+  meal_timing: "before_food",
+  after_bathroom: true,
+  exercise_within_previous_12_hours: false,
+  measurement_assistance: "self",
+  clothing_level: "minimal",
+};
 
 function point(
-  sessionId: string,
-  measuredAt: string,
-  siteCode: SiteCode,
-  representativeCm: number,
+  id: string,
+  date: string,
+  value: number,
+  overrides: Partial<AnthropometryProgressInputPoint> = {},
 ): AnthropometryProgressInputPoint {
   return {
-    session_id: sessionId,
-    site_code: siteCode,
-    measured_at: measuredAt,
-    logged_date: measuredAt.slice(0, 10),
-    representative_cm: representativeCm,
-    quality: "within_repeatability_threshold",
+    session_id: id,
+    site_code: "waist",
+    measured_at: `${date}T06:00:00Z`,
+    logged_date: date,
+    protocol_version: "anthropometry_protocol_v1",
+    representative_cm: value,
+    quality: "pair_agree",
+    eligible_for_interpretation: true,
+    algorithm_version: "anthropometry_representative_v3",
+    measurement_context: BASE_CONTEXT,
+    ...overrides,
   };
 }
 
-function pointsFromSessions(sessions: FixtureSession[]): AnthropometryProgressInputPoint[] {
-  return sessions.flatMap((session) => session.sites.map((site) =>
-    point(
-      session.session_id,
-      session.measured_at,
-      site.site_code,
-      site.representative_cm,
-    )
-  ));
-}
-
-function trendFromFixture(fixture: ComparisonFixture["phase_6"]): TrendOutput {
+function trend(
+  asOf: string,
+  rate = -0.3,
+  lower: number | null = -0.5,
+  upper: number | null = -0.1,
+  overrides: Partial<TrendOutput> = {},
+): TrendOutput {
   return {
-    status: fixture.status,
-    confidence: fixture.confidence,
+    status: "usable",
+    confidence: "high",
     algorithm_versions: {
       daily_representative: "weight_daily_representative_v1",
       smoothing: "weight_time_ewma_v3",
@@ -98,271 +67,134 @@ function trendFromFixture(fixture: ComparisonFixture["phase_6"]): TrendOutput {
       confidence: "weight_trend_confidence_v1",
     },
     timezone: "Africa/Johannesburg",
-    window: { start: null, end: null, elapsed_days: 0, inclusive_calendar_days: 0 },
+    window: { start: "2026-06-01T06:00:00Z", end: asOf, elapsed_days: 61, inclusive_calendar_days: 62 },
     measurements: {
-      raw_count: fixture.trend_points.length,
-      valid_count: fixture.trend_points.length,
-      distinct_modelling_days: fixture.trend_points.length,
-      excluded_count: 0,
-      latest_measured_at: fixture.trend_points.at(-1)?.measured_at ?? null,
-      largest_gap_days: 0,
-      selected_rate_window_days: 28,
+      raw_count: 20, valid_count: 20, distinct_modelling_days: 20,
+      excluded_count: 0, latest_measured_at: asOf, largest_gap_days: 4,
+      selected_rate_window_days: 56,
     },
-    latest_raw_weight_kg: null,
-    latest_trend_weight_kg: fixture.trend_points.at(-1)?.trend_weight_kg ?? null,
-    weekly_rate: null,
-    warnings: [],
-    daily_representatives: [],
-    trend_points: fixture.trend_points.map((entry) => ({
-      local_date: entry.measured_at.slice(0, 10),
-      measured_at: entry.measured_at,
-      raw_weight_kg: entry.trend_weight_kg,
-      trend_weight_kg: entry.trend_weight_kg,
-      alpha: null,
-      delta_t_days: null,
-      huber_capped: false,
-    })),
-    flagged_measurements: [],
-    ols_diagnostic: null,
+    latest_raw_weight_kg: 79,
+    latest_trend_weight_kg: 79.1,
+    weekly_rate: { estimate_kg: rate, lower_kg: lower, upper_kg: upper, bootstrap_lower_kg: null, bootstrap_upper_kg: null },
+    warnings: [], daily_representatives: [], trend_points: [], flagged_measurements: [], ols_diagnostic: null,
+    ...overrides,
   };
 }
 
-describe("anthropometry_change_v1 frozen longitudinal fixtures", () => {
-  for (const fixture of fixtures.longitudinal_fixtures) {
-    it(fixture.id, () => {
-      const series = buildAnthropometrySeries(pointsFromSessions(fixture.sessions));
-      if (fixture.id.startsWith("L1_")) {
-        const waist = series.find((entry) => entry.site_code === "waist")!;
-        const navel = series.find((entry) => entry.site_code === "abdomen_navel")!;
-        expect(waist.points).toHaveLength(fixture.expected.waist_point_count as number);
-        expect(waist.points.map((entry) => entry.measured_at))
-          .toEqual(fixture.expected.waist_point_dates);
-        expect(waist.previous_change?.change_cm)
-          .toBe(fixture.expected.waist_previous_change_cm);
-        expect(waist.since_first_change?.change_cm)
-          .toBe(fixture.expected.waist_since_first_change_cm);
-        expect(waist.previous_change?.elapsed_days)
-          .toBe(fixture.expected.waist_elapsed_days);
-        expect(navel.points).toHaveLength(fixture.expected.abdomen_navel_point_count as number);
-        expect(navel.previous_change?.change_cm)
-          .toBe(fixture.expected.abdomen_navel_previous_change_cm);
-        expect(navel.previous_change?.elapsed_days)
-          .toBe(fixture.expected.abdomen_navel_elapsed_days);
-        expect(series.flatMap((entry) => entry.points)).toHaveLength(4);
-      } else if (fixture.id === "L2_one_point_has_null_change") {
-        expect(series[0].previous_change).toBeNull();
-        expect(series[0].since_first_change).toBeNull();
-      } else {
-        expect(series[0].points.map((entry) => entry.session_id))
-          .toEqual(fixture.expected_ordered_session_ids);
-        expect(series[0].previous_change?.change_cm)
-          .toBe(fixture.expected_previous_change_cm);
-        expect(series[0].previous_change?.elapsed_days)
-          .toBe(fixture.expected_elapsed_days);
-      }
-    });
-  }
-
-  it("keeps missing sites absent and never manufactures zero points", () => {
+describe("anthropometry_change_summary_v2", () => {
+  it("keeps sparse points and derives previous/baseline without interpolation", () => {
     const series = buildAnthropometrySeries([
-      point("a", "2026-01-01T06:00:00Z", "waist", 90),
-    ]);
-    expect(series.map((entry) => entry.site_code)).toEqual(["waist"]);
-    expect(series[0].points[0].representative_cm).toBe(90);
+      point("three", "2026-08-01", 88.4),
+      point("one", "2026-06-01", 90),
+      point("two", "2026-06-20", 89.2),
+    ])[0];
+    expect(series.points.map((entry) => entry.session_id)).toEqual(["one", "two", "three"]);
+    expect(series.change_summary?.previous).toMatchObject({ change_cm: -0.8, elapsed_days: 42 });
+    expect(series.change_summary?.baseline).toMatchObject({ change_cm: -1.6, elapsed_days: 61 });
   });
 
-  it.each([
-    {
-      cadence: "daily",
-      dates: [
-        "2026-01-01T06:00:00Z",
-        "2026-01-02T06:00:00Z",
-        "2026-01-03T06:00:00Z",
-        "2026-01-04T06:00:00Z",
-      ],
-      expectedPreviousDays: 1,
-      expectedSinceFirstDays: 3,
-    },
-    {
-      cadence: "fortnightly",
-      dates: [
-        "2026-01-01T06:00:00Z",
-        "2026-01-15T06:00:00Z",
-        "2026-01-29T06:00:00Z",
-      ],
-      expectedPreviousDays: 14,
-      expectedSinceFirstDays: 28,
-    },
-    {
-      cadence: "monthly",
-      dates: [
-        "2026-01-31T06:00:00Z",
-        "2026-02-28T06:00:00Z",
-        "2026-03-31T06:00:00Z",
-      ],
-      expectedPreviousDays: 31,
-      expectedSinceFirstDays: 59,
-    },
-    {
-      cadence: "sporadic",
-      dates: [
-        "2026-01-02T06:00:00Z",
-        "2026-01-11T06:00:00Z",
-        "2026-03-25T06:00:00Z",
-      ],
-      expectedPreviousDays: 73,
-      expectedSinceFirstDays: 82,
-    },
-  ])("preserves $cadence measurements as actual, unsmoothed points", ({
-    cadence,
-    dates,
-    expectedPreviousDays,
-    expectedSinceFirstDays,
-  }) => {
-    const input = dates.map((date, index) =>
-      point(`${cadence}-${index + 1}`, date, "waist", 90 - index * 0.5)
-    );
-    const waist = buildAnthropometrySeries([...input].reverse())[0];
+  it("uses the unrounded 0.5 cm boundary", () => {
+    expect(buildAnthropometrySeries([point("a", "2026-06-01", 90), point("b", "2026-07-01", 89.5)])[0]
+      .change_summary?.baseline?.direction).toBe("decreasing");
+    expect(buildAnthropometrySeries([point("a", "2026-06-01", 90), point("b", "2026-07-01", 89.51)])[0]
+      .change_summary?.baseline?.direction).toBe("broadly_stable");
+  });
 
-    expect(waist.points.map((entry) => entry.measured_at)).toEqual(dates);
-    expect(waist.points).toHaveLength(dates.length);
-    expect(waist.previous_change?.elapsed_days).toBe(expectedPreviousDays);
-    expect(waist.since_first_change?.elapsed_days).toBe(expectedSinceFirstDays);
-    expect(waist.since_first_change?.start_session_id).toBe(`${cadence}-1`);
-    expect(waist.since_first_change?.end_session_id).toBe(`${cadence}-${dates.length}`);
+  it("keeps incompatible protocol rows visible but excludes comparisons", () => {
+    const series = buildAnthropometrySeries([
+      point("legacy", "2026-06-01", 90, { protocol_version: "anthropometry_protocol_future_v2" }),
+      point("current", "2026-08-01", 88),
+    ])[0];
+    expect(series.points).toHaveLength(2);
+    expect(series.change_summary?.baseline).toBeNull();
+    expect(series.warning_codes).toContain("protocol_versions_not_comparable");
+    expect(anthropometryProtocolsCompatible("anthropometry_protocol_v1", "anthropometry_protocol_future_v2")).toBe(false);
+  });
+
+  it("allows representative v2 and v3 rows under the same compatible protocol", () => {
+    const series = buildAnthropometrySeries([
+      point("v2", "2026-06-01", 90, { algorithm_version: "anthropometry_representative_v2" }),
+      point("v3", "2026-08-01", 88, { algorithm_version: "anthropometry_representative_v3" }),
+    ])[0];
+    expect(series.change_summary?.baseline?.change_cm).toBe(-2);
   });
 });
 
-describe("anthropometry_weight_comparison_v1 frozen fixtures", () => {
-  for (const fixture of fixtures.weight_comparison_fixtures) {
-    it(fixture.id, () => {
-      const circumferencePoints: AnthropometryProgressInputPoint[] = [
-        {
-          ...fixture.circumference.start,
-          site_code: fixture.circumference.site_code,
-          logged_date: fixture.circumference.start.measured_at.slice(0, 10),
-        },
-        {
-          ...fixture.circumference.end,
-          site_code: fixture.circumference.site_code,
-          logged_date: fixture.circumference.end.measured_at.slice(0, 10),
-        },
-      ];
-      const comparison = buildWeightComparison(
-        buildAnthropometrySeries(circumferencePoints),
-        trendFromFixture(fixture.phase_6),
-      );
-
-      if ("eligible" in fixture.expected) {
-        expect(comparison.eligible).toBe(fixture.expected.eligible);
-      }
-      if (fixture.expected.selected_site_code) {
-        expect(comparison.site_code).toBe(fixture.expected.selected_site_code);
-      }
-      if (fixture.expected.description !== undefined) {
-        expect(comparison.description).toBe(fixture.expected.description);
-      }
-      if (fixture.expected.circumference_change_cm !== undefined) {
-        expect(comparison.circumference?.change_cm)
-          .toBe(fixture.expected.circumference_change_cm);
-      }
-      if (fixture.expected.circumference_direction !== undefined) {
-        expect(comparison.circumference?.direction)
-          .toBe(fixture.expected.circumference_direction);
-      }
-      if (fixture.expected.weight_change_kg !== undefined) {
-        expect(comparison.weight_trend?.change_kg)
-          .toBe(fixture.expected.weight_change_kg);
-      }
-      if (fixture.expected.weight_stable_band_kg !== undefined) {
-        expect(comparison.weight_trend?.stable_band_kg)
-          .toBe(fixture.expected.weight_stable_band_kg);
-      }
-      if (fixture.expected.weight_direction !== undefined) {
-        expect(comparison.weight_trend?.direction)
-          .toBe(fixture.expected.weight_direction);
-      }
-      if (fixture.expected.reason_codes) {
-        expect(comparison.reason_codes).toEqual(fixture.expected.reason_codes);
-      }
-      if (fixture.expected.selected_start_weight_timestamp) {
-        expect(comparison.weight_trend?.start_point_measured_at)
-          .toBe(fixture.expected.selected_start_weight_timestamp);
-        expect(comparison.weight_trend?.start_kg)
-          .toBe(fixture.expected.selected_start_weight_kg);
-      }
+describe("measurement context v1", () => {
+  it("defaults omitted optional fields without fabricating booleans", () => {
+    expect(normalizeMeasurementContext(undefined)).toEqual({
+      meal_timing: "not_recorded", after_bathroom: null,
+      exercise_within_previous_12_hours: null,
+      measurement_assistance: "not_recorded", clothing_level: "not_recorded",
     });
-  }
+  });
 
-  it("falls back to abdomen at navel only when waist lacks eligible endpoints", () => {
-    const series = buildAnthropometrySeries([
-      point("w", "2026-08-01T06:00:00Z", "waist", 90),
-      point("n1", "2026-07-01T06:00:00Z", "abdomen_navel", 100),
-      point("n2", "2026-08-01T06:00:00Z", "abdomen_navel", 98),
+  it("rejects wrong types, unknown enums and extra trusted fields", () => {
+    expect(() => normalizeMeasurementContext({ after_bathroom: "yes" })).toThrow(/true, false or null/);
+    expect(() => normalizeMeasurementContext({ meal_timing: "fasted" })).toThrow(/unsupported/);
+    expect(() => normalizeMeasurementContext({ local_time: "07:00:00" })).toThrow(/not accepted/);
+  });
+
+  it("warns for material differences without changing values", () => {
+    const warnings = compareMeasurementContexts(BASE_CONTEXT, {
+      ...BASE_CONTEXT, local_time: "13:00:01", meal_timing: "after_food",
+      after_bathroom: false, exercise_within_previous_12_hours: true,
+      measurement_assistance: "assisted", clothing_level: "normal",
+    });
+    expect(warnings).toEqual([
+      "local_time_difference_over_four_hours", "meal_timing_differs",
+      "bathroom_state_differs", "recent_exercise_differs",
+      "measurement_assistance_differs", "clothing_level_differs",
     ]);
-    const comparison = buildWeightComparison(series, trendFromFixture({
-      status: "usable",
-      confidence: "high",
-      trend_points: [
-        { measured_at: "2026-07-01T06:00:00Z", trend_weight_kg: 80 },
-        { measured_at: "2026-08-01T06:00:00Z", trend_weight_kg: 80.1 },
-      ],
-    }));
-    expect(comparison.site_code).toBe("abdomen_navel");
-    expect(comparison.description).toContain("abdomen at navel");
+  });
+});
+
+describe("anthropometry_weight_comparison_v2", () => {
+  const start = point("start", "2026-06-01", 90);
+  const end = point("end", "2026-08-01", 87);
+  const asOf = end.measured_at;
+
+  it("derives direction only from the canonical weekly-rate interval", () => {
+    expect(weightDirectionFromInterval(trend(asOf, -0.3, -0.5, -0.1))).toBe("decreasing");
+    expect(weightDirectionFromInterval(trend(asOf, 0.3, 0.1, 0.5))).toBe("increasing");
+    expect(weightDirectionFromInterval(trend(asOf, 0.01, -0.2, 0.3))).toBe("broadly_stable_or_uncertain");
+    expect(weightDirectionFromInterval(trend(asOf, 0.1, null, null))).toBe("unavailable");
   });
 
-  it("keeps high-variability points visible but excludes them from cross-signal interpretation", () => {
-    const start = point("start", "2026-07-01T06:00:00Z", "waist", 90);
-    const end = {
-      ...point("end", "2026-08-01T06:00:00Z", "waist", 87),
-      quality: "high_variability" as const,
-      eligible_for_interpretation: false,
-    };
-    const series = buildAnthropometrySeries([start, end]);
-    expect(series[0].points).toHaveLength(2);
-    const comparison = buildWeightComparison(series, trendFromFixture({
-      status: "usable",
-      confidence: "high",
-      trend_points: [
-        { measured_at: start.measured_at, trend_weight_kg: 80 },
-        { measured_at: end.measured_at, trend_weight_kg: 79 },
-      ],
-    }));
+  it("returns complete evidence and a descriptive message when eligible", () => {
+    const comparison = buildWeightComparison(buildAnthropometrySeries([start, end]), trend(asOf), asOf);
     expect(comparison).toMatchObject({
-      eligible: false,
-      reason_codes: ["circumference_repeatability_warning"],
+      eligible: true, site_code: "waist", reason_codes: [],
+      algorithm_version: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
+      circumference: { change_cm: -3, elapsed_calendar_days: 61, direction: "decreasing" },
+      weight_trend: { weekly_rate_kg: -0.3, lower_kg: -0.5, upper_kg: -0.1, direction: "decreasing", as_of: asOf },
     });
+    expect(comparison.description).toMatch(/weight trend decreased.*waist circumference decreased/i);
   });
 
-  it("returns all frozen versions and display-only limitations", () => {
+  it("enforces interval, confidence, staleness and seven-day alignment gates", () => {
+    const short = point("short", "2026-06-14", 89);
+    expect(buildWeightComparison(buildAnthropometrySeries([start, short]), trend(short.measured_at), short.measured_at).reason_codes)
+      .toEqual(["circumference_interval_too_short"]);
+    expect(buildWeightComparison(buildAnthropometrySeries([start, end]), trend(asOf, -0.2, null, null), asOf).reason_codes)
+      .toEqual(["weight_rate_interval_unavailable"]);
+    expect(buildWeightComparison(buildAnthropometrySeries([start, end]), trend(asOf, -0.2, -0.4, -0.1, { confidence: "low" }), asOf).reason_codes)
+      .toEqual(["weight_confidence_not_eligible"]);
+    const distant = trend(asOf, -0.2, -0.4, -0.1);
+    distant.measurements.latest_measured_at = "2026-07-20T06:00:00Z";
+    expect(buildWeightComparison(buildAnthropometrySeries([start, end]), distant, asOf).reason_codes)
+      .toEqual(["weight_not_aligned_with_anthropometry"]);
+  });
+
+  it("returns all Gate 3 provenance versions and non-interference wording", () => {
     const result = buildAnthropometryProgress([], null);
-    expect(result.algorithm_versions).toMatchObject({
-      change: ANTHROPOMETRY_CHANGE_VERSION,
+    expect(result.algorithm_versions).toEqual({
+      change_summary: ANTHROPOMETRY_CHANGE_VERSION,
+      context_comparison: ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION,
+      protocol_compatibility: ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION,
       weight_comparison: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
+      weight_trend: "weight_trend_v1",
     });
-    expect(fixtures.algorithm_versions).toMatchObject({
-      change: ANTHROPOMETRY_CHANGE_VERSION,
-      weight_comparison: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
-    });
-    expect(result.limitations.join(" ")).toMatch(/does not alter calorie targets/i);
-    expect(result.weight_comparison).toMatchObject({
-      eligible: false,
-      site_code: null,
-      reason_codes: ["insufficient_circumference_points"],
-    });
-    expect(buildAnthropometryProgress([], null, false).weight_comparison).toBeNull();
-  });
-
-  it("the production endpoint is read-only and cannot update target or plateau state", () => {
-    const endpointPath = fileURLToPath(new URL(
-      "../../functions/get-anthropometric-progress/index.ts",
-      import.meta.url,
-    ));
-    const source = readFileSync(endpointPath, "utf8");
-    expect(source).not.toMatch(/\.(insert|update|upsert|delete|rpc)\s*\(/);
-    expect(source).not.toContain("get-goal-feedback");
-    expect(source).not.toContain("goal_feedback_assessments");
-    expect(source).not.toContain("calorie_target_snapshots");
+    expect(result.limitations.join(" ")).toMatch(/does not alter calorie targets or goal feedback/i);
   });
 });

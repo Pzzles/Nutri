@@ -87,6 +87,29 @@ beforeEach(() => {
   });
 });
 
+describe("structured measurement context", () => {
+  it("collects optional accessible context fields and sends only client-owned values", async () => {
+    const user = userEvent.setup();
+    render(<Measurements />);
+    await user.selectOptions(screen.getByRole("combobox", { name: /food timing/i }), "after_food");
+    await user.selectOptions(screen.getByRole("combobox", { name: /measurement help/i }), "assisted");
+    await user.selectOptions(screen.getByRole("combobox", { name: /clothing level/i }), "light");
+    await user.selectOptions(screen.getByRole("combobox", { name: /after using the bathroom/i }), "true");
+    await user.selectOptions(screen.getByRole("combobox", { name: /exercise in the previous 12 hours/i }), "false");
+    await user.click(screen.getByRole("checkbox", { name: /reviewed the preparation/i }));
+    await user.click(screen.getByRole("button", { name: /begin with 8 sites/i }));
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+    expect(mockSaveDraft.mock.calls[0][0]).toMatchObject({
+      measurement_context: {
+        meal_timing: "after_food", after_bathroom: true,
+        exercise_within_previous_12_hours: false,
+        measurement_assistance: "assisted", clothing_level: "light",
+      },
+    });
+    expect(mockSaveDraft.mock.calls[0][0]).not.toHaveProperty("local_time");
+  });
+});
+
 async function beginWithSites(codes: AnthropometrySiteCode[]) {
   const user = userEvent.setup();
   render(<Measurements />);
