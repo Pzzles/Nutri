@@ -4,6 +4,7 @@ node_modules/
 # Build output
 web/dist/
 web/.vite/
+.vite/
 
 # Environment & secrets — never commit real credentials
 .env
