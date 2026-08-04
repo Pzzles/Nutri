@@ -73,7 +73,7 @@ jobs:
         run: supabase start
 
       - name: Export Supabase connection vars
-        run: supabase status --output env >> $GITHUB_ENV
+        run: supabase status --output json | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> "$GITHUB_ENV"
 
       - name: Run DB + RLS integration tests
         run: npm test
@@ -141,7 +141,7 @@ jobs:
         run: supabase start
 
       - name: Export Supabase connection vars
-        run: supabase status --output env >> $GITHUB_ENV
+        run: supabase status --output json | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> "$GITHUB_ENV"
 
       - name: Inject edge function secrets
         run: |
