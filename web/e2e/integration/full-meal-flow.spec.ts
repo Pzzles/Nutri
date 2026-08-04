@@ -237,7 +237,7 @@ test("when parse-meal returns a server error, the textarea still holds the input
 test(
   "duplicate log-meal submission returns the original meal_id and creates one meal in history",
   async ({ page }) => {
-    const idemKey = `b4-dedup-${Date.now()}`;
+    const idemKey = crypto.randomUUID();
     const payload = {
       idempotency_key: idemKey,
       meal_type: "snack",
@@ -273,7 +273,7 @@ test(
     await page.goto("/history");
     await page.waitForLoadState("networkidle");
 
-    const dupeCount = await page.locator("text=/b4 dedup test/i").count();
+    const dupeCount = await page.locator(`[data-meal-id="${mealId1}"]`).count();
     expect(dupeCount).toBe(1);
 
     // Dashboard must show non-zero calories (counted once, not doubled).
@@ -295,10 +295,18 @@ test(
 test(
   "SAST boundary: meal at 22:30 UTC is stored and displayed under the next-day SAST date",
   async ({ page }) => {
-    const eatUTC = "2026-07-28T22:30:00.000Z"; // 00:30 SAST on 2026-07-29
-    const expectedSastDate = "2026-07-29";
+    const eatAt = new Date();
+    eatAt.setUTCDate(eatAt.getUTCDate() - 1);
+    eatAt.setUTCHours(22, 30, 0, 0);
+    const eatUTC = eatAt.toISOString();
+    const expectedSastDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Johannesburg",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(eatAt);
 
-    const idemKey = `b5-sast-${Date.now()}`;
+    const idemKey = crypto.randomUUID();
     const payload = {
       idempotency_key: idemKey,
       meal_type: "dinner",
@@ -324,24 +332,16 @@ test(
       .single();
     expect(meal?.logged_date).toBe(expectedSastDate);
     // Must NOT equal the UTC wall-clock date.
-    expect(meal?.logged_date).not.toBe("2026-07-28");
+    expect(meal?.logged_date).not.toBe(eatUTC.slice(0, 10));
 
     // ── Browser assertion: the history page shows the meal ───────────────────
-    // Navigating to /history without a date param shows the most recent meals
-    // including this one (logged_date = 2026-07-29, a past date in the dataset).
-    // If the UI does not display it by default, the DB assertion above still
-    // fully proves the SAST calculation was applied correctly.
+    // The fixture lands on the current SAST date, which is the history default.
     await injectSession(page, sessionA);
     await page.goto("/history");
     await page.waitForLoadState("networkidle");
 
-    // Verify the meal is visible and the page text includes the SAST date.
-    // (History groups by logged_date; the date header should contain the SAST date.)
-    const pageText = await page.textContent("body");
-    expect(pageText).toContain(expectedSastDate);
-    // The UTC date must not be used as the grouping date for this meal.
-    // (It is acceptable for other meals to have dates near 2026-07-28.)
-    const mealElements = page.locator("text=/b5 sast boundary test/i");
+    // Verify the meal is visible on the server-derived SAST day.
+    const mealElements = page.locator(`[data-meal-id="${mealId}"]`);
     const mealCount = await mealElements.count();
     expect(mealCount).toBeGreaterThanOrEqual(1);
   },

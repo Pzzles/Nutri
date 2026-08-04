@@ -39,7 +39,7 @@ function utcDaysAgo(n: number): string {
 
 // ── User setup ────────────────────────────────────────────────────────────────
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
+const BASE_URL = process.env.E2E_BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
 
 interface UserSetup {
   userId: string;
@@ -96,7 +96,7 @@ async function injectSession(page: Page, setup: UserSetup): Promise<void> {
 async function navigateToFeedback(page: Page, setup: UserSetup): Promise<void> {
   await injectSession(page, setup);
   await page.goto(`${BASE_URL}/progress`);
-  await page.getByRole("button", { name: "Feedback" }).click();
+  await page.getByRole("tab", { name: "Feedback" }).click();
 
   await page.waitForSelector(
     '[data-testid^="goal-feedback-card"]:not([data-testid="goal-feedback-card-loading"])',

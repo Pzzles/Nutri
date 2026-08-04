@@ -41,7 +41,7 @@ function isoAt7(n: number): string {
 
 // ── User setup ────────────────────────────────────────────────────────────────
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
+const BASE_URL = process.env.E2E_BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
 
 interface UserSetup {
   userId: string;
@@ -111,7 +111,7 @@ async function injectSession(page: Page, setup: UserSetup) {
 async function navigateToMaintenance(page: Page, setup: UserSetup): Promise<void> {
   await injectSession(page, setup);
   await page.goto(`${BASE_URL}/progress`);
-  await page.getByRole("button", { name: "Maintenance" }).click();
+  await page.getByRole("tab", { name: "Maintenance" }).click();
 
   // Wait for any non-loading terminal card state (usable, error, insufficient, etc.)
   await page.waitForSelector(

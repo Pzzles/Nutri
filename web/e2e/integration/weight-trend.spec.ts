@@ -175,7 +175,7 @@ const FIXTURE_G_ENTRY: FixtureEntry = {
 
 // ── Page helpers ──────────────────────────────────────────────────────────────
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
+const BASE_URL = process.env.E2E_BASE_URL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
 
 interface UserSetup {
   userId: string;

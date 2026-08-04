@@ -85,6 +85,7 @@ async function callClaude(text: string): Promise<{
   if (!apiKey) {
     return { items: null, rawResponse: null, tokenUsage: null, callError: "Missing GROQ_API_KEY" };
   }
+  const apiUrl = Deno.env.get("GROQ_API_URL") ?? "https://api.groq.com/openai/v1/chat/completions";
 
   // FR-003 AC1: total elapsed to fallback must stay under ~8.5s. Budget 4s
   // per attempt, one retry on malformed JSON or transient failure.
@@ -93,7 +94,7 @@ async function callClaude(text: string): Promise<{
     const timeout = setTimeout(() => controller.abort(), 4000);
 
     try {
-      const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const resp = await fetch(apiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

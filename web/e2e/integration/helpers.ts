@@ -3,6 +3,7 @@
 // Requires: supabase start (local Supabase running)
 
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
+import type { Page } from "@playwright/test";
 
 export const SUPABASE_URL =
   process.env.SUPABASE_URL ?? "http://localhost:54421";
@@ -62,4 +63,19 @@ export async function cleanupUser(userId: string): Promise<void> {
 
 export function testEmail(label: string): string {
   return `${label}-${Date.now()}@test.local`;
+}
+
+export function authStorageKey(): string {
+  const projectRef = new URL(SUPABASE_URL).hostname.split(".")[0];
+  return `sb-${projectRef}-auth-token`;
+}
+
+export async function injectSession(page: Page, session: Session): Promise<void> {
+  await page.addInitScript(
+    ({ storageKey, storedSession }) => {
+      localStorage.setItem(storageKey, JSON.stringify(storedSession));
+      localStorage.setItem("sb-127-auth-token", JSON.stringify(storedSession));
+    },
+    { storageKey: authStorageKey(), storedSession: session },
+  );
 }

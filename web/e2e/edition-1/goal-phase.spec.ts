@@ -120,6 +120,9 @@ test("user can start a new cut phase with manual starting weight", async ({ page
     expect(body.starting_weight_source).toBe("manual");
     await fulfill(route, ACTIVE_PHASE);
   });
+  await page.route("**/functions/v1/dashboard-summary", (route) =>
+    fulfill(route, startCalled ? DASHBOARD_WITH_PHASE : DASHBOARD_NO_PHASE),
+  );
 
   await page.goto(`${BASE}/goals`);
 

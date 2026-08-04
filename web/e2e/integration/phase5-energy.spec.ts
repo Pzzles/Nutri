@@ -88,11 +88,10 @@ test.describe("Phase 5 — energy-based goal phase", () => {
   test("user can preview calculation and start a phase with server-derived calories", async ({ page }) => {
     // ── Sign in ─────────────────────────────────────────────────────────────
     await page.goto("/");
-    await page.getByRole("link", { name: /sign in/i }).click();
     await page.getByLabel(/email/i).fill(EMAIL);
     await page.getByLabel(/password/i).fill(PASSWORD);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await expect(page).toHaveURL(/\/(home|dashboard)?$/);
+    await page.locator("form").getByRole("button", { name: /sign in/i }).click();
+    await expect(page.getByRole("link", { name: "Account" })).toBeVisible({ timeout: 10_000 });
 
     // ── Navigate to Goals ────────────────────────────────────────────────────
     await page.goto("/goals");
@@ -134,7 +133,7 @@ test.describe("Phase 5 — energy-based goal phase", () => {
     expect(caloriesVal).toBeGreaterThanOrEqual(1000);
 
     // ── Snapshot breakdown is expandable ─────────────────────────────────────
-    const breakdownSummary = page.getByText(/how this was calculated/i);
+    const breakdownSummary = page.getByText(/how this (target )?was calculated/i);
     await expect(breakdownSummary).toBeVisible();
     await breakdownSummary.click();
     // After expanding, algorithm name should appear.
@@ -165,10 +164,10 @@ test.describe("Phase 5 — energy-based goal phase", () => {
 
     // Sign in as that user.
     await page.goto("/");
-    await page.getByRole("link", { name: /sign in/i }).click();
     await page.getByLabel(/email/i).fill(EMAIL2);
     await page.getByLabel(/password/i).fill(PASSWORD);
-    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.locator("form").getByRole("button", { name: /sign in/i }).click();
+    await expect(page.getByRole("link", { name: "Account" })).toBeVisible({ timeout: 10_000 });
 
     await page.goto("/goals");
     await page.getByRole("button", { name: /start new phase/i }).click();
@@ -177,7 +176,7 @@ test.describe("Phase 5 — energy-based goal phase", () => {
     await page.getByRole("button", { name: /preview calorie target/i }).click();
 
     // Should show profile incomplete / missing official_weight_kg.
-    await expect(page.getByText(/profile incomplete|no official weight|official_weight_kg/i)).toBeVisible({
+    await expect(page.getByText("Profile incomplete", { exact: true })).toBeVisible({
       timeout: 10_000,
     });
 
