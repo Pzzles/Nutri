@@ -46,7 +46,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run dev -- --port ${vitePort}${viteModeArgument}`,
+    command: `npm run dev:test -- --port ${vitePort}${viteModeArgument}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
