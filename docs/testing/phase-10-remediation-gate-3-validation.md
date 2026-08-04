@@ -28,11 +28,14 @@ It does not declare the final Phase 10 audit complete; Gate 4 remains pending.
 - `anthropometry_weight_comparison_v2` derives direction only from the canonical
   Phase 6 weekly-rate lower and upper bounds. An interval containing zero is
   `broadly_stable_or_uncertain`; no EWMA point-change fallback exists.
-- The before/after fixture serializes the canonical Phase 5 target, Phase 6
-  trend, Phase 7 maintenance, and Phase 8 assessment outputs and proves byte
-  equivalence after executing the anthropometry engine. A static dependency
-  check also proves those production modules and endpoints do not import or
-  query anthropometry.
+- The before/after fixtures serialize the canonical Phase 5 target, Phase 6
+  trend, Phase 7 maintenance, and Phase 8 assessment outputs and prove byte
+  equivalence after executing the anthropometry engine. The real database/API
+  fixture also preserves profile, weight/nutrition histories, active goal,
+  target snapshot, maintenance evidence, and feedback evidence while adding
+  eligible, context-varied, high-variability, and incompatible-protocol tape
+  sessions. A static dependency check proves Phase 5–8 production modules and
+  endpoints do not import or query anthropometry.
 - The authenticated history stress fixture creates 1,005 finalized sessions,
   reads them across 11 cursor pages of at most 100, and proves stable ordering,
   unique complete coverage, and correct association of two raw readings and one
@@ -58,11 +61,11 @@ pass. Durations are wall-clock durations recorded by the verification wrapper.
 | Complete RLS operations and ownership | `supabase/tests` | `npm test -- rls.test.ts anthropometry-security.test.ts anthropometry-query-scope.test.ts` | 0 | 36 | 0 | 0 | 4.221 s |
 | Gate 2 deletion/failure/retry | `supabase/tests` | `npm test -- account-deletion.test.ts` | 0 | 5 | 0 | 0 | 6.493 s |
 | Context, change-summary, Phase 6 interval | `supabase/tests` | `npm test -- _shared/anthropometryProgress.test.ts` | 0 | 11 | 0 | 0 | 1.246 s |
-| Phase 5–8 non-interference | `supabase/tests` | `npm test -- _shared/anthropometryNonInterference.test.ts` | 0 | 2 | 0 | 0 | 1.321 s |
+| Phase 5–8 non-interference | `supabase/tests` | `npm test -- _shared/anthropometryNonInterference.test.ts` | 0 | 3 | 0 | 0 | 3.100 s |
 | API, >1,000 pagination, and export | `supabase/tests` | `npm test -- anthropometry-api.test.ts` | 0 | 37 | 0 | 0 | 17.308 s |
 | Mocked anthropometry Playwright | `web` | `npx playwright test e2e/anthropometry-measurement.spec.ts e2e/anthropometry-trends.spec.ts --project=mocked --workers=1` | 0 | 2 | 0 | 0 | 4.617 s |
 | Real authenticated anthropometry Playwright | `web` | `npx playwright test e2e/integration/anthropometry.spec.ts --project=integration --workers=1` | 0 | 7 | 0 | 0 | 29.567 s |
-| Full backend | `supabase/tests` | `npm test` | 0 | 423 | 0 | 0 | 104.155 s |
+| Full backend | `supabase/tests` | `npm test` | 0 | 424 | 0 | 0 | 112.442 s |
 | Full frontend | `web` | `npm test` | 0 | 1,008 | 0 | 0 | 16.342 s |
 | TypeScript typecheck | `web` | `npx tsc -b --pretty false` | 0 | 1 | 0 | 0 | 9.036 s |
 | Production build | `web` | `npm run build` | 0 | 1 | 0 | 0 | 20.070 s |
@@ -74,7 +77,7 @@ future-flag notices remain non-blocking baseline warnings.
 During evidence collection, one preliminary API stress rerun coincided with the
 local Supabase Edge Runtime container exiting cleanly and Kong returned one 502.
 The unchanged test then passed 37/37 after the local runtime restarted, and the
-subsequent clean-reset full backend run passed 423/423 including the same 1,005
+subsequent clean-reset full backend run passed 424/424 including the same 1,005
 row fixture. The isolated real Playwright run also passed 7/7 afterward.
 
 ## Scientific wording audit
