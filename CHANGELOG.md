@@ -6,6 +6,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Phase 10 remediation Gate 3 structured measurement context with server-derived local time.
+- Protocol-compatible change summaries and cautious context-difference warnings.
+- Phase 6 uncertainty-interval cross-signal comparison anchored at the anthropometry timestamp.
+- `nutri_data_export_v3`, 1,005-session pagination proof, and Phase 5–8 non-interference fixtures.
+
+### Status
+
+- Phase 10 remediation Gates 1–3 implemented; Gate 4 final validation pending. No PR or merge yet.
+
 ## [0.1.0] — 2026-08-02
 
 First production-ready release. All nine implementation phases complete.

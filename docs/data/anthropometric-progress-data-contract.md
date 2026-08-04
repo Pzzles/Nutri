@@ -1,7 +1,7 @@
 # Anthropometric Progress Data Contract
 
 **Phase:** 10 — Anthropometric Progress Tracking<br>
-**Current contract:** `anthropometry_data_contract_v3`<br>
+**Current contract:** `anthropometry_data_contract_v4` (superseded by [body-measurement-data-contract.md](body-measurement-data-contract.md))<br>
 **Protocol:** `anthropometry_protocol_v1`<br>
 **Status:** Remediation Gate 1 hybrid representative contract implemented
 
@@ -296,8 +296,8 @@ Response shape:
       "description": "Weight trend was broadly stable while waist circumference decreased."
     },
     "algorithm_versions": {
-      "change": "anthropometry_change_v1",
-      "weight_comparison": "anthropometry_weight_comparison_v1",
+      "change_summary": "anthropometry_change_summary_v2",
+      "weight_comparison": "anthropometry_weight_comparison_v2",
       "weight_trend": "weight_trend_v1"
     },
     "limitations": [
@@ -349,7 +349,7 @@ Stable ineligibility reason codes:
 
 Gate 3:
 
-1. includes `anthropometric_sessions`, `anthropometric_readings`, and `anthropometric_representatives` in `nutri_data_export_v2`;
+1. includes `anthropometric_sessions`, structured context, `anthropometric_readings`, and `anthropometric_representatives` in `nutri_data_export_v3`;
 2. removes the three tables during whole-account deletion through `profiles -> sessions -> children` cascades;
 3. does not log request bodies, raw measurements, notes, JWTs, email addresses, or full user IDs;
 4. constrains every service-role API query by the JWT-derived user ID.
@@ -363,8 +363,8 @@ Bump the named version when any listed behavior changes:
 | `anthropometry_protocol_v1` | Site meaning, landmark, body position, breathing, circuit order, or input precision |
 | `anthropometry_representative_v2` | Mean/median selection, agreeing-pair gate, tie behavior, or arithmetic/rounding |
 | `anthropometry_repeatability_thresholds_v2` | Reading bounds, 1.0 cm pair thresholds, required counts, retake gate, or future tolerance |
-| `anthropometry_change_v1` | Point ordering, endpoint selection, elapsed-time calculation, or change calculation |
-| `anthropometry_weight_comparison_v1` | Eligible sites, quality gates, 14/7-day thresholds, endpoint alignment, direction bands, or sentence templates |
+| `anthropometry_change_summary_v2` | Point ordering, endpoint selection, elapsed-time calculation, or change calculation |
+| `anthropometry_weight_comparison_v2` | Eligible sites, protocol/quality gates, 14/7-day thresholds, Phase 6 interval direction, or sentence templates |
 | `anthropometry_data_contract_v2` | Persisted draft/finalised lifecycle, API field semantics, missingness, idempotency, or immutability behavior |
 
 Old finalised sessions retain their stored versions. A new algorithm does not silently recalculate or overwrite historical representatives.

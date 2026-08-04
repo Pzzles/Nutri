@@ -43,6 +43,7 @@ The Phase 9 baseline is retained below. Phase 10 migrations `0031` and `0032` ar
 | 0030 | `0030_defer_goal_phase_supersession_fk.sql` | **Migration-history repair**: canonical placement of the deferred goal-phase supersession FK |
 | 0031 | `0031_anthropometric_progress_model.sql` | **Phase 10 Gate 2**: draft/finalised anthropometric sessions, preserved readings, representatives, lifecycle guards and RLS |
 | 0032 | `0032_anthropometric_api_rpcs.sql` | **Phase 10 Gate 3**: service-only atomic draft replacement/finalisation RPC with serialised idempotency |
+| 0036 | `0036_anthropometry_context_and_interpretation_v2.sql` | **Phase 10 remediation Gate 3**: structured context, v4 lifecycle, protocol retention and service-only atomic save RPC |
 | 0033 | `0033_anthropometry_confidence_retake.sql` | **Phase 10 remediation Gate 1**: confidence/retake persistence contract |
 | 0034 | `0034_anthropometry_hybrid_representative_v3.sql` | **Phase 10 remediation Gate 1**: hybrid closest-pair representative v3 |
 | 0035 | `0035_anthropometry_transaction_and_ownership_integrity.sql` | **Phase 10 remediation Gate 2**: parent locking, explicit child ownership, read-only direct privileges, and Auth-delete cascades |

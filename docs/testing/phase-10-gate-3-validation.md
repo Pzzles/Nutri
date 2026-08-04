@@ -1,5 +1,8 @@
 # Phase 10 Gate 3 Validation Evidence
 
+> Historical evidence for the original Phase 10 Gate 3. Superseded by
+> `phase-10-remediation-gate-3-validation.md`; retained for audit history.
+
 Date: 2026-08-02<br>
 Branch: `feat/anthropometric-progress-tracking`<br>
 Scope: authenticated anthropometric persistence, history, deletion, RLS and real Supabase integration

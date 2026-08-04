@@ -1,7 +1,7 @@
 # Nutri — Nutrition Tracker
 
 Production-ready personal nutrition tracking application.
-Nine implementation phases complete. Version 0.1.0.
+Phases 1–9 complete. Phase 10 remediation Gates 1–3 implemented; Gate 4 final validation pending.
 
 ## What's built
 
@@ -21,7 +21,7 @@ Nine implementation phases complete. Version 0.1.0.
 - Goal progress assessment with rate bounds and adjustment proposals
 - Anthropometric draft/finalised sessions with preserved tape readings and server-authoritative representatives
 - Owner-scoped anthropometric history, cursor pagination and explicit whole-session deletion
-- Unsmoothed circumference histories, baseline/previous changes and cautious Phase 6 weight-trend descriptions
+- Structured measurement context, protocol-safe change summaries, and Phase 6 uncertainty-based descriptions
 
 **Supporting functions**
 - Barcode lookup, custom food management, meal templates
@@ -31,7 +31,7 @@ Nine implementation phases complete. Version 0.1.0.
 - Health endpoint (`/functions/v1/health`)
 
 **Data privacy**
-- `export-my-data` — authenticated GET, downloads `nutri_data_export_v2` JSON including anthropometry
+- `export-my-data` — authenticated GET, downloads `nutri_data_export_v3` JSON including anthropometry context and provenance
 - `delete-account` — permanently deletes all user data with explicit confirmation
 
 **Frontend (React 18 + Vite + TypeScript + Tailwind CSS)**
@@ -150,8 +150,11 @@ All algorithm version strings are present in `supabase/functions/_shared/science
 | Observed maintenance | `observed_maintenance_energy_balance_v1` |
 | Goal progress assessment | `goal_progress_assessment_v1` |
 | Goal progress thresholds | `goal_progress_thresholds_v1` |
-| Anthropometric change | `anthropometry_change_v1` |
-| Anthropometry/weight comparison | `anthropometry_weight_comparison_v1` |
+| Anthropometric change summary | `anthropometry_change_summary_v2` |
+| Anthropometry context | `anthropometry_measurement_context_v1` |
+| Context comparison | `anthropometry_context_comparison_v1` |
+| Protocol compatibility | `anthropometry_protocol_compatibility_v1` |
+| Anthropometry/weight comparison | `anthropometry_weight_comparison_v2` |
 
 ## Security notes
 

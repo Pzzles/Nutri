@@ -9,14 +9,14 @@ with good data stewardship practices.
 **Auth**: Required (Bearer token)  
 **Response**: `application/json` with `Content-Disposition: attachment`
 
-Returns a `nutri_data_export_v2` JSON document containing the personal data
+Returns a `nutri_data_export_v3` JSON document containing the personal data
 currently supported by the export contract for the authenticated user.
 
 ### Export format
 
 ```json
 {
-  "export_version": "nutri_data_export_v2",
+  "export_version": "nutri_data_export_v3",
   "exported_at": "2026-08-02T10:00:00.000Z",
   "user_id": "<uuid>",
   "data": {
