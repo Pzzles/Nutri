@@ -1,5 +1,9 @@
 # Phase 10 Gate 4 Validation Evidence
 
+> **Historical pre-remediation record (2026-08-02).** Current guided-flow,
+> accessibility, responsive, and real-browser evidence is in the
+> [Phase 10 remediation final evidence](phase-10-validation-evidence.md).
+
 Date: 2026-08-02<br>
 Branch: `feat/anthropometric-progress-tracking`<br>
 Scope: guided measurement-session interface

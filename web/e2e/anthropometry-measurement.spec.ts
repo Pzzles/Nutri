@@ -39,15 +39,22 @@ function savedResponse(status: "draft" | "finalized", sites: unknown[] = []) {
       measured_at: new Date().toISOString(),
       notes: null,
       finalized_at: status === "finalized" ? new Date().toISOString() : null,
+      measurement_context: {
+        version: "anthropometry_measurement_context_v1", local_time: "07:00:00",
+        meal_timing: "after_food", after_bathroom: true,
+        exercise_within_previous_12_hours: false,
+        measurement_assistance: "assisted", clothing_level: "light",
+      },
     },
     sites,
     replayed: false,
     algorithm_versions: {
-      data_contract: "anthropometry_data_contract_v2",
+      data_contract: "anthropometry_data_contract_v4",
       protocol: "anthropometry_protocol_v1",
-      representative: status === "finalized" ? "anthropometry_representative_v1" : null,
+      representative: status === "finalized" ? "anthropometry_representative_v3" : null,
       repeatability_thresholds:
-        status === "finalized" ? "anthropometry_repeatability_thresholds_v1" : null,
+        status === "finalized" ? "anthropometry_repeatability_thresholds_v2" : null,
+      measurement_context: "anthropometry_measurement_context_v1",
     },
   };
 }
@@ -59,6 +66,9 @@ async function fulfill(route: Route, data: unknown, status = 200) {
 test("mobile guided circuit completes with an accessible third-reading warning", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await stubAuth(page);
+  await page.route("**/functions/v1/get-anthropometric-sessions?status=draft**", (route) =>
+    fulfill(route, { sessions: [], next_cursor: null })
+  );
 
   const draftBodies: Array<Record<string, unknown>> = [];
   await page.route("**/functions/v1/save-anthropometric-session", async (route) => {
@@ -68,18 +78,28 @@ test("mobile guided circuit completes with an accessible third-reading warning",
   await page.route("**/functions/v1/finalize-anthropometric-session", async (route) => {
     const body = JSON.parse(route.request().postData() ?? "{}") as {
       sites: Array<{ site_code: string; readings_cm: number[] }>;
+      measurement_context: Record<string, unknown>;
     };
     expect(body.sites).toEqual([{ site_code: "waist", readings_cm: [80, 81.2, 80.5] }]);
+    expect(body.measurement_context).toEqual({
+      meal_timing: "after_food", after_bathroom: true,
+      exercise_within_previous_12_hours: false,
+      measurement_assistance: "assisted", clothing_level: "light",
+    });
     await fulfill(route, savedResponse("finalized", [{
       site_code: "waist",
       readings_cm: [80, 81.2, 80.5],
-      representative_cm: 80.5,
-      method: "median_of_three",
+      representative_cm: 80.25,
+      method: "mean_of_closest_pair",
       reading_count: 3,
       initial_pair_difference_cm: 1.2,
       all_readings_range_cm: 1.2,
-      quality: "repeatability_warning",
-      quality_flags: ["initial_pair_exceeds_repeatability_threshold"],
+      quality: "pair_agree",
+      quality_flags: [],
+      selected_reading_indices: [1, 3],
+      selected_pair_spread_cm: 0.5,
+      warning_codes: [],
+      eligible_for_interpretation: true,
     }]));
   });
 
@@ -89,6 +109,11 @@ test("mobile guided circuit completes with an accessible third-reading warning",
 
   await page.getByRole("button", { name: "Clear" }).click();
   await page.getByRole("checkbox", { name: /^Waist \(WHO midpoint\)/i }).check();
+  await page.getByRole("combobox", { name: /food timing/i }).selectOption("after_food");
+  await page.getByRole("combobox", { name: /measurement help/i }).selectOption("assisted");
+  await page.getByRole("combobox", { name: /clothing level/i }).selectOption("light");
+  await page.getByRole("combobox", { name: /after using the bathroom/i }).selectOption("true");
+  await page.getByRole("combobox", { name: /exercise in the previous 12 hours/i }).selectOption("false");
   await page.getByRole("checkbox", { name: /reviewed the preparation/i }).check();
   await page.getByRole("button", { name: /Begin with 1 site/i }).click();
 
@@ -109,8 +134,7 @@ test("mobile guided circuit completes with an accessible third-reading warning",
   await expect(page.getByRole("heading", { name: /check your raw readings/i })).toBeVisible();
   await page.getByRole("button", { name: /Finalize session/i }).click();
   await expect(page.getByRole("heading", { name: /session finalized/i })).toBeVisible();
-  await expect(page.getByText("80.5 cm")).toBeVisible();
-  await expect(page.getByText(/measurement technique or normal variation/i)).toBeVisible();
+  await expect(page.getByText("80.3 cm")).toBeVisible();
   expect(draftBodies.length).toBe(4);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });

@@ -27,6 +27,11 @@ async function stubAuth(page: Page) {
 test("mobile history shows real points and a cautious server-authored comparison", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await stubAuth(page);
+  await page.route("**/functions/v1/get-anthropometric-sessions?status=draft**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, data: { sessions: [], next_cursor: null }, error: null }),
+  }));
   await page.route("**/functions/v1/get-anthropometric-progress**", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",

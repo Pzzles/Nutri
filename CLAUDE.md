@@ -123,10 +123,10 @@ Before `git clean`, show the user what would be deleted (`git clean -n`) and ask
 
 ## Current state
 
-All nine implementation phases are **complete**. The codebase is on branch
-`feat/product-deployment-hardening` awaiting review and merge to `master`.
+Phases 1–9 are complete. Phase 10 implementation and remediation validation are complete on
+`fix/anthropometry-phase10-remediation`, subject to final pull-request review and merge. Do not
+merge automatically and do not claim deployment until the reviewed pull request is merged and released.
 
-Phases 1–9 are implemented, tested (331 backend integration tests pass), and
-documented. Do not implement Phase 6 features beyond what is already built
+Do not implement Phase 6 features beyond what is already built
 (Hall model, effective-dated activity history, waist-to-height ratio). See
 `CHANGELOG.md` for a full list of what each phase delivered.

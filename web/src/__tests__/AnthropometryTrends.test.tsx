@@ -6,12 +6,13 @@ import type { AnthropometryProgressResponse } from "../lib/anthropometry";
 
 vi.mock("../lib/anthropometry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/anthropometry")>();
-  return { ...actual, getAnthropometricProgress: vi.fn() };
+  return { ...actual, getAnthropometricProgress: vi.fn(), deleteAnthropometrySession: vi.fn() };
 });
 
-import { getAnthropometricProgress } from "../lib/anthropometry";
+import { deleteAnthropometrySession, getAnthropometricProgress } from "../lib/anthropometry";
 
 const mockGetProgress = vi.mocked(getAnthropometricProgress);
+const mockDeleteSession = vi.mocked(deleteAnthropometrySession);
 
 const RESPONSE: AnthropometryProgressResponse = {
   series: [
@@ -64,7 +65,9 @@ const RESPONSE: AnthropometryProgressResponse = {
 
 beforeEach(() => {
   mockGetProgress.mockReset();
+  mockDeleteSession.mockReset();
   mockGetProgress.mockResolvedValue(RESPONSE);
+  mockDeleteSession.mockResolvedValue({ deleted_session_id: "w3" });
 });
 
 describe("AnthropometryTrends", () => {
@@ -81,7 +84,7 @@ describe("AnthropometryTrends", () => {
   it("renders only the server-authored descriptive comparison and boundaries", async () => {
     render(<AnthropometryTrends unit="cm" />);
     expect(await screen.findByText(RESPONSE.weight_comparison!.description!)).toBeVisible();
-    expect(screen.getByText(/nearby observed Phase 6 trend points only/i)).toBeVisible();
+    expect(screen.getByText(/canonical Phase 6 weekly-rate uncertainty range/i)).toBeVisible();
     expect(screen.getByText(/does not infer fat loss, muscle gain or body recomposition/i)).toBeVisible();
     expect(screen.getByText(/does not alter targets or goal feedback/i)).toBeVisible();
   });
@@ -100,6 +103,98 @@ describe("AnthropometryTrends", () => {
     render(<AnthropometryTrends unit="cm" />);
     expect(await screen.findByText("89.8 cm")).toBeVisible();
     expect(screen.getByText(/value retained with a repeatability note/i)).toBeVisible();
+  });
+
+  it("confirms whole-session deletion, traps dismissal, and reloads history", async () => {
+    const user = userEvent.setup();
+    render(<AnthropometryTrends unit="cm" />);
+    const triggers = await screen.findAllByRole("button", { name: /delete this session/i });
+    await user.click(triggers[0]);
+    const dialog = screen.getByRole("alertdialog", { name: /delete this measurement session/i });
+    expect(dialog).toHaveTextContent(/including all sites and preserved raw readings/i);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(triggers[0]).toHaveFocus();
+    await user.click(triggers[0]);
+    await user.click(screen.getByRole("button", { name: /^Delete session$/i }));
+    await waitFor(() => expect(mockDeleteSession).toHaveBeenCalledWith("w3"));
+    expect(mockGetProgress).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders server warning codes as cautions without hiding numeric history", async () => {
+    const waist = RESPONSE.series[0];
+    mockGetProgress.mockResolvedValue({
+      ...RESPONSE,
+      series: [{
+        ...waist,
+        warning_codes: ["protocol_versions_not_comparable"],
+        change_summary: {
+          latest: {
+            session_id: "w3", measured_at: "2026-08-01T06:00:00Z", logged_date: "2026-08-01",
+            representative_cm: 88.6, quality: "within_repeatability_threshold",
+            protocol_version: "anthropometry_protocol_v1", representative_algorithm_version: "anthropometry_representative_v3",
+          },
+          previous: {
+            from: {
+              session_id: "w1", measured_at: "2026-06-01T06:00:00Z", logged_date: "2026-06-01",
+              representative_cm: 92, quality: "within_repeatability_threshold",
+              protocol_version: "anthropometry_protocol_v1", representative_algorithm_version: "anthropometry_representative_v2",
+            },
+            change_cm: -3.4,
+            elapsed_days: 61,
+            direction: "decreasing",
+            context_warning_codes: ["meal_timing_differs"],
+          },
+          baseline: null,
+          warning_codes: ["protocol_versions_not_comparable"],
+          algorithm_version: "anthropometry_change_summary_v2",
+          context_comparison_version: "anthropometry_context_comparison_v1",
+          protocol_compatibility_version: "anthropometry_protocol_compatibility_v1",
+        },
+      }],
+    });
+    render(<AnthropometryTrends unit="cm" />);
+    expect(await screen.findByText(/different protocols and are shown separately/i)).toBeVisible();
+    expect(screen.getByText(/sessions were measured under different conditions/i)).toBeVisible();
+    expect(screen.getAllByText("88.6 cm")[0]).toBeVisible();
+  });
+
+  it("shows v3 quality, eligibility, selected indices, version, and expanded raw readings", async () => {
+    mockGetProgress.mockResolvedValue({
+      ...RESPONSE,
+      series: [{
+        site_code: "waist",
+        points: [{
+          session_id: "v3-low",
+          site_code: "waist",
+          measured_at: "2026-08-02T06:00:00Z",
+          logged_date: "2026-08-02",
+          representative_cm: 81,
+          quality: "high_variability",
+          selected_reading_indices: [1, 2],
+          selected_pair_spread_cm: 2,
+          warning_codes: ["no_pair_within_repeatability_threshold"],
+          eligible_for_interpretation: false,
+          algorithm_version: "anthropometry_representative_v3",
+          raw_readings: [
+            { id: "r1", reading_index: 1, value_cm: 80 },
+            { id: "r2", reading_index: 2, value_cm: 82 },
+            { id: "r3", reading_index: 3, value_cm: 84.5 },
+          ],
+        }],
+        previous_change: null,
+        since_first_change: null,
+      }],
+      weight_comparison: null,
+    });
+    const user = userEvent.setup();
+    render(<AnthropometryTrends unit="cm" />);
+    expect(await screen.findByText(/low confidence; excluded from progress interpretation/i)).toBeVisible();
+    await user.click(screen.getByText(/raw readings and calculation provenance/i));
+    expect(screen.getByText("1: 80.0 cm · 2: 82.0 cm · 3: 84.5 cm")).toBeVisible();
+    expect(screen.getByText("1 and 2")).toBeVisible();
+    expect(screen.getByText("anthropometry_representative_v3")).toBeVisible();
+    expect(screen.getByText("No")).toBeVisible();
   });
 
   it("shows both numeric changes without inventing a sentence for a stable-band pattern", async () => {

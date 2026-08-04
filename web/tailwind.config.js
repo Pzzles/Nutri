@@ -16,9 +16,9 @@ export default {
           light: "rgb(var(--color-primary-light) / <alpha-value>)",
         },
         confidence: {
-          high: "#22C55E",
-          medium: "#F59E0B",
-          low: "#EF4444",
+          high: "#15803D",
+          medium: "#B45309",
+          low: "#B91C1C",
         },
       },
       fontFamily: {

@@ -8,8 +8,22 @@ import {
   ANTHROPOMETRY_SITE_CODES,
   ANTHROPOMETRY_THRESHOLDS_VERSION,
 } from "../_shared/anthropometry.ts";
+import {
+  ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION,
+  ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
+  ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION,
+  contextFromRow,
+} from "../_shared/anthropometryContext.ts";
+import {
+  ANTHROPOMETRY_CHANGE_VERSION,
+  ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
+} from "../_shared/anthropometryProgress.ts";
 
-type Cursor = { measured_at: string; id: string };
+type Cursor = {
+  sort_at: string;
+  id: string;
+  status: "draft" | "finalized";
+};
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SITE_ORDER = new Map<string, number>(
   ANTHROPOMETRY_SITE_CODES.map((siteCode, index) => [siteCode, index]),
@@ -27,10 +41,9 @@ function decodeCursor(raw: string): Cursor | null {
     const padded = raw.replaceAll("-", "+").replaceAll("_", "/") + "===".slice((raw.length + 3) % 4);
     const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
     const value = JSON.parse(new TextDecoder().decode(bytes)) as Cursor;
-    if (
-      !value || typeof value.id !== "string" || typeof value.measured_at !== "string" ||
-      !UUID_PATTERN.test(value.id) || Number.isNaN(new Date(value.measured_at).getTime())
-    ) return null;
+    if (!value || typeof value.id !== "string" || typeof value.sort_at !== "string" ||
+      (value.status !== "draft" && value.status !== "finalized") ||
+      !UUID_PATTERN.test(value.id) || Number.isNaN(new Date(value.sort_at).getTime())) return null;
     return value;
   } catch {
     return null;
@@ -55,6 +68,10 @@ Deno.serve(async (req) => {
     if (limit < 1 || limit > 100) {
       return fail("VALIDATION_ERROR", "limit must be between 1 and 100");
     }
+    const status = url.searchParams.get("status") ?? "finalized";
+    if (status !== "draft" && status !== "finalized") {
+      return fail("VALIDATION_ERROR", "status must be draft or finalized");
+    }
     const siteCode = url.searchParams.get("site_code");
     if (siteCode && !ANTHROPOMETRY_SITE_CODES.includes(
       siteCode as typeof ANTHROPOMETRY_SITE_CODES[number],
@@ -64,24 +81,32 @@ Deno.serve(async (req) => {
     const rawCursor = url.searchParams.get("before");
     const cursor = rawCursor ? decodeCursor(rawCursor) : null;
     if (rawCursor && !cursor) return fail("INVALID_CURSOR", "cursor is invalid");
+    if (cursor && cursor.status !== status) {
+      return fail("INVALID_CURSOR", "cursor does not match the requested status");
+    }
 
     const service = getServiceClient();
     const sessionColumns =
-      "id, status, measured_at, logged_date, timezone, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, finalized_at, created_at, updated_at";
+      "id, status, measured_at, logged_date, timezone, local_time, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, measurement_context_version, meal_timing, after_bathroom, exercise_within_previous_12_hours, measurement_assistance, clothing_level, finalized_at, created_at, updated_at";
     let query = service.from("anthropometric_sessions").select(
       siteCode
         ? `${sessionColumns}, anthropometric_representatives!inner(site_code)`
         : sessionColumns,
     )
-      .eq("user_id", userData.user.id).eq("status", "finalized")
-      .order("measured_at", { ascending: false }).order("id", { ascending: false })
-      .limit(limit + 1);
+      .eq("user_id", userData.user.id).eq("status", status)
+      .order(status === "draft" ? "updated_at" : "measured_at", { ascending: false })
+      .order("id", { ascending: false }).limit(limit + 1);
     if (cursor) {
+      const sortColumn = status === "draft" ? "updated_at" : "measured_at";
       query = query.or(
-        `measured_at.lt.${cursor.measured_at},and(measured_at.eq.${cursor.measured_at},id.lt.${cursor.id})`,
+        `${sortColumn}.lt.${cursor.sort_at},and(${sortColumn}.eq.${cursor.sort_at},id.lt.${cursor.id})`,
       );
     }
-    if (siteCode) query = query.eq("anthropometric_representatives.site_code", siteCode);
+    if (siteCode) {
+      query = query
+        .eq("anthropometric_representatives.user_id", userData.user.id)
+        .eq("anthropometric_representatives.site_code", siteCode);
+    }
 
     const { data: rows, error: sessionsError } = await query;
     if (sessionsError) throw sessionsError;
@@ -94,11 +119,12 @@ Deno.serve(async (req) => {
     if (ids.length > 0) {
       const [readingsResult, representativesResult] = await Promise.all([
         service.from("anthropometric_readings")
-          .select("session_id, site_code, reading_number, value_cm").in("session_id", ids)
+          .select("id, session_id, site_code, reading_number, value_cm")
+          .eq("user_id", userData.user.id).in("session_id", ids)
           .order("site_code").order("reading_number"),
         service.from("anthropometric_representatives").select(
-          "session_id, site_code, representative_cm, method, reading_count, initial_pair_difference_cm, all_readings_range_cm, quality, quality_flags, algorithm_version, created_at",
-        ).in("session_id", ids)
+          "session_id, site_code, representative_cm, method, reading_count, initial_pair_difference_cm, all_readings_range_cm, quality, quality_flags, algorithm_version, source_reading_ids, selected_reading_indices, unselected_reading_id, selected_pair_spread_cm, pairwise_differences, warning_codes, eligible_for_interpretation, quality_acknowledged_at, quality_acknowledgement_version, created_at",
+        ).eq("user_id", userData.user.id).in("session_id", ids)
           .order("site_code"),
       ]);
       if (readingsResult.error) throw readingsResult.error;
@@ -131,12 +157,24 @@ Deno.serve(async (req) => {
           representative_cm: Number(representative.representative_cm),
           initial_pair_difference_cm: Number(representative.initial_pair_difference_cm),
           all_readings_range_cm: Number(representative.all_readings_range_cm),
+          selected_pair_spread_cm: representative.selected_pair_spread_cm == null
+            ? null
+            : Number(representative.selected_pair_spread_cm),
         }));
-      return { ...session, readings: sessionReadings, representatives: sessionRepresentatives };
+      return {
+        ...session,
+        measurement_context: contextFromRow(session as Record<string, unknown>),
+        readings: sessionReadings,
+        representatives: sessionRepresentatives,
+      };
     });
     const last = hydrated.at(-1);
     const nextCursor = hasMore && last
-      ? encodeCursor({ measured_at: last.measured_at as string, id: last.id as string })
+      ? encodeCursor({
+        sort_at: (status === "draft" ? last.updated_at : last.measured_at) as string,
+        id: last.id as string,
+        status,
+      })
       : null;
 
     return ok({
@@ -147,10 +185,18 @@ Deno.serve(async (req) => {
         protocol: ANTHROPOMETRY_PROTOCOL_VERSION,
         representative: ANTHROPOMETRY_REPRESENTATIVE_VERSION,
         repeatability_thresholds: ANTHROPOMETRY_THRESHOLDS_VERSION,
+        measurement_context: ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
+        context_comparison: ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION,
+        change_summary: ANTHROPOMETRY_CHANGE_VERSION,
+        protocol_compatibility: ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION,
+        weight_comparison: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error(JSON.stringify({
+      event: "anthropometric_history_failed",
+      error_code: "UNEXPECTED_ERROR",
+    }));
     return fail("INTERNAL_ERROR", "Unexpected error fetching anthropometric history", 500);
   }
 });

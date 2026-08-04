@@ -17,9 +17,9 @@ export function ok(data: unknown, status = 200): Response {
   });
 }
 
-export function fail(code: string, message: string, status = 400): Response {
+export function fail(code: string, message: string, status = 400, data: unknown = null): Response {
   return new Response(
-    JSON.stringify({ success: false, data: null, error: { code, message } }),
+    JSON.stringify({ success: false, data, error: { code, message } }),
     { headers: { "Content-Type": "application/json", ...corsHeaders }, status },
   );
 }

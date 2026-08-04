@@ -17,6 +17,7 @@ import Measurements from "./pages/Measurements";
 export default function App() {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [accountDeleted, setAccountDeleted] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem("theme");
     return saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -48,6 +49,17 @@ export default function App() {
     );
   }
 
+  if (accountDeleted) {
+    return (
+      <main className="grid min-h-screen place-items-center px-4">
+        <section className="w-full max-w-md rounded-lg border border-border bg-surface px-4 py-6 text-center" aria-labelledby="account-deleted-heading">
+          <h1 id="account-deleted-heading" className="font-display text-xl font-semibold text-ink">Account deleted</h1>
+          <p className="mt-2 text-sm text-muted">Your account and all associated data have been permanently deleted.</p>
+        </section>
+      </main>
+    );
+  }
+
   if (!session) return <Auth />;
 
   return (
@@ -59,7 +71,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/log" element={<Log />} />
           <Route path="/progress" element={<Progress />} />
-          <Route path="/account" element={<AccountLink />} />
+          <Route path="/account" element={<AccountLink onAccountDeleted={() => setAccountDeleted(true)} />} />
 
           {/* Deep-link routes — not in nav, still accessible */}
           <Route path="/history" element={<MealHistory />} />

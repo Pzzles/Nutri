@@ -38,6 +38,10 @@ export default defineConfig({
     {
       name: "integration",
       testMatch: "integration/**/*.spec.ts",
+      // The local Kong/Edge Runtime can occasionally return an empty response
+      // during a function cold start. Keep assertions intact and retry the
+      // complete real request once before treating it as a product failure.
+      retries: 1,
       use: { ...devices["Desktop Chrome"] },
     },
   ],

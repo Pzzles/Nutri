@@ -1,9 +1,16 @@
 # Anthropometric Progress Data Contract
 
 **Phase:** 10 — Anthropometric Progress Tracking<br>
-**Contract:** `anthropometry_data_contract_v2`<br>
+**Historical contract:** Gate 2 `anthropometry_data_contract_v2`; superseded for current writes by [`anthropometry_data_contract_v4`](body-measurement-data-contract.md)<br>
 **Protocol:** `anthropometry_protocol_v1`<br>
-**Status:** Gate 5 trends and cross-signal interpretation implemented
+**Status:** Historical Gate 2 contract; superseded by the Phase 10 final contracts
+
+> This file preserves the original Gate 2 API/schema contract for audit
+> provenance; it is not the current write contract. For current context,
+> representative-v3, ownership, and interpretation handling, see
+> [the current data contract](body-measurement-data-contract.md),
+> [the API contract](body-measurement-api-contract.md), and
+> [the v3 representative contract](../algorithms/phase-10-anthropometric-representative-v3.md).
 
 ## 1. Contract principles
 
@@ -35,8 +42,8 @@ Gate 2 creates these dedicated tables in migration `0031_anthropometric_progress
 | `notes` | `text` | yes | Optional user note, maximum 500 characters |
 | `data_contract_version` | `text` | no | `anthropometry_data_contract_v2` |
 | `protocol_version` | `text` | no | `anthropometry_protocol_v1` |
-| `representative_algorithm_version` | `text` | draft: yes | Null in drafts; `anthropometry_representative_v1` when finalised |
-| `thresholds_version` | `text` | draft: yes | Null in drafts; `anthropometry_repeatability_thresholds_v1` when finalised |
+| `representative_algorithm_version` | `text` | draft: yes | Null in drafts; current finalisations use `anthropometry_representative_v2`; historical v1 rows remain valid |
+| `thresholds_version` | `text` | draft: yes | Null in drafts; current finalisations use `anthropometry_repeatability_thresholds_v2`; historical v1 rows remain valid |
 | `idempotency_key` | `text` | draft: yes | Null in drafts; user-scoped 1–128 characters when finalised |
 | `payload_hash` | `text` | draft: yes | Null in drafts; server-generated canonical request hash when finalised |
 | `finalized_at` | `timestamptz` | draft: yes | Null in drafts; server clock at finalisation |
@@ -86,7 +93,7 @@ Reading rows preserve request order by `reading_number`. The server must not rep
 | `all_readings_range_cm` | `numeric(4,1)` | no | Maximum minus minimum across stored readings |
 | `quality` | `text` | no | `within_repeatability_threshold` or `repeatability_warning` |
 | `quality_flags` | `jsonb` | no | `[]` or `["initial_pair_exceeds_repeatability_threshold"]` as fixed by the method |
-| `algorithm_version` | `text` | no | `anthropometry_representative_v1` |
+| `algorithm_version` | `text` | no | `anthropometry_representative_v1` or current `anthropometry_representative_v2` |
 | `created_at` | `timestamptz` | no | Server default |
 
 Required constraints:
@@ -168,8 +175,8 @@ The request must not contain `representative_cm`, `change_cm`, quality, weight d
     "algorithm_versions": {
       "data_contract": "anthropometry_data_contract_v2",
       "protocol": "anthropometry_protocol_v1",
-      "representative": "anthropometry_representative_v1",
-      "repeatability_thresholds": "anthropometry_repeatability_thresholds_v1"
+      "representative": "anthropometry_representative_v2",
+      "repeatability_thresholds": "anthropometry_repeatability_thresholds_v2"
     }
   },
   "error": null
@@ -191,6 +198,7 @@ All failures use the standard Nutri envelope. Required stable codes:
 | `READING_OUT_OF_RANGE` | Raw reading is outside 5.0–300.0 cm |
 | `INVALID_READING_PRECISION` | Raw reading has precision finer than 0.1 cm |
 | `THIRD_READING_REQUIRED` | First pair differs by > 1.0 cm and only two readings were sent |
+| `RETAKE_SITE_REQUIRED` | No pair among three readings agrees within 1.0 cm; the draft remains mutable and the site must be retaken |
 | `UNEXPECTED_THIRD_READING` | First pair differs by ≤ 1.0 cm but a third was sent |
 | `INVALID_READING_COUNT` | Reading count is not 2 or 3 as determined by the first pair |
 | `FUTURE_MEASUREMENT` | `measured_at` exceeds the five-minute tolerance |
@@ -291,8 +299,8 @@ Response shape:
       "description": "Weight trend was broadly stable while waist circumference decreased."
     },
     "algorithm_versions": {
-      "change": "anthropometry_change_v1",
-      "weight_comparison": "anthropometry_weight_comparison_v1",
+      "change_summary": "anthropometry_change_summary_v2",
+      "weight_comparison": "anthropometry_weight_comparison_v2",
       "weight_trend": "weight_trend_v1"
     },
     "limitations": [
@@ -321,7 +329,7 @@ If a comparison is not eligible, `weight_comparison` remains structured:
 Stable ineligibility reason codes:
 
 - `insufficient_circumference_points`
-- `circumference_interval_too_short`
+- `sessions_too_close_for_interpretation`
 - `circumference_repeatability_warning`
 - `weight_status_not_eligible`
 - `weight_confidence_not_eligible`
@@ -344,7 +352,7 @@ Stable ineligibility reason codes:
 
 Gate 3:
 
-1. includes `anthropometric_sessions`, `anthropometric_readings`, and `anthropometric_representatives` in `nutri_data_export_v2`;
+1. includes `anthropometric_sessions`, structured context, `anthropometric_readings`, and `anthropometric_representatives` in `nutri_data_export_v3`;
 2. removes the three tables during whole-account deletion through `profiles -> sessions -> children` cascades;
 3. does not log request bodies, raw measurements, notes, JWTs, email addresses, or full user IDs;
 4. constrains every service-role API query by the JWT-derived user ID.
@@ -356,10 +364,10 @@ Bump the named version when any listed behavior changes:
 | Version | Changes requiring a bump |
 |---|---|
 | `anthropometry_protocol_v1` | Site meaning, landmark, body position, breathing, circuit order, or input precision |
-| `anthropometry_representative_v1` | Mean/median selection, tie behavior, or arithmetic/rounding |
-| `anthropometry_repeatability_thresholds_v1` | Reading bounds, 1.0 cm threshold, required counts, future tolerance |
-| `anthropometry_change_v1` | Point ordering, endpoint selection, elapsed-time calculation, or change calculation |
-| `anthropometry_weight_comparison_v1` | Eligible sites, quality gates, 14/7-day thresholds, endpoint alignment, direction bands, or sentence templates |
+| `anthropometry_representative_v2` | Mean/median selection, agreeing-pair gate, tie behavior, or arithmetic/rounding |
+| `anthropometry_repeatability_thresholds_v2` | Reading bounds, 1.0 cm pair thresholds, required counts, retake gate, or future tolerance |
+| `anthropometry_change_summary_v2` | Point ordering, endpoint selection, elapsed-time calculation, or change calculation |
+| `anthropometry_weight_comparison_v2` | Eligible sites, protocol/quality gates, 14/7-day thresholds, Phase 6 interval direction, or sentence templates |
 | `anthropometry_data_contract_v2` | Persisted draft/finalised lifecycle, API field semantics, missingness, idempotency, or immutability behavior |
 
 Old finalised sessions retain their stored versions. A new algorithm does not silently recalculate or overwrite historical representatives.

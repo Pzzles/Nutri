@@ -5,7 +5,12 @@
  */
 import { ok, fail, preflight } from "../_shared/envelope.ts";
 import { getServiceClient, getUserClient } from "../_shared/supabaseClient.ts";
-import { toLocalDateString } from "../_shared/timezone.ts";
+import { toLocalDateString, toLocalTimeString } from "../_shared/timezone.ts";
+import {
+  ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
+  contextFromRow,
+  normalizeMeasurementContext,
+} from "../_shared/anthropometryContext.ts";
 import {
   ANTHROPOMETRY_DATA_CONTRACT_VERSION,
   ANTHROPOMETRY_FUTURE_TOLERANCE_MS,
@@ -14,7 +19,10 @@ import {
   ANTHROPOMETRY_SITE_CODES,
   ANTHROPOMETRY_THRESHOLDS_VERSION,
   AnthropometryValidationError,
+  calculateAnthropometryRepresentative,
   calculateAnthropometryRepresentatives,
+  type AnthropometryRepresentative,
+  type AnthropometrySiteInput,
 } from "../_shared/anthropometry.ts";
 import {
   flattenReadings,
@@ -41,16 +49,27 @@ const FORBIDDEN_CLIENT_FIELDS = new Set([
   "reading_count",
   "quality",
   "quality_flags",
+  "source_reading_ids",
+  "selected_reading_indices",
+  "unselected_reading_id",
+  "selected_pair_spread_cm",
+  "pairwise_differences",
+  "warning_codes",
+  "eligible_for_interpretation",
+  "quality_acknowledged_at",
+  "quality_acknowledgement_version",
   "change_cm",
   "weight_data",
   "weight_kg",
   "payload_hash",
   "logged_date",
+  "local_time",
+  "measurement_context_version",
   "timezone",
   "finalized_at",
   "user_id",
 ]);
-type ReadingRow = { site_code: string; reading_number: number; value_cm: number | string };
+type ReadingRow = { id: string; site_code: string; reading_number: number; value_cm: number | string };
 type RepresentativeRow = {
   site_code: string;
   representative_cm: number | string;
@@ -60,7 +79,62 @@ type RepresentativeRow = {
   all_readings_range_cm: number | string;
   quality: string;
   quality_flags: string[];
+  source_reading_ids: string[] | null;
+  selected_reading_indices: number[] | null;
+  unselected_reading_id: string | null;
+  selected_pair_spread_cm: number | string | null;
+  pairwise_differences: Record<string, number | null> | null;
+  warning_codes: string[] | null;
+  eligible_for_interpretation: boolean | null;
+  quality_acknowledged_at: string | null;
+  quality_acknowledgement_version: string | null;
 };
+
+const ACKNOWLEDGEMENT_VERSION = "anthropometry_high_variability_ack_v1";
+
+function normalizeAcknowledgements(value: unknown): string[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new AnthropometryValidationError(
+      "VALIDATION_ERROR",
+      "high_variability_acknowledgements must be an array",
+    );
+  }
+  const result = value.map((entry) => {
+    if (!entry || typeof entry !== "object") {
+      throw new AnthropometryValidationError("VALIDATION_ERROR", "Invalid quality acknowledgement");
+    }
+    const item = entry as Record<string, unknown>;
+    if (typeof item.site_code !== "string" || item.acknowledged !== true ||
+      Object.keys(item).some((key) => key !== "site_code" && key !== "acknowledged")) {
+      throw new AnthropometryValidationError("VALIDATION_ERROR", "Invalid quality acknowledgement");
+    }
+    return item.site_code;
+  });
+  if (new Set(result).size !== result.length) {
+    throw new AnthropometryValidationError("VALIDATION_ERROR", "Duplicate quality acknowledgement");
+  }
+  return result;
+}
+
+function calculationSites(
+  sites: ReturnType<typeof normalizeSites>,
+  rows: ReturnType<typeof flattenReadings>,
+): AnthropometrySiteInput[] {
+  return sites.map((site) => ({
+    site_code: site.site_code,
+    readings: rows.filter((row) => row.site_code === site.site_code).map((row) => ({
+      id: row.id,
+      reading_index: row.reading_number as 1 | 2 | 3,
+      value_cm: row.value_cm,
+    })),
+  }));
+}
+
+function publicPreview(representative: AnthropometryRepresentative) {
+  const { source_reading_ids: _sourceIds, unselected_reading_id: _unselectedId, ...preview } = representative;
+  return preview;
+}
 
 function containsForbiddenClientField(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsForbiddenClientField);
@@ -70,15 +144,20 @@ function containsForbiddenClientField(value: unknown): boolean {
   );
 }
 
-async function loadSession(service: ReturnType<typeof getServiceClient>, sessionId: string) {
+async function loadOwnedSession(
+  service: ReturnType<typeof getServiceClient>,
+  authenticatedUserId: string,
+  sessionId: string,
+) {
   const [sessionResult, readingsResult, representativesResult] = await Promise.all([
     service.from("anthropometric_sessions").select(
-      "id, status, measured_at, logged_date, timezone, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, finalized_at, created_at, updated_at",
-    ).eq("id", sessionId).single(),
-    service.from("anthropometric_readings").select("site_code, reading_number, value_cm")
-      .eq("session_id", sessionId).order("site_code").order("reading_number"),
+      "id, status, measured_at, logged_date, timezone, local_time, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, measurement_context_version, meal_timing, after_bathroom, exercise_within_previous_12_hours, measurement_assistance, clothing_level, finalized_at, created_at, updated_at",
+    ).eq("id", sessionId).eq("user_id", authenticatedUserId).single(),
+    service.from("anthropometric_readings").select("id, site_code, reading_number, value_cm")
+      .eq("session_id", sessionId).eq("user_id", authenticatedUserId)
+      .order("site_code").order("reading_number"),
     service.from("anthropometric_representatives").select("*")
-      .eq("session_id", sessionId).order("site_code"),
+      .eq("session_id", sessionId).eq("user_id", authenticatedUserId).order("site_code"),
   ]);
   if (sessionResult.error || readingsResult.error || representativesResult.error) {
     throw new Error("Failed to load saved anthropometric session");
@@ -89,12 +168,17 @@ async function loadSession(service: ReturnType<typeof getServiceClient>, session
     const siteReadings = readings
       .filter((reading) => reading.site_code === siteCode)
       .sort((left, right) => left.reading_number - right.reading_number)
-      .map((reading) => Number(reading.value_cm));
+      .map((reading) => ({
+        id: reading.id,
+        reading_index: reading.reading_number,
+        value_cm: Number(reading.value_cm),
+      }));
     const representative = representatives.find((row) => row.site_code === siteCode);
     if (siteReadings.length === 0 && !representative) return [];
     return [{
       site_code: siteCode,
-      readings_cm: siteReadings,
+      readings_cm: siteReadings.map((reading) => reading.value_cm),
+      raw_readings: siteReadings,
       ...(representative
         ? {
           representative_cm: Number(representative.representative_cm),
@@ -104,11 +188,27 @@ async function loadSession(service: ReturnType<typeof getServiceClient>, session
           all_readings_range_cm: Number(representative.all_readings_range_cm),
           quality: representative.quality,
           quality_flags: representative.quality_flags,
+          source_reading_ids: representative.source_reading_ids,
+          selected_reading_indices: representative.selected_reading_indices,
+          unselected_reading_id: representative.unselected_reading_id,
+          selected_pair_spread_cm: representative.selected_pair_spread_cm === null
+            ? null
+            : Number(representative.selected_pair_spread_cm),
+          pairwise_differences: representative.pairwise_differences,
+          warning_codes: representative.warning_codes,
+          eligible_for_interpretation: representative.eligible_for_interpretation,
+          quality_acknowledged_at: representative.quality_acknowledged_at,
+          quality_acknowledgement_version: representative.quality_acknowledgement_version,
+          algorithm_version: representative.algorithm_version,
         }
         : {}),
     }];
   });
-  return { session: sessionResult.data, sites };
+  const sessionRow = sessionResult.data as Record<string, unknown>;
+  return {
+    session: { ...sessionRow, measurement_context: contextFromRow(sessionRow) },
+    sites,
+  };
 }
 
 export async function handleAnthropometricSessionSave(
@@ -155,6 +255,12 @@ export async function handleAnthropometricSessionSave(
 
     const sessionId = optionalUuid(body.session_id, "session_id");
     const notes = normalizeNotes(body.notes);
+    let measurementContext;
+    try {
+      measurementContext = normalizeMeasurementContext(body.measurement_context);
+    } catch (error) {
+      return fail("VALIDATION_ERROR", (error as Error).message, 422);
+    }
     const sites = normalizeSites(body.sites);
     const measuredAt = parseMeasuredAt(body.measured_at, status === "finalized");
     if (
@@ -168,14 +274,38 @@ export async function handleAnthropometricSessionSave(
       );
     }
     const readings = flattenReadings(sites);
+    const engineSites = calculationSites(sites, readings);
+    const acknowledgements = normalizeAcknowledgements(body.high_variability_acknowledgements);
 
     let representatives: ReturnType<typeof calculateAnthropometryRepresentatives> | null = null;
+    let previews: ReturnType<typeof publicPreview>[] = [];
     let timezone: string | null = null;
     let loggedDate: string | null = null;
+    let localTime: string | null = null;
     let idempotencyKey: string | null = null;
     let payloadHash: string | null = null;
 
     const service = getServiceClient();
+    if (status === "draft") {
+      if (acknowledgements.length > 0) {
+        return fail(
+          "INVALID_HIGH_VARIABILITY_ACKNOWLEDGEMENT",
+          "Quality acknowledgement is accepted only during finalization",
+          422,
+        );
+      }
+      previews = engineSites.flatMap((site) => {
+        if (site.readings.length < 2) return [];
+        try {
+          return [publicPreview(calculateAnthropometryRepresentative(site))];
+        } catch (error) {
+          if (error instanceof AnthropometryValidationError && error.code === "THIRD_READING_REQUIRED") {
+            return [];
+          }
+          throw error;
+        }
+      });
+    }
     if (status === "finalized") {
       idempotencyKey = typeof body.idempotency_key === "string" ? body.idempotency_key : null;
       if (!idempotencyKey || !IDEMPOTENCY_PATTERN.test(idempotencyKey)) {
@@ -185,24 +315,72 @@ export async function handleAnthropometricSessionSave(
         );
       }
 
-      representatives = calculateAnthropometryRepresentatives(sites);
-      const { data: profile, error: profileError } = await service
-        .from("profiles").select("timezone").eq("id", userId).maybeSingle();
-      if (profileError) throw profileError;
-      const effectiveTimezone = profile?.timezone ?? DEFAULT_TIMEZONE;
-      timezone = effectiveTimezone;
-      try {
-        loggedDate = toLocalDateString(measuredAt!, effectiveTimezone);
-      } catch {
-        return fail("INVALID_PROFILE_TIMEZONE", "The profile timezone is invalid", 422);
+      representatives = calculateAnthropometryRepresentatives(engineSites);
+      const highVariabilitySites = representatives.representatives
+        .filter((representative) => representative.quality === "high_variability")
+        .map((representative) => representative.site_code);
+      const invalidAcknowledgement = acknowledgements.find((siteCode) =>
+        !highVariabilitySites.includes(siteCode as typeof highVariabilitySites[number])
+      );
+      if (invalidAcknowledgement) {
+        return fail(
+          "INVALID_HIGH_VARIABILITY_ACKNOWLEDGEMENT",
+          "Acknowledgement does not match a high-variability site calculated by the server",
+          422,
+        );
       }
-
+      const unacknowledged = highVariabilitySites.filter((siteCode) =>
+        !acknowledgements.includes(siteCode)
+      );
+      if (unacknowledged.length > 0) {
+        return fail(
+          "HIGH_VARIABILITY_CONFIRMATION_REQUIRED",
+          "Confirm each high-variability site before saving its low-confidence representative",
+          422,
+          {
+            sites: representatives.representatives
+              .filter((representative) => unacknowledged.includes(representative.site_code))
+              .map(publicPreview),
+          },
+        );
+      }
+      const acknowledgedAt = acknowledgements.length > 0 ? new Date().toISOString() : null;
+      representatives = {
+        ...representatives,
+        representatives: representatives.representatives.map((representative) => ({
+          ...representative,
+          quality_acknowledged_at: acknowledgements.includes(representative.site_code)
+            ? acknowledgedAt
+            : null,
+          quality_acknowledgement_version: acknowledgements.includes(representative.site_code)
+            ? ACKNOWLEDGEMENT_VERSION
+            : null,
+        })),
+      };
       payloadHash = await sha256Canonical({
         measured_at: measuredAt!.toISOString(),
         notes,
         protocol_version: ANTHROPOMETRY_PROTOCOL_VERSION,
+        measurement_context: measurementContext,
         sites,
+        high_variability_acknowledgements: acknowledgements,
       });
+    }
+
+    if (measuredAt) {
+      const { data: profile, error: profileError } = await service
+        .from("profiles").select("timezone").eq("id", userId).maybeSingle();
+      if (profileError) throw profileError;
+      const effectiveTimezone = profile?.timezone ?? DEFAULT_TIMEZONE;
+      try {
+        localTime = toLocalTimeString(measuredAt, effectiveTimezone);
+        if (status === "finalized") {
+          timezone = effectiveTimezone;
+          loggedDate = toLocalDateString(measuredAt, effectiveTimezone);
+        }
+      } catch {
+        return fail("INVALID_PROFILE_TIMEZONE", "The profile timezone is invalid", 422);
+      }
     }
 
     const { data: rpcData, error: rpcError } = await service.rpc(
@@ -217,6 +395,14 @@ export async function handleAnthropometricSessionSave(
         p_representatives: representatives?.representatives ?? null,
         p_logged_date: loggedDate,
         p_timezone: timezone,
+        p_local_time: localTime,
+        p_measurement_context_version: ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
+        p_meal_timing: measurementContext.meal_timing,
+        p_after_bathroom: measurementContext.after_bathroom,
+        p_exercise_within_previous_12_hours:
+          measurementContext.exercise_within_previous_12_hours,
+        p_measurement_assistance: measurementContext.measurement_assistance,
+        p_clothing_level: measurementContext.clothing_level,
         p_idempotency_key: idempotencyKey,
         p_payload_hash: payloadHash,
         p_data_contract_version: ANTHROPOMETRY_DATA_CONTRACT_VERSION,
@@ -241,31 +427,43 @@ export async function handleAnthropometricSessionSave(
       if (rpcError.message.includes("IMMUTABLE") || rpcError.message.includes("immutable")) {
         return fail("SESSION_IMMUTABLE", "Finalized sessions cannot be changed", 409);
       }
-      console.error(rpcError);
+      console.error(JSON.stringify({
+        event: "anthropometric_session_save_failed",
+        user_id_prefix: userId.slice(0, 8),
+        error_code: "PERSISTENCE_FAILED",
+      }));
       return fail("INTERNAL_ERROR", "Failed to save anthropometric session", 500);
     }
 
     const result = rpcData as { session_id: string; replayed: boolean };
-    const saved = await loadSession(service, result.session_id);
+    const saved = await loadOwnedSession(service, userId, result.session_id);
     return ok(
       {
         ...saved,
+        previews,
         replayed: result.replayed,
         algorithm_versions: {
           data_contract: ANTHROPOMETRY_DATA_CONTRACT_VERSION,
           protocol: ANTHROPOMETRY_PROTOCOL_VERSION,
           representative: status === "finalized" ? ANTHROPOMETRY_REPRESENTATIVE_VERSION : null,
           repeatability_thresholds: status === "finalized" ? ANTHROPOMETRY_THRESHOLDS_VERSION : null,
+          measurement_context: ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
         },
       },
       status === "draft" || result.replayed ? 200 : 201,
     );
   } catch (error) {
     if (error instanceof AnthropometryValidationError) {
-      const status = error.code === "THIRD_READING_REQUIRED" ? 422 : 400;
+      const status = error.code === "SECOND_READING_REQUIRED" ||
+          error.code === "THIRD_READING_REQUIRED"
+        ? 422
+        : 400;
       return fail(error.code, error.message, status);
     }
-    console.error(error);
+    console.error(JSON.stringify({
+      event: "anthropometric_session_save_failed",
+      error_code: "UNEXPECTED_ERROR",
+    }));
     return fail("INTERNAL_ERROR", "Unexpected error saving anthropometric session", 500);
   }
 }

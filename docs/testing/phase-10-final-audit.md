@@ -1,5 +1,9 @@
 # Phase 10 Final Audit
 
+> **Historical pre-remediation record (2026-08-02).** This audit covers the
+> original feature branch through migration `0032`. It is superseded by the
+> [Phase 10 remediation final evidence](phase-10-validation-evidence.md).
+
 Date: 2026-08-02
 
 Branch: `feat/anthropometric-progress-tracking`

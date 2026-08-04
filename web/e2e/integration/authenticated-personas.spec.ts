@@ -9,7 +9,7 @@ async function expectMaintenanceLoaded(page: Page) {
     await expect(heading.or(errorCard).first()).toBeVisible({ timeout: 15_000 });
     if (await heading.isVisible()) return;
 
-    await expect(errorCard).toContainText("Failed to fetch");
+    await expect(errorCard).toContainText(/Failed to fetch|Unexpected end of JSON input/);
     if (attempt < 2) await errorCard.getByRole("button", { name: "Try again" }).click();
   }
 
@@ -24,7 +24,7 @@ async function expectGoalFeedbackLoaded(page: Page) {
     await expect(card.or(errorCard).first()).toBeVisible({ timeout: 15_000 });
     if (await card.isVisible()) return;
 
-    await expect(errorCard).toContainText("Failed to fetch");
+    await expect(errorCard).toContainText(/Failed to fetch|Unexpected end of JSON input/);
     if (attempt < 2) await errorCard.getByRole("button", { name: "Try again" }).click();
   }
 

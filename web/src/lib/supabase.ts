@@ -11,6 +11,18 @@ if (!url || !anonKey) {
 
 export const supabase = createClient(url ?? "", anonKey ?? "");
 
+export class FunctionError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number,
+    readonly data: unknown = null,
+  ) {
+    super(message);
+    this.name = "FunctionError";
+  }
+}
+
 // Small helper — every Edge Function call needs the user's access token,
 // and every response follows the { success, data, error } envelope.
 export async function callFunction<T = unknown>(name: string, body: unknown): Promise<T> {
@@ -29,7 +41,12 @@ export async function callFunction<T = unknown>(name: string, body: unknown): Pr
 
   const json = await resp.json();
   if (!json.success) {
-    throw new Error(json.error?.message ?? `${name} failed`);
+    throw new FunctionError(
+      json.error?.message ?? `${name} failed`,
+      json.error?.code ?? "FUNCTION_ERROR",
+      resp.status,
+      json.data,
+    );
   }
   return json.data as T;
 }
@@ -52,7 +69,12 @@ export async function getFunction<T = unknown>(
 
   const json = await resp.json();
   if (!json.success) {
-    throw new Error(json.error?.message ?? `${name} failed`);
+    throw new FunctionError(
+      json.error?.message ?? `${name} failed`,
+      json.error?.code ?? "FUNCTION_ERROR",
+      resp.status,
+      json.data,
+    );
   }
   return json.data as T;
 }
@@ -74,7 +96,12 @@ export async function deleteFunction<T = unknown>(name: string, body: unknown): 
 
   const json = await resp.json();
   if (!json.success) {
-    throw new Error(json.error?.message ?? `${name} failed`);
+    throw new FunctionError(
+      json.error?.message ?? `${name} failed`,
+      json.error?.code ?? "FUNCTION_ERROR",
+      resp.status,
+      json.data,
+    );
   }
   return json.data as T;
 }
