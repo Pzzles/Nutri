@@ -17,6 +17,22 @@ export const ANTHROPOMETRY_SITE_CODES = [
 
 export type AnthropometrySiteCode = typeof ANTHROPOMETRY_SITE_CODES[number];
 export type MeasurementUnit = "cm" | "in";
+export type MealTiming = "before_food" | "after_food" | "not_recorded";
+export type MeasurementAssistance = "self" | "assisted" | "not_recorded";
+export type ClothingLevel = "minimal" | "light" | "normal" | "other" | "not_recorded";
+
+export interface AnthropometryMeasurementContextInput {
+  meal_timing: MealTiming;
+  after_bathroom: boolean | null;
+  exercise_within_previous_12_hours: boolean | null;
+  measurement_assistance: MeasurementAssistance;
+  clothing_level: ClothingLevel;
+}
+
+export interface AnthropometryMeasurementContext extends AnthropometryMeasurementContextInput {
+  version: string | null;
+  local_time: string | null;
+}
 
 export interface AnthropometrySiteDefinition {
   code: AnthropometrySiteCode;
@@ -154,6 +170,7 @@ export interface AnthropometrySaveResponse {
     measured_at: string | null;
     notes: string | null;
     finalized_at: string | null;
+    measurement_context?: AnthropometryMeasurementContext;
   };
   sites: AnthropometrySavedSite[];
   previews?: AnthropometryRepresentativePreview[];
@@ -163,6 +180,7 @@ export interface AnthropometrySaveResponse {
     protocol: string;
     representative: string | null;
     repeatability_thresholds: string | null;
+    measurement_context?: string;
   };
 }
 
@@ -178,6 +196,8 @@ export interface AnthropometryProgressPoint {
   site_code: AnthropometrySiteCode;
   measured_at: string;
   logged_date: string;
+  protocol_version?: string;
+  measurement_context?: AnthropometryMeasurementContext;
   representative_cm: number;
   quality: AnthropometryQuality;
   selected_reading_indices?: number[] | null;
@@ -198,25 +218,60 @@ export interface AnthropometryChange {
 export interface AnthropometryProgressSeries {
   site_code: AnthropometrySiteCode;
   points: AnthropometryProgressPoint[];
-  previous_change: AnthropometryChange | null;
-  since_first_change: AnthropometryChange | null;
+  change_summary?: {
+    latest: AnthropometryComparableValue;
+    previous: AnthropometryChangeEvidence | null;
+    baseline: AnthropometryChangeEvidence | null;
+    warning_codes: string[];
+    algorithm_version: string;
+    context_comparison_version: string;
+    protocol_compatibility_version: string;
+  } | null;
+  warning_codes?: string[];
+  /** @deprecated Pre-remediation response compatibility for stored test fixtures. */
+  previous_change?: AnthropometryChange | null;
+  /** @deprecated Pre-remediation response compatibility for stored test fixtures. */
+  since_first_change?: AnthropometryChange | null;
+}
+
+export interface AnthropometryComparableValue {
+  session_id: string;
+  measured_at: string;
+  logged_date: string;
+  representative_cm: number;
+  quality: AnthropometryQuality;
+  protocol_version: string;
+  representative_algorithm_version: string | null;
+}
+
+export interface AnthropometryChangeEvidence {
+  from: AnthropometryComparableValue;
+  change_cm: number;
+  elapsed_days: number;
+  direction: "decreasing" | "broadly_stable" | "increasing";
+  context_warning_codes: string[];
 }
 
 export type AnthropometrySignalDirection =
+  | "decreasing"
   | "decreased"
   | "broadly_stable"
+  | "increasing"
   | "increased";
 
 export type AnthropometryComparisonReasonCode =
   | "insufficient_circumference_points"
   | "circumference_interval_too_short"
-  | "circumference_repeatability_warning"
+  | "circumference_quality_not_eligible"
+  | "incompatible_anthropometry_protocol"
+  | "latest_central_measurement_not_at_weight_as_of"
   | "weight_status_not_eligible"
   | "weight_confidence_not_eligible"
-  | "insufficient_weight_trend_points"
-  | "no_aligned_weight_endpoint"
-  | "aligned_weight_points_not_distinct"
+  | "weight_rate_interval_unavailable"
+  | "weight_data_stale"
+  | "weight_not_aligned_with_anthropometry"
   | "no_material_cross_signal_template";
+
 
 export interface AnthropometryWeightComparison {
   eligible: boolean;
@@ -224,27 +279,50 @@ export interface AnthropometryWeightComparison {
   circumference: {
     start_session_id: string;
     end_session_id: string;
+    start_measured_at?: string;
+    end_measured_at?: string;
     change_cm: number;
+    elapsed_calendar_days?: number;
     direction: AnthropometrySignalDirection;
+    context_warning_codes?: string[];
   } | null;
   weight_trend: {
-    start_point_measured_at: string;
-    end_point_measured_at: string;
-    start_kg: number;
-    end_kg: number;
-    change_kg: number;
-    stable_band_kg: number;
-    direction: AnthropometrySignalDirection;
-  } | null;
+    weekly_rate_kg?: number | null;
+    lower_kg?: number | null;
+    upper_kg?: number | null;
+    direction: "decreasing" | "broadly_stable_or_uncertain" | "increasing" | "unavailable" | "broadly_stable";
+    status?: string | null;
+    confidence?: string | null;
+    selected_window_days?: number | null;
+    as_of?: string | null;
+    latest_weight_measured_at?: string | null;
+    phase_6_window_start?: string | null;
+    phase_6_window_end?: string | null;
+    start_point_measured_at?: string;
+    end_point_measured_at?: string;
+    start_kg?: number;
+    end_kg?: number;
+    change_kg?: number;
+    stable_band_kg?: number;
+  };
   description: string | null;
   reason_codes?: AnthropometryComparisonReasonCode[];
+  algorithm_version?: string;
+  evidence_period?: {
+    anthropometry_start: string;
+    anthropometry_end: string;
+    weight_as_of: string;
+  } | null;
 }
 
 export interface AnthropometryProgressResponse {
   series: AnthropometryProgressSeries[];
   weight_comparison: AnthropometryWeightComparison | null;
   algorithm_versions: {
-    change: string;
+    change_summary?: string;
+    context_comparison?: string;
+    protocol_compatibility?: string;
+    change?: string;
     weight_comparison: string;
     weight_trend: string;
   };
@@ -255,6 +333,7 @@ interface SessionRequestBase {
   session_id?: string;
   measured_at?: string;
   notes?: string;
+  measurement_context?: AnthropometryMeasurementContextInput;
   sites: AnthropometrySitePayload[];
 }
 

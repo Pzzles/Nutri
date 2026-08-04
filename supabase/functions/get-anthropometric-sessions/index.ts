@@ -8,6 +8,16 @@ import {
   ANTHROPOMETRY_SITE_CODES,
   ANTHROPOMETRY_THRESHOLDS_VERSION,
 } from "../_shared/anthropometry.ts";
+import {
+  ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION,
+  ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
+  ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION,
+  contextFromRow,
+} from "../_shared/anthropometryContext.ts";
+import {
+  ANTHROPOMETRY_CHANGE_VERSION,
+  ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
+} from "../_shared/anthropometryProgress.ts";
 
 type Cursor = { measured_at: string; id: string };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -67,7 +77,7 @@ Deno.serve(async (req) => {
 
     const service = getServiceClient();
     const sessionColumns =
-      "id, status, measured_at, logged_date, timezone, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, finalized_at, created_at, updated_at";
+      "id, status, measured_at, logged_date, timezone, local_time, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, measurement_context_version, meal_timing, after_bathroom, exercise_within_previous_12_hours, measurement_assistance, clothing_level, finalized_at, created_at, updated_at";
     let query = service.from("anthropometric_sessions").select(
       siteCode
         ? `${sessionColumns}, anthropometric_representatives!inner(site_code)`
@@ -140,7 +150,12 @@ Deno.serve(async (req) => {
             ? null
             : Number(representative.selected_pair_spread_cm),
         }));
-      return { ...session, readings: sessionReadings, representatives: sessionRepresentatives };
+      return {
+        ...session,
+        measurement_context: contextFromRow(session as Record<string, unknown>),
+        readings: sessionReadings,
+        representatives: sessionRepresentatives,
+      };
     });
     const last = hydrated.at(-1);
     const nextCursor = hasMore && last
@@ -155,6 +170,11 @@ Deno.serve(async (req) => {
         protocol: ANTHROPOMETRY_PROTOCOL_VERSION,
         representative: ANTHROPOMETRY_REPRESENTATIVE_VERSION,
         repeatability_thresholds: ANTHROPOMETRY_THRESHOLDS_VERSION,
+        measurement_context: ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
+        context_comparison: ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION,
+        change_summary: ANTHROPOMETRY_CHANGE_VERSION,
+        protocol_compatibility: ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION,
+        weight_comparison: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
       },
     });
   } catch (error) {

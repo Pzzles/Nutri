@@ -90,7 +90,7 @@ export const OUTLIER_MAX_SINGLE_DAY_FRACTION = 0.10 as const; // 10% of body wei
 // ── Phase 10: Anthropometric Progress Tracking ───────────────────────────────
 
 export const ANTHROPOMETRY_DATA_CONTRACT_VERSION =
-  "anthropometry_data_contract_v3" as const;
+  "anthropometry_data_contract_v4" as const;
 export const ANTHROPOMETRY_PROTOCOL_VERSION =
   "anthropometry_protocol_v1" as const;
 export const ANTHROPOMETRY_REPRESENTATIVE_VERSION =
@@ -98,9 +98,15 @@ export const ANTHROPOMETRY_REPRESENTATIVE_VERSION =
 export const ANTHROPOMETRY_THRESHOLDS_VERSION =
   "anthropometry_repeatability_thresholds_v2" as const;
 export const ANTHROPOMETRY_CHANGE_VERSION =
-  "anthropometry_change_v1" as const;
+  "anthropometry_change_summary_v2" as const;
 export const ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION =
-  "anthropometry_weight_comparison_v1" as const;
+  "anthropometry_weight_comparison_v2" as const;
+export const ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION =
+  "anthropometry_measurement_context_v1" as const;
+export const ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION =
+  "anthropometry_context_comparison_v1" as const;
+export const ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION =
+  "anthropometry_protocol_compatibility_v1" as const;
 
 // Integer tenths of a centimetre keep validation and representative selection
 // deterministic across TypeScript, PostgreSQL, and future clients.

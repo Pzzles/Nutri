@@ -14,6 +14,7 @@ import {
   siteDefinition,
   type AnthropometrySaveResponse,
   type AnthropometryRepresentativePreview,
+  type AnthropometryMeasurementContextInput,
   type AnthropometrySiteCode,
   type AnthropometrySitePayload,
   type MeasurementUnit,
@@ -58,6 +59,13 @@ export default function Measurements() {
   const [acknowledgedSites, setAcknowledgedSites] = useState<AnthropometrySiteCode[]>([]);
   const [readingInput, setReadingInput] = useState("");
   const [notes, setNotes] = useState("");
+  const [measurementContext, setMeasurementContext] = useState<AnthropometryMeasurementContextInput>({
+    meal_timing: "not_recorded",
+    after_bathroom: null,
+    exercise_within_previous_12_hours: null,
+    measurement_assistance: "not_recorded",
+    clothing_level: "not_recorded",
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
@@ -149,6 +157,7 @@ export default function Measurements() {
     try {
       const result = await saveAnthropometryDraft({
         measured_at: measuredAt,
+        measurement_context: measurementContext,
         sites: payloadFor({}),
       });
       setSessionId(result.session.id);
@@ -176,6 +185,7 @@ export default function Measurements() {
     const result = await saveAnthropometryDraft({
       session_id: sessionId ?? undefined,
       measured_at: measuredAt,
+      measurement_context: measurementContext,
       sites: payloadFor(nextReadings),
     });
     if (!sessionId) setSessionId(result.session.id);
@@ -400,6 +410,7 @@ export default function Measurements() {
         session_id: sessionId,
         measured_at: measuredAt,
         notes: notes.trim() || undefined,
+        measurement_context: measurementContext,
         idempotency_key: idempotencyKey,
         sites: payloadFor(readings),
         high_variability_acknowledgements: acknowledgedSites.map((site_code) => ({
@@ -431,6 +442,13 @@ export default function Measurements() {
     setAcknowledgedSites([]);
     setReadingInput("");
     setNotes("");
+    setMeasurementContext({
+      meal_timing: "not_recorded",
+      after_bathroom: null,
+      exercise_within_previous_12_hours: null,
+      measurement_assistance: "not_recorded",
+      clothing_level: "not_recorded",
+    });
     setPrepared(false);
     setError(null);
     setStatusMessage("");
@@ -508,10 +526,12 @@ export default function Measurements() {
           selectedSites={selectedSites}
           measuredAtLocal={measuredAtLocal}
           prepared={prepared}
+          measurementContext={measurementContext}
           busy={busy}
           error={error}
           onMeasuredAtChange={setMeasuredAtLocal}
           onPreparedChange={setPrepared}
+          onMeasurementContextChange={setMeasurementContext}
           onToggleSite={toggleSite}
           onSelectStandard={() => setSelectedSites(STANDARD_SITE_CODES)}
           onClear={() => setSelectedSites([])}
@@ -562,6 +582,7 @@ export default function Measurements() {
           unit={unit}
           measuredAtLocal={measuredAtLocal}
           notes={notes}
+          measurementContext={measurementContext}
           busy={busy}
           error={error}
           onNotesChange={setNotes}
@@ -615,10 +636,12 @@ interface SetupPanelProps {
   selectedSites: AnthropometrySiteCode[];
   measuredAtLocal: string;
   prepared: boolean;
+  measurementContext: AnthropometryMeasurementContextInput;
   busy: boolean;
   error: string | null;
   onMeasuredAtChange: (value: string) => void;
   onPreparedChange: (value: boolean) => void;
+  onMeasurementContextChange: (value: AnthropometryMeasurementContextInput) => void;
   onToggleSite: (code: AnthropometrySiteCode) => void;
   onSelectStandard: () => void;
   onClear: () => void;
@@ -689,6 +712,37 @@ function SetupPanel(props: SetupPanelProps) {
           onChange={(event) => props.onMeasuredAtChange(event.target.value)}
           className="mt-1 min-h-11 w-full max-w-sm rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
         />
+        <fieldset className="mt-5 rounded-lg border border-border p-3">
+          <legend className="px-1 text-sm font-semibold text-ink">Measurement conditions <span className="font-normal text-muted">(optional)</span></legend>
+          <p className="mb-3 text-xs leading-5 text-muted">Recording conditions helps explain possible variation. Differences never change or invalidate your representative values.</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-ink">Food timing
+              <select value={props.measurementContext.meal_timing} onChange={(event) => props.onMeasurementContextChange({ ...props.measurementContext, meal_timing: event.target.value as AnthropometryMeasurementContextInput["meal_timing"] })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3">
+                <option value="not_recorded">Not recorded</option><option value="before_food">Before food</option><option value="after_food">After food</option>
+              </select>
+            </label>
+            <label className="text-sm font-medium text-ink">Measurement help
+              <select value={props.measurementContext.measurement_assistance} onChange={(event) => props.onMeasurementContextChange({ ...props.measurementContext, measurement_assistance: event.target.value as AnthropometryMeasurementContextInput["measurement_assistance"] })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3">
+                <option value="not_recorded">Not recorded</option><option value="self">Measured myself</option><option value="assisted">Assisted</option>
+              </select>
+            </label>
+            <label className="text-sm font-medium text-ink">Clothing level
+              <select value={props.measurementContext.clothing_level} onChange={(event) => props.onMeasurementContextChange({ ...props.measurementContext, clothing_level: event.target.value as AnthropometryMeasurementContextInput["clothing_level"] })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3">
+                <option value="not_recorded">Not recorded</option><option value="minimal">Minimal</option><option value="light">Light</option><option value="normal">Normal</option><option value="other">Other</option>
+              </select>
+            </label>
+            <label className="text-sm font-medium text-ink">After using the bathroom
+              <select value={props.measurementContext.after_bathroom === null ? "not_recorded" : String(props.measurementContext.after_bathroom)} onChange={(event) => props.onMeasurementContextChange({ ...props.measurementContext, after_bathroom: event.target.value === "not_recorded" ? null : event.target.value === "true" })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3">
+                <option value="not_recorded">Not recorded</option><option value="true">Yes</option><option value="false">No</option>
+              </select>
+            </label>
+            <label className="text-sm font-medium text-ink sm:col-span-2">Exercise in the previous 12 hours
+              <select value={props.measurementContext.exercise_within_previous_12_hours === null ? "not_recorded" : String(props.measurementContext.exercise_within_previous_12_hours)} onChange={(event) => props.onMeasurementContextChange({ ...props.measurementContext, exercise_within_previous_12_hours: event.target.value === "not_recorded" ? null : event.target.value === "true" })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3 sm:max-w-sm">
+                <option value="not_recorded">Not recorded</option><option value="true">Yes</option><option value="false">No</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 focus-within:ring-2 focus-within:ring-primary">
           <input
             type="checkbox"
@@ -922,6 +976,7 @@ interface ReviewPanelProps {
   unit: MeasurementUnit;
   measuredAtLocal: string;
   notes: string;
+  measurementContext: AnthropometryMeasurementContextInput;
   busy: boolean;
   error: string | null;
   onNotesChange: (value: string) => void;
@@ -969,6 +1024,9 @@ function ReviewPanel(props: ReviewPanelProps) {
           <div>
             <p className="text-sm font-medium text-ink">Measured</p>
             <p className="mt-1 text-sm text-muted">{new Date(props.measuredAtLocal).toLocaleString()}</p>
+            <p className="mt-2 text-xs leading-5 text-muted">
+              Context: {props.measurementContext.meal_timing.replace(/_/g, " ")} · {props.measurementContext.measurement_assistance.replace(/_/g, " ")} · {props.measurementContext.clothing_level.replace(/_/g, " ")}
+            </p>
           </div>
           <label className="block text-sm font-medium text-ink">
             Notes <span className="font-normal text-muted">(optional)</span>

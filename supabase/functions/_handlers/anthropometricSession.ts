@@ -5,7 +5,12 @@
  */
 import { ok, fail, preflight } from "../_shared/envelope.ts";
 import { getServiceClient, getUserClient } from "../_shared/supabaseClient.ts";
-import { toLocalDateString } from "../_shared/timezone.ts";
+import { toLocalDateString, toLocalTimeString } from "../_shared/timezone.ts";
+import {
+  ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
+  contextFromRow,
+  normalizeMeasurementContext,
+} from "../_shared/anthropometryContext.ts";
 import {
   ANTHROPOMETRY_DATA_CONTRACT_VERSION,
   ANTHROPOMETRY_FUTURE_TOLERANCE_MS,
@@ -58,6 +63,8 @@ const FORBIDDEN_CLIENT_FIELDS = new Set([
   "weight_kg",
   "payload_hash",
   "logged_date",
+  "local_time",
+  "measurement_context_version",
   "timezone",
   "finalized_at",
   "user_id",
@@ -144,7 +151,7 @@ async function loadOwnedSession(
 ) {
   const [sessionResult, readingsResult, representativesResult] = await Promise.all([
     service.from("anthropometric_sessions").select(
-      "id, status, measured_at, logged_date, timezone, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, finalized_at, created_at, updated_at",
+      "id, status, measured_at, logged_date, timezone, local_time, notes, data_contract_version, protocol_version, representative_algorithm_version, thresholds_version, measurement_context_version, meal_timing, after_bathroom, exercise_within_previous_12_hours, measurement_assistance, clothing_level, finalized_at, created_at, updated_at",
     ).eq("id", sessionId).eq("user_id", authenticatedUserId).single(),
     service.from("anthropometric_readings").select("id, site_code, reading_number, value_cm")
       .eq("session_id", sessionId).eq("user_id", authenticatedUserId)
@@ -197,7 +204,11 @@ async function loadOwnedSession(
         : {}),
     }];
   });
-  return { session: sessionResult.data, sites };
+  const sessionRow = sessionResult.data as Record<string, unknown>;
+  return {
+    session: { ...sessionRow, measurement_context: contextFromRow(sessionRow) },
+    sites,
+  };
 }
 
 export async function handleAnthropometricSessionSave(
@@ -244,6 +255,12 @@ export async function handleAnthropometricSessionSave(
 
     const sessionId = optionalUuid(body.session_id, "session_id");
     const notes = normalizeNotes(body.notes);
+    let measurementContext;
+    try {
+      measurementContext = normalizeMeasurementContext(body.measurement_context);
+    } catch (error) {
+      return fail("VALIDATION_ERROR", (error as Error).message, 422);
+    }
     const sites = normalizeSites(body.sites);
     const measuredAt = parseMeasuredAt(body.measured_at, status === "finalized");
     if (
@@ -264,6 +281,7 @@ export async function handleAnthropometricSessionSave(
     let previews: ReturnType<typeof publicPreview>[] = [];
     let timezone: string | null = null;
     let loggedDate: string | null = null;
+    let localTime: string | null = null;
     let idempotencyKey: string | null = null;
     let payloadHash: string | null = null;
 
@@ -339,24 +357,30 @@ export async function handleAnthropometricSessionSave(
             : null,
         })),
       };
-      const { data: profile, error: profileError } = await service
-        .from("profiles").select("timezone").eq("id", userId).maybeSingle();
-      if (profileError) throw profileError;
-      const effectiveTimezone = profile?.timezone ?? DEFAULT_TIMEZONE;
-      timezone = effectiveTimezone;
-      try {
-        loggedDate = toLocalDateString(measuredAt!, effectiveTimezone);
-      } catch {
-        return fail("INVALID_PROFILE_TIMEZONE", "The profile timezone is invalid", 422);
-      }
-
       payloadHash = await sha256Canonical({
         measured_at: measuredAt!.toISOString(),
         notes,
         protocol_version: ANTHROPOMETRY_PROTOCOL_VERSION,
+        measurement_context: measurementContext,
         sites,
         high_variability_acknowledgements: acknowledgements,
       });
+    }
+
+    if (measuredAt) {
+      const { data: profile, error: profileError } = await service
+        .from("profiles").select("timezone").eq("id", userId).maybeSingle();
+      if (profileError) throw profileError;
+      const effectiveTimezone = profile?.timezone ?? DEFAULT_TIMEZONE;
+      try {
+        localTime = toLocalTimeString(measuredAt, effectiveTimezone);
+        if (status === "finalized") {
+          timezone = effectiveTimezone;
+          loggedDate = toLocalDateString(measuredAt, effectiveTimezone);
+        }
+      } catch {
+        return fail("INVALID_PROFILE_TIMEZONE", "The profile timezone is invalid", 422);
+      }
     }
 
     const { data: rpcData, error: rpcError } = await service.rpc(
@@ -371,6 +395,14 @@ export async function handleAnthropometricSessionSave(
         p_representatives: representatives?.representatives ?? null,
         p_logged_date: loggedDate,
         p_timezone: timezone,
+        p_local_time: localTime,
+        p_measurement_context_version: ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
+        p_meal_timing: measurementContext.meal_timing,
+        p_after_bathroom: measurementContext.after_bathroom,
+        p_exercise_within_previous_12_hours:
+          measurementContext.exercise_within_previous_12_hours,
+        p_measurement_assistance: measurementContext.measurement_assistance,
+        p_clothing_level: measurementContext.clothing_level,
         p_idempotency_key: idempotencyKey,
         p_payload_hash: payloadHash,
         p_data_contract_version: ANTHROPOMETRY_DATA_CONTRACT_VERSION,
@@ -415,6 +447,7 @@ export async function handleAnthropometricSessionSave(
           protocol: ANTHROPOMETRY_PROTOCOL_VERSION,
           representative: status === "finalized" ? ANTHROPOMETRY_REPRESENTATIVE_VERSION : null,
           repeatability_thresholds: status === "finalized" ? ANTHROPOMETRY_THRESHOLDS_VERSION : null,
+          measurement_context: ANTHROPOMETRY_MEASUREMENT_CONTEXT_VERSION,
         },
       },
       status === "draft" || result.replayed ? 200 : 201,

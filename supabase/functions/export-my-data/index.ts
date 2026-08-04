@@ -1,6 +1,6 @@
 // export-my-data
 // Authenticated GET endpoint. Returns all personal data stored for the
-// calling user as a single JSON document (format: nutri_data_export_v2).
+// calling user as a single JSON document (format: nutri_data_export_v3).
 // The frontend downloads this as a .json file.
 //
 // Tables exported (all filtered to the authenticated user):
@@ -14,6 +14,13 @@
 
 import { fail, preflight } from "../_shared/envelope.ts";
 import { getUserClient, getServiceClient } from "../_shared/supabaseClient.ts";
+import { contextFromRow } from "../_shared/anthropometryContext.ts";
+import {
+  ANTHROPOMETRY_CHANGE_VERSION,
+  ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION,
+  ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION,
+  ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
+} from "../_shared/anthropometryProgress.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -102,8 +109,11 @@ Deno.serve(async (req) => {
       anthropometricRepresentatives = representativesRes.data ?? [];
     }
 
+    const anthropometricSessions = (anthropometricSessionsRes.data ?? []).map(
+      (row: Record<string, unknown>) => ({ ...row, measurement_context: contextFromRow(row) }),
+    );
     const exportDoc = {
-      export_version: "nutri_data_export_v2",
+      export_version: "nutri_data_export_v3",
       exported_at: new Date().toISOString(),
       user_id: userId,
       data: {
@@ -117,9 +127,15 @@ Deno.serve(async (req) => {
         user_foods:                 userFoodsRes.data ?? [],
         user_food_cache:            userFoodCacheRes.data ?? [],
         goal_feedback_assessments:  feedbackRes.data ?? [],
-        anthropometric_sessions:    anthropometricSessionsRes.data ?? [],
+        anthropometric_sessions:    anthropometricSessions,
         anthropometric_readings:    anthropometricReadings,
         anthropometric_representatives: anthropometricRepresentatives,
+      },
+      anthropometry_provenance: {
+        change_summary_version: ANTHROPOMETRY_CHANGE_VERSION,
+        context_comparison_version: ANTHROPOMETRY_CONTEXT_COMPARISON_VERSION,
+        protocol_compatibility_version: ANTHROPOMETRY_PROTOCOL_COMPATIBILITY_VERSION,
+        weight_comparison_version: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
       },
     };
 

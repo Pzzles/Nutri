@@ -186,17 +186,24 @@ export type Database = {
       }
       anthropometric_sessions: {
         Row: {
+          after_bathroom: boolean | null
+          clothing_level: string | null
           created_at: string
           data_contract_version: string
           finalized_at: string | null
           id: string
           idempotency_key: string | null
           logged_date: string | null
+          local_time: string | null
+          meal_timing: string | null
           measured_at: string | null
+          measurement_assistance: string | null
+          measurement_context_version: string | null
           notes: string | null
           payload_hash: string | null
           protocol_version: string
           representative_algorithm_version: string | null
+          exercise_within_previous_12_hours: boolean | null
           status: string
           thresholds_version: string | null
           timezone: string | null
@@ -205,16 +212,23 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          after_bathroom?: boolean | null
+          clothing_level?: string | null
           data_contract_version?: string
           finalized_at?: string | null
           id?: string
           idempotency_key?: string | null
           logged_date?: string | null
+          local_time?: string | null
+          meal_timing?: string | null
           measured_at?: string | null
+          measurement_assistance?: string | null
+          measurement_context_version?: string | null
           notes?: string | null
           payload_hash?: string | null
           protocol_version?: string
           representative_algorithm_version?: string | null
+          exercise_within_previous_12_hours?: boolean | null
           status?: string
           thresholds_version?: string | null
           timezone?: string | null
@@ -223,16 +237,23 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          after_bathroom?: boolean | null
+          clothing_level?: string | null
           data_contract_version?: string
           finalized_at?: string | null
           id?: string
           idempotency_key?: string | null
           logged_date?: string | null
+          local_time?: string | null
+          meal_timing?: string | null
           measured_at?: string | null
+          measurement_assistance?: string | null
+          measurement_context_version?: string | null
           notes?: string | null
           payload_hash?: string | null
           protocol_version?: string
           representative_algorithm_version?: string | null
+          exercise_within_previous_12_hours?: boolean | null
           status?: string
           thresholds_version?: string | null
           timezone?: string | null
