@@ -1,7 +1,7 @@
 # Nutri — Nutrition Tracker
 
 Production-ready personal nutrition tracking application.
-Phases 1–9 complete. Phase 10 remediation Gates 1–3 implemented; Gate 4 final validation pending.
+Phases 1–9 are complete. Phase 10 implementation and remediation validation are complete, subject to final pull-request review and merge.
 
 ## What's built
 
@@ -90,7 +90,7 @@ npm run dev
 # Requires: supabase start + supabase functions serve --env-file supabase/.env
 cd supabase/tests
 npx vitest run --config vitest.config.ts
-# Expected: 400 backend tests, 0 failures
+# Expected at the Phase 10 final audit: 425 backend tests, 0 failures
 ```
 
 ### Run E2E tests
@@ -108,7 +108,7 @@ See [docs/deployment/production-deployment.md](docs/deployment/production-deploy
 
 ```
 supabase/
-  migrations/         0001–0032 — schema evolution + bug fixes
+  migrations/         0001–0036 — schema evolution + bug fixes
   functions/
     _shared/          Shared helpers (envelope, supabase client, energy calc, science config)
     _handlers/        Server-only request handlers shared by multiple endpoints

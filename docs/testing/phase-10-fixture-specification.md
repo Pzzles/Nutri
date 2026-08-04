@@ -15,4 +15,4 @@ Gate 3 fixtures are deterministic and exercise:
 11. byte-equivalent Phase 5–8 canonical outputs before and after anthropometry calculation;
 12. a static dependency proof that Phase 5–8 production modules neither import nor query anthropometry.
 
-Pure fixtures live in `_shared/anthropometryProgress.test.ts` and `_shared/anthropometryNonInterference.test.ts`. Real database/API fixtures live in `anthropometry-api.test.ts`; Gate 2 concurrency, RLS, and deletion suites remain mandatory regression gates. Two clean `supabase db reset --local` executions and a schema diff are required before Gate 3 can be accepted.
+Pure fixtures live in `_shared/anthropometryProgress.test.ts` and `_shared/anthropometryNonInterference.test.ts`. Real database/API fixtures live in `anthropometry-api.test.ts`; Gate 2 concurrency, RLS, and deletion suites remain mandatory regression gates. Gate 4 adds real browser fixtures for recovery, accessibility, responsive layouts, export, deletion, and the complete measurement lifecycle. Two clean `supabase db reset --local` executions and a schema diff are required before the final audit can be accepted.

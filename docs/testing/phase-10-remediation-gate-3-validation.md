@@ -1,5 +1,9 @@
 # Phase 10 Remediation Gate 3 Validation Evidence
 
+> **Accepted intermediate-gate record (2026-08-03).** Gate 4 is now complete;
+> see the [Phase 10 remediation final evidence](phase-10-validation-evidence.md)
+> for the current validation state.
+
 Date: 2026-08-03<br>
 Branch: `fix/anthropometry-phase10-remediation`<br>
 Starting HEAD: `d3e1182536f58c9d404a32a941f78a470e7f1973`<br>
@@ -8,7 +12,7 @@ Starting `origin/master`: `478443180fea53653945ff3a3f5d9ac1da9df190`
 This record covers measurement context, protocol compatibility, change-summary
 v2, canonical Phase 6 interval classification, Phase 5–8 non-interference,
 history pagination, export provenance, and the retained Gate 1–2 guarantees.
-It does not declare the final Phase 10 audit complete; Gate 4 remains pending.
+It records the accepted Gate 3 state and does not itself declare the final audit.
 
 ## Acceptance evidence
 
@@ -90,5 +94,6 @@ circumference direction with the Phase 6 interval direction.
 
 ## Status
 
-Phase 10 remediation Gates 1–3 are implemented. Gate 4 final validation is
-pending. No pull request was created and the branch was not merged.
+Phase 10 remediation Gates 1–3 were accepted in this intermediate record. Gate
+4 subsequently completed; see the final evidence linked above. The branch was
+not merged by this validation step.

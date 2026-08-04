@@ -10,7 +10,7 @@ Wrong types, unknown enums, and extra context keys are validation errors. Client
 
 ## History
 
-`GET get-anthropometric-sessions` returns finalised sessions newest-first using the `(measured_at, id)` cursor. Limit is 1–100. Each row includes structured context, notes, readings, representative provenance, and stored versions. A real 1,005-session fixture proves bounded pages, stable ordering, no duplicates/skips, and correct child association.
+`GET get-anthropometric-sessions` accepts `status=finalized` (default) or `status=draft`. Finalised sessions use the `(measured_at, id, status)` cursor; drafts use `(updated_at, id, status)`. Limit is 1–100. Each row includes structured context, notes, readings, representative provenance, and stored versions. Draft listing supports owner-scoped resume/discard without reopening finalised sessions. A real 1,005-session fixture proves bounded finalised pages, stable ordering, no duplicates/skips, and correct child association.
 
 ## Progress
 

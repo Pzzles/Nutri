@@ -1,13 +1,16 @@
 # Anthropometric Progress Data Contract
 
 **Phase:** 10 — Anthropometric Progress Tracking<br>
-**Current contract:** `anthropometry_data_contract_v4` (superseded by [body-measurement-data-contract.md](body-measurement-data-contract.md))<br>
+**Historical contract:** Gate 2 `anthropometry_data_contract_v2`; superseded for current writes by [`anthropometry_data_contract_v4`](body-measurement-data-contract.md)<br>
 **Protocol:** `anthropometry_protocol_v1`<br>
-**Status:** Remediation Gate 1 hybrid representative contract implemented
+**Status:** Historical Gate 2 contract; superseded by the Phase 10 final contracts
 
-> The lifecycle material below documents the original v2 implementation. For
-> current representative fields, quality states, acknowledgements, and legacy
-> handling, see [the v3 remediation contract](../algorithms/phase-10-anthropometric-representative-v3.md).
+> This file preserves the original Gate 2 API/schema contract for audit
+> provenance; it is not the current write contract. For current context,
+> representative-v3, ownership, and interpretation handling, see
+> [the current data contract](body-measurement-data-contract.md),
+> [the API contract](body-measurement-api-contract.md), and
+> [the v3 representative contract](../algorithms/phase-10-anthropometric-representative-v3.md).
 
 ## 1. Contract principles
 
@@ -326,7 +329,7 @@ If a comparison is not eligible, `weight_comparison` remains structured:
 Stable ineligibility reason codes:
 
 - `insufficient_circumference_points`
-- `circumference_interval_too_short`
+- `sessions_too_close_for_interpretation`
 - `circumference_repeatability_warning`
 - `weight_status_not_eligible`
 - `weight_confidence_not_eligible`

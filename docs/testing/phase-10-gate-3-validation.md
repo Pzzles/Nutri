@@ -1,5 +1,9 @@
 # Phase 10 Gate 3 Validation Evidence
 
+> **Historical pre-remediation record (2026-08-02).** Current API, RLS,
+> ownership, context, and final regression evidence is in the
+> [Phase 10 remediation final evidence](phase-10-validation-evidence.md).
+
 > Historical evidence for the original Phase 10 Gate 3. Superseded by
 > `phase-10-remediation-gate-3-validation.md`; retained for audit history.
 

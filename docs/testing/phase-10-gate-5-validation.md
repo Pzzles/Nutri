@@ -1,5 +1,9 @@
 # Phase 10 Gate 5 Validation Evidence
 
+> **Historical pre-remediation record (2026-08-02).** Current change-summary,
+> Phase 6 interval, and cross-signal evidence is in the
+> [Phase 10 remediation final evidence](phase-10-validation-evidence.md).
+
 Date: 2026-08-02<br>
 Branch: `feat/anthropometric-progress-tracking`<br>
 Scope: anthropometric trends and Phase 6 cross-signal interpretation
