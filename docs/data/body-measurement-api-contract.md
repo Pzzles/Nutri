@@ -16,7 +16,7 @@ Wrong types, unknown enums, and extra context keys are validation errors. Client
 
 `GET get-anthropometric-progress` returns chronological site series, structured context without notes, `anthropometry_change_summary_v2`, protocol/context warnings, and optional `anthropometry_weight_comparison_v2`. Query parameters are `from`, `to`, `site_code`, and `include_weight_comparison`. The public API does not accept an arbitrary Phase 6 as-of timestamp.
 
-Weight evidence includes `weekly_rate_kg`, `lower_kg`, `upper_kg`, direction, Phase 6 status/confidence, selected window, server-selected `as_of`, latest weight timestamp, Phase 6 window, eligibility, stable reason codes, and evidence period. The frontend displays server results and performs no science calculation.
+Weight evidence includes `weekly_rate_kg`, `lower_kg`, `upper_kg`, direction, Phase 6 status/confidence, selected window, server-selected `as_of`, latest weight timestamp, Phase 6 window, eligibility, stable reason codes, a stable `message_code`, and evidence period. Eligible message codes use `{site}_{circumference_direction}_weight_{weight_direction}`; ineligible responses return null. The frontend displays server results and performs no science calculation.
 
 ## Export and deletion
 

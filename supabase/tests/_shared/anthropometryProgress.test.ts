@@ -165,6 +165,7 @@ describe("anthropometry_weight_comparison_v2", () => {
     const comparison = buildWeightComparison(buildAnthropometrySeries([start, end]), trend(asOf), asOf);
     expect(comparison).toMatchObject({
       eligible: true, site_code: "waist", reason_codes: [],
+      message_code: "waist_decreasing_weight_decreasing",
       algorithm_version: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
       circumference: { change_cm: -3, elapsed_calendar_days: 61, direction: "decreasing" },
       weight_trend: { weekly_rate_kg: -0.3, lower_kg: -0.5, upper_kg: -0.1, direction: "decreasing", as_of: asOf },

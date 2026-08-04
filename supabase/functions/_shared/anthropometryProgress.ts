@@ -93,6 +93,8 @@ export interface AnthropometryProgressSeries {
 
 export type CircumferenceDirection = "decreasing" | "broadly_stable" | "increasing";
 export type WeightDirection = "decreasing" | "broadly_stable_or_uncertain" | "increasing" | "unavailable";
+export type AnthropometryWeightMessageCode =
+  `${"waist" | "abdomen_navel"}_${CircumferenceDirection}_weight_${Exclude<WeightDirection, "unavailable">}`;
 
 export type WeightComparisonReasonCode =
   | "insufficient_circumference_points"
@@ -136,6 +138,7 @@ export interface AnthropometryWeightComparison {
   site_code: "waist" | "abdomen_navel" | null;
   circumference: CircumferenceComparison | null;
   weight_trend: WeightRateEvidence;
+  message_code: AnthropometryWeightMessageCode | null;
   description: string | null;
   reason_codes: WeightComparisonReasonCode[];
   algorithm_version: typeof ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION;
@@ -290,6 +293,14 @@ function descriptionFor(site: "waist" | "abdomen_navel", circumference: Circumfe
   return `Weight trend ${weightPhrase} while ${label} circumference ${circumferencePhrase} over the recorded period.`;
 }
 
+function messageCodeFor(
+  site: "waist" | "abdomen_navel",
+  circumference: CircumferenceDirection,
+  weight: Exclude<WeightDirection, "unavailable">,
+): AnthropometryWeightMessageCode {
+  return `${site}_${circumference}_weight_${weight}`;
+}
+
 function ineligible(
   site: "waist" | "abdomen_navel" | null,
   reason: WeightComparisonReasonCode,
@@ -302,6 +313,7 @@ function ineligible(
     site_code: site,
     circumference,
     weight_trend: emptyWeightEvidence(trend, asOf),
+    message_code: null,
     description: null,
     reason_codes: [reason],
     algorithm_version: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,
@@ -370,6 +382,11 @@ function candidate(
     site_code: site,
     circumference,
     weight_trend: evidence,
+    message_code: messageCodeFor(
+      site,
+      circumference.direction,
+      evidence.direction as Exclude<WeightDirection, "unavailable">,
+    ),
     description: descriptionFor(site, circumference.direction, evidence.direction),
     reason_codes: [],
     algorithm_version: ANTHROPOMETRY_WEIGHT_COMPARISON_VERSION,

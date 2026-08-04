@@ -305,6 +305,7 @@ export interface AnthropometryWeightComparison {
     change_kg?: number;
     stable_band_kg?: number;
   };
+  message_code?: string | null;
   description: string | null;
   reason_codes?: AnthropometryComparisonReasonCode[];
   algorithm_version?: string;

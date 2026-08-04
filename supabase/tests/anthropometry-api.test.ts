@@ -204,7 +204,7 @@ describe("longitudinal progress and Phase 6 comparison", () => {
 
   it("generates only the versioned descriptive weight comparison", async () => {
     const result = await callFunction<{
-      weight_comparison: { eligible: boolean; site_code: string; description: string | null };
+      weight_comparison: { eligible: boolean; site_code: string; message_code: string | null; description: string | null };
     }>(
       "get-anthropometric-progress",
       tokenA,
@@ -215,6 +215,7 @@ describe("longitudinal progress and Phase 6 comparison", () => {
     expect(result.body.data!.weight_comparison).toMatchObject({
       eligible: true,
       site_code: "waist",
+      message_code: expect.stringMatching(/^waist_decreasing_weight_/),
       description: expect.stringMatching(/weight trend .* while waist circumference decreased/i),
     });
     expect(result.body.data!.weight_comparison.description).not.toMatch(/fat|muscle|recomposition/i);
