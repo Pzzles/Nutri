@@ -1,64 +1,49 @@
 # Environment Variables
 
-All runtime configuration is supplied via environment variables.
-Never commit real values — use `.env.example` templates as a guide.
+All runtime configuration is supplied through environment variables. Never
+commit real values; use the repository templates as field references.
 
----
-
-## Web application (`web/.env.local`)
+## Web application
 
 | Variable | Required | Description |
-|----------|----------|-------------|
-| `VITE_SUPABASE_URL` | Yes | Supabase project URL, e.g. `https://abc.supabase.co` |
-| `VITE_SUPABASE_ANON_KEY` | Yes | Supabase anon key (safe to expose to browser — RLS enforces access) |
+|---|---:|---|
+| `VITE_SUPABASE_URL` | Yes | Hosted staging or production Supabase URL |
+| `VITE_SUPABASE_ANON_KEY` | Yes | Browser-safe anon key; RLS remains authoritative |
 
-**Local dev values**: run `supabase status` to get `API URL` and `anon key`.
+`npm run dev` and `npm run dev:personas` inject the local CLI stack's URL and
+anon key automatically. An existing `web/.env.local` cannot redirect those
+commands to a hosted project. Configure staging and production values in the
+hosting provider's environment settings.
 
----
-
-## Edge Functions (`supabase/.env`)
+## Edge Functions
 
 | Variable | Required | Description |
-|----------|----------|-------------|
-| `SUPABASE_URL` | Yes | Same as VITE_SUPABASE_URL (without VITE_ prefix) |
-| `SUPABASE_ANON_KEY` | Yes | Same as VITE_SUPABASE_ANON_KEY |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role key — full DB access, bypasses RLS. Never expose publicly. |
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key — used by `parse-meal` only |
-| `FATSECRET_CONSUMER_KEY` | Yes | FatSecret OAuth 1.0 consumer key |
-| `FATSECRET_CONSUMER_SECRET` | Yes | FatSecret OAuth 1.0 consumer secret |
-| `CRON_SECRET` | Yes | Shared secret for the `recalculate-frequency-rankings` scheduled function |
+|---|---:|---|
+| `SUPABASE_URL` | Platform | Supabase project URL |
+| `SUPABASE_ANON_KEY` | Platform | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Platform | Privileged server-only key; never expose publicly |
+| `GROQ_API_KEY` | Yes | Groq key used by `parse-meal` |
+| `GROQ_API_URL` | No | OpenAI-compatible endpoint override for isolated testing |
+| `FATSECRET_CONSUMER_KEY` | Yes | FatSecret OAuth consumer key |
+| `FATSECRET_CONSUMER_SECRET` | Yes | FatSecret OAuth consumer secret |
+| `USDA_FDC_API_KEY` | No | USDA key; defaults to the limited `DEMO_KEY` |
+| `CRON_SECRET` | Yes | Secret used by scheduled frequency ranking |
 
----
+Deployed functions receive the Supabase platform variables automatically. Set
+the provider and cron secrets explicitly:
 
-## Production deployment
+```bash
+supabase secrets set --env-file supabase/.env --project-ref <project-ref>
+supabase secrets list --project-ref <project-ref>
+```
 
-1. Create a `.env` file from `supabase/.env.example` with real values
-2. Push all secrets to Supabase:
-   ```bash
-   supabase secrets set --env-file supabase/.env
-   ```
-3. Verify secrets are set:
-   ```bash
-   supabase secrets list
-   ```
-
-Edge Functions automatically receive `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-from the Supabase platform; you don't need to set these manually for deployed functions.
-The other secrets (`ANTHROPIC_API_KEY`, `FATSECRET_*`, `CRON_SECRET`) must be set
-explicitly.
-
----
+Do not set `GROQ_API_URL` in production unless a reviewed provider proxy is
+intentional. Omitting it uses Groq's official endpoint.
 
 ## Rotation procedure
 
-1. Generate a new key at the relevant provider dashboard
-2. Update the secret in Supabase:
-   ```bash
-   supabase secrets set ANTHROPIC_API_KEY=sk-ant-new-key
-   ```
-3. Redeploy affected functions:
-   ```bash
-   supabase functions deploy parse-meal
-   ```
-4. Verify the function works with the new key
-5. Revoke the old key at the provider dashboard
+1. Create the replacement provider key.
+2. Update the corresponding Supabase secret.
+3. Redeploy only the affected functions.
+4. Exercise the real provider path.
+5. Revoke the old key.

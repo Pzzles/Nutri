@@ -70,19 +70,20 @@ supabase db reset --local
 
 # 3. Set up Edge Function environment
 cp supabase/.env.example supabase/.env
-# Edit supabase/.env — fill in ANTHROPIC_API_KEY, FATSECRET_* credentials
+# Edit supabase/.env — fill in GROQ_API_KEY and FATSECRET_* credentials
 
 # 4. Serve edge functions locally
 supabase functions serve --env-file supabase/.env
 
-# 5. Set up the web app
+# 5. Set up the web app (always targets the local Supabase CLI stack)
 cd web
-cp .env.example .env.local
-# Edit .env.local — fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
-# (get these from: supabase status)
 npm install
 npm run dev
 ```
+
+`npm run dev` reads the local URL and anon key from `supabase status`. Hosted
+staging and production credentials belong in the hosting provider; normal local
+development never silently targets the production project.
 
 ### Run backend integration tests
 
