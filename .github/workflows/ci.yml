@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Validate deployment preflight contract
         run: |
           node --test scripts/deployment-preflight.test.mjs
@@ -22,6 +22,10 @@ jobs:
   # ─── Web: typecheck + Vitest unit tests + production build ───────────────
   unit:
     runs-on: ubuntu-latest
+    env:
+      # Non-secret placeholders satisfy the Supabase client during tests and builds.
+      VITE_SUPABASE_URL: https://placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder
     defaults:
       run:
         working-directory: web
@@ -30,7 +34,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -44,10 +48,6 @@ jobs:
 
       - name: Production build
         run: npm run build
-        env:
-          # Placeholder values satisfy Vite's env requirements at build time.
-          VITE_SUPABASE_URL: https://placeholder.supabase.co
-          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder
 
   # ─── DB + RLS integration tests (requires local Supabase) ────────────────
   db:
@@ -61,7 +61,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: supabase/tests/package-lock.json
 
@@ -87,7 +87,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -125,7 +125,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
 
