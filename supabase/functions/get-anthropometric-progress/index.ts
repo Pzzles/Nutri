@@ -10,6 +10,7 @@ import {
   buildAnthropometryProgress,
   type AnthropometryProgressInputPoint,
 } from "../_shared/anthropometryProgress.ts";
+import { contextFromRow } from "../_shared/anthropometryContext.ts";
 import { calculate, type RawEntry, type TrendOutput } from "../_shared/weightTrend.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
@@ -21,6 +22,14 @@ interface SessionRow {
   id: string;
   measured_at: string;
   logged_date: string;
+  protocol_version: string;
+  local_time: string | null;
+  measurement_context_version: string | null;
+  meal_timing: string | null;
+  after_bathroom: boolean | null;
+  exercise_within_previous_12_hours: boolean | null;
+  measurement_assistance: string | null;
+  clothing_level: string | null;
   anthropometric_representatives: Array<{
     site_code: AnthropometrySiteCode;
     representative_cm: number | string;
@@ -68,7 +77,7 @@ async function loadAnthropometryPoints(
   let offset = 0;
   while (true) {
     let query = service.from("anthropometric_sessions").select(
-      "id, measured_at, logged_date, anthropometric_representatives(site_code, representative_cm, quality, selected_reading_indices, selected_pair_spread_cm, warning_codes, eligible_for_interpretation, algorithm_version), anthropometric_readings(id, site_code, reading_number, value_cm)",
+      "id, measured_at, logged_date, protocol_version, local_time, measurement_context_version, meal_timing, after_bathroom, exercise_within_previous_12_hours, measurement_assistance, clothing_level, anthropometric_representatives(site_code, representative_cm, quality, selected_reading_indices, selected_pair_spread_cm, warning_codes, eligible_for_interpretation, algorithm_version), anthropometric_readings(id, site_code, reading_number, value_cm)",
     )
       .eq("user_id", userId)
       .eq("anthropometric_representatives.user_id", userId)
@@ -95,6 +104,8 @@ async function loadAnthropometryPoints(
         site_code: representative.site_code,
         measured_at: session.measured_at,
         logged_date: session.logged_date,
+        protocol_version: session.protocol_version,
+        measurement_context: contextFromRow(session as unknown as Record<string, unknown>),
         representative_cm: Number(representative.representative_cm),
         quality: representative.quality,
         selected_reading_indices: representative.selected_reading_indices,
@@ -119,6 +130,7 @@ async function loadAnthropometryPoints(
 async function loadWeightLogs(
   service: SupabaseClient,
   userId: string,
+  asOf: string,
 ): Promise<RawEntry[]> {
   const rows: RawEntry[] = [];
   let offset = 0;
@@ -126,6 +138,7 @@ async function loadWeightLogs(
     const { data, error } = await service.from("weight_logs")
       .select("id, measured_at, weight_kg, is_official")
       .eq("user_id", userId)
+      .lte("measured_at", asOf)
       .order("measured_at", { ascending: true })
       .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
@@ -199,10 +212,18 @@ Deno.serve(async (req) => {
     );
 
     let weightTrend: TrendOutput | null = null;
-    if (includeWeight && points.length > 0) {
+    const eligiblePoints = points.filter((point) =>
+      point.protocol_version === "anthropometry_protocol_v1" &&
+      point.eligible_for_interpretation !== false &&
+      point.quality !== "high_variability" && point.quality !== "repeatability_warning"
+    );
+    const weightAsOf = eligiblePoints.reduce<string | null>((latest, point) =>
+      !latest || Date.parse(point.measured_at) > Date.parse(latest) ? point.measured_at : latest
+    , null);
+    if (includeWeight && weightAsOf) {
       const [{ data: profile, error: profileError }, weightLogs] = await Promise.all([
         service.from("profiles").select("timezone").eq("id", userData.user.id).maybeSingle(),
-        loadWeightLogs(service, userData.user.id),
+        loadWeightLogs(service, userData.user.id, weightAsOf),
       ]);
       if (profileError) throw profileError;
       const timezone = (profile?.timezone as string | null) || DEFAULT_TIMEZONE;
@@ -216,12 +237,12 @@ Deno.serve(async (req) => {
       const earliestMs = Math.min(...points.map((point) => Date.parse(point.measured_at)));
       const displayDays = Math.max(
         84,
-        Math.ceil((now.getTime() - earliestMs) / DAY_MS) + 7,
+        Math.ceil((Date.parse(weightAsOf) - earliestMs) / DAY_MS) + 7,
       );
-      weightTrend = calculate(weightLogs, now.toISOString(), timezone, displayDays);
+      weightTrend = calculate(weightLogs, weightAsOf, timezone, displayDays);
     }
 
-    const result = buildAnthropometryProgress(points, weightTrend, includeWeight);
+    const result = buildAnthropometryProgress(points, weightTrend, includeWeight, weightAsOf);
     console.log(JSON.stringify({
       event: "anthropometric_progress_read",
       user_id_prefix: userData.user.id.slice(0, 8),

@@ -6,6 +6,7 @@ import {
   formatMeasurementChange,
   getAnthropometricProgress,
   siteDefinition,
+  type AnthropometryChangeEvidence,
   type AnthropometryChange,
   type AnthropometryComparisonReasonCode,
   type AnthropometryProgressResponse,
@@ -38,7 +39,7 @@ function ChangeCard({
   unit,
 }: {
   label: string;
-  change: AnthropometryChange | null;
+  change: AnthropometryChangeEvidence | AnthropometryChange | null;
   unit: MeasurementUnit;
 }) {
   return (
@@ -57,20 +58,24 @@ const REASON_MESSAGES: Record<AnthropometryComparisonReasonCode, string> = {
     "At least two waist or abdomen-at-navel sessions are needed for a comparison.",
   circumference_interval_too_short:
     "The circumference endpoints need to be at least 14 days apart.",
-  circumference_repeatability_warning:
-    "One endpoint has a repeatability note, so Nutri does not generate a cross-signal sentence.",
+  circumference_quality_not_eligible:
+    "The latest central measurement is retained but is not eligible for interpretation because of its quality result.",
+  incompatible_anthropometry_protocol:
+    "These sessions use incompatible measurement protocols, so Nutri keeps them visible without calculating a change.",
+  latest_central_measurement_not_at_weight_as_of:
+    "The latest eligible session does not contain a comparable waist or abdomen-at-navel measurement.",
   weight_status_not_eligible:
     "The Phase 6 weight trend needs more coverage before these signals can be compared.",
   weight_confidence_not_eligible:
     "The Phase 6 weight trend needs medium or high confidence for this comparison.",
-  insufficient_weight_trend_points:
-    "At least two observed Phase 6 trend points are needed.",
-  no_aligned_weight_endpoint:
-    "No observed weight-trend point was close enough to each circumference endpoint.",
-  aligned_weight_points_not_distinct:
-    "The two circumference endpoints did not align to distinct, ordered weight-trend points.",
+  weight_rate_interval_unavailable:
+    "The canonical Phase 6 weekly-rate uncertainty range is not available yet.",
+  weight_data_stale:
+    "The Phase 6 trend is stale, so Nutri does not compare it with circumference.",
+  weight_not_aligned_with_anthropometry:
+    "The latest weight is more than seven calendar days from the measurement session.",
   no_material_cross_signal_template:
-    "The numeric changes are shown above, but this pattern has no versioned descriptive sentence.",
+    "The numeric changes are shown, but this historical response has no versioned descriptive sentence.",
 };
 
 export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
@@ -136,9 +141,15 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
   }
 
   const latest = selectedSeries?.points[selectedSeries.points.length - 1] ?? null;
-  const baseline = selectedSeries?.points[0] ?? null;
+  const baseline = selectedSeries?.change_summary?.baseline?.from ?? selectedSeries?.points[0] ?? null;
   const comparison = data.weight_comparison;
   const selectedDefinition = siteDefinition(selectedSite);
+  const contextWarningCodes = [
+    ...(selectedSeries?.change_summary?.previous?.context_warning_codes ?? []),
+    ...(selectedSeries?.change_summary?.baseline?.context_warning_codes ?? []),
+  ];
+  const hasContextCaution = new Set(contextWarningCodes).size > 0;
+  const hasProtocolMismatch = selectedSeries?.warning_codes?.includes("protocol_versions_not_comparable") ?? false;
 
   return (
     <div className="mt-6 space-y-5">
@@ -168,7 +179,19 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
           </p>
         )}
 
-        {latest && baseline && selectedSeries && (
+        {hasProtocolMismatch && (
+          <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+            These measurements used different protocols and are shown separately rather than compared automatically.
+          </p>
+        )}
+
+        {hasContextCaution && (
+          <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+            These sessions were measured under different conditions, so part of the difference may reflect timing, food, clothing or recent activity. The measurements remain valid recorded observations.
+          </p>
+        )}
+
+        {latest && selectedSeries && (
           <>
             <dl className="mt-4 grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg border border-border p-3">
@@ -176,8 +199,8 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
                 <dd className="mt-1 font-display text-xl font-semibold text-ink">{formatMeasurement(latest.representative_cm, unit)}</dd>
                 <p className="mt-1 text-xs text-muted">{formatDate(latest.measured_at)}</p>
               </div>
-              <ChangeCard label="From previous session" change={selectedSeries.previous_change} unit={unit} />
-              <ChangeCard label={`From first (${formatDate(baseline.measured_at)})`} change={selectedSeries.since_first_change} unit={unit} />
+              <ChangeCard label="From previous comparable session" change={selectedSeries.change_summary?.previous ?? selectedSeries.previous_change ?? null} unit={unit} />
+              <ChangeCard label={baseline ? `From comparable baseline (${formatDate(baseline.measured_at)})` : "From comparable baseline"} change={selectedSeries.change_summary?.baseline ?? selectedSeries.since_first_change ?? null} unit={unit} />
             </dl>
             <div className="mt-4">
               <AnthropometryChart siteCode={selectedSite} points={selectedSeries.points} unit={unit} />
@@ -199,7 +222,7 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
                 : "A descriptive comparison is not available for these recorded points."}
             </p>
           )}
-          {comparison.circumference && comparison.weight_trend && (
+          {comparison.circumference && (
             comparison.eligible || comparison.reason_codes?.includes("no_material_cross_signal_template")
           ) && (
             <dl className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -208,12 +231,18 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
                 <dd className="mt-1 text-sm font-semibold text-ink">{formatMeasurementChange(comparison.circumference.change_cm, unit)}</dd>
               </div>
               <div className="rounded-lg bg-background p-3">
-                <dt className="text-xs text-muted">Aligned Phase 6 weight-trend change</dt>
-                <dd className="mt-1 text-sm font-semibold text-ink">{`${comparison.weight_trend.change_kg > 0 ? "+" : ""}${comparison.weight_trend.change_kg.toFixed(1)} kg`}</dd>
+                <dt className="text-xs text-muted">Phase 6 weekly rate and uncertainty range</dt>
+                <dd className="mt-1 text-sm font-semibold text-ink">
+                  {comparison.weight_trend.weekly_rate_kg != null
+                    ? `${comparison.weight_trend.weekly_rate_kg.toFixed(2)} kg/week (${comparison.weight_trend.lower_kg?.toFixed(2)} to ${comparison.weight_trend.upper_kg?.toFixed(2)})`
+                    : comparison.weight_trend.change_kg != null
+                    ? `${comparison.weight_trend.change_kg > 0 ? "+" : ""}${comparison.weight_trend.change_kg.toFixed(1)} kg`
+                    : "Unavailable"}
+                </dd>
               </div>
             </dl>
           )}
-          <p className="mt-4 text-xs leading-5 text-muted">This comparison uses nearby observed Phase 6 trend points only. It does not infer fat loss, muscle gain or body recomposition, and it does not alter targets or goal feedback.</p>
+          <p className="mt-4 text-xs leading-5 text-muted">This comparison uses the canonical Phase 6 weekly-rate uncertainty range calculated as of the measurement session. It does not infer fat loss, muscle gain or body recomposition, and it does not alter targets or goal feedback.</p>
         </section>
       )}
 
@@ -242,8 +271,14 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
                 </div>
                 </div>
                 <details className="mt-2 rounded-lg bg-background p-2 text-xs text-muted">
-                  <summary className="min-h-11 cursor-pointer py-3 font-medium text-ink">Raw readings and calculation provenance</summary>
+                  <summary className="min-h-11 cursor-pointer py-3 font-medium text-ink">Context, raw readings and calculation provenance</summary>
                   <dl className="grid gap-2 pb-2 sm:grid-cols-2">
+                    <div><dt>Local measurement time</dt><dd>{point.measurement_context?.local_time ?? "Not recorded (legacy session)"}</dd></div>
+                    <div><dt>Food timing</dt><dd>{point.measurement_context?.meal_timing.replace(/_/g, " ") ?? "not recorded"}</dd></div>
+                    <div><dt>After bathroom</dt><dd>{point.measurement_context?.after_bathroom == null ? "Not recorded" : point.measurement_context.after_bathroom ? "Yes" : "No"}</dd></div>
+                    <div><dt>Exercise in previous 12 hours</dt><dd>{point.measurement_context?.exercise_within_previous_12_hours == null ? "Not recorded" : point.measurement_context.exercise_within_previous_12_hours ? "Yes" : "No"}</dd></div>
+                    <div><dt>Measurement help</dt><dd>{point.measurement_context?.measurement_assistance.replace(/_/g, " ") ?? "not recorded"}</dd></div>
+                    <div><dt>Clothing</dt><dd>{point.measurement_context?.clothing_level.replace(/_/g, " ") ?? "not recorded"}</dd></div>
                     <div><dt>Raw readings</dt><dd>{point.raw_readings?.map((reading) => `${reading.reading_index}: ${formatMeasurement(reading.value_cm, unit)}`).join(" · ") || "Unavailable for this historical row"}</dd></div>
                     <div><dt>Selected readings</dt><dd>{point.selected_reading_indices?.join(" and ") ?? "Legacy calculation"}</dd></div>
                     <div><dt>Quality</dt><dd>{point.quality.replace(/_/g, " ")}</dd></div>
@@ -265,7 +300,9 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
           {data.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
         </ul>
         <dl className="mt-4 grid gap-2 text-xs text-muted sm:grid-cols-3">
-          <div><dt>Change</dt><dd className="font-mono">{data.algorithm_versions.change}</dd></div>
+          <div><dt>Change summary</dt><dd className="font-mono">{data.algorithm_versions.change_summary}</dd></div>
+          <div><dt>Context comparison</dt><dd className="font-mono">{data.algorithm_versions.context_comparison}</dd></div>
+          <div><dt>Protocol compatibility</dt><dd className="font-mono">{data.algorithm_versions.protocol_compatibility}</dd></div>
           <div><dt>Comparison</dt><dd className="font-mono">{data.algorithm_versions.weight_comparison}</dd></div>
           <div><dt>Weight trend</dt><dd className="font-mono">{data.algorithm_versions.weight_trend}</dd></div>
         </dl>
