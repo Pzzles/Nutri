@@ -10,6 +10,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Local-only default development startup and a read-only deployment drift gate.
+- Production rollout documentation through migration `0036`, including staging,
+  backup, backend-first ordering, function inventory, and smoke-test gates.
 - Phase 10 remediation Gate 3 structured measurement context with server-derived local time.
 - Protocol-compatible change summaries and cautious context-difference warnings.
 - Phase 6 uncertainty-interval cross-signal comparison anchored at the anthropometry timestamp.
@@ -17,9 +20,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Resumable owner-scoped measurement drafts, whole-session deletion controls, and accessible responsive validation.
 - Complete real-browser Phase 10 coverage, automated axe checks, keyboard navigation, and clean-schema evidence.
 
+### Fixed
+
+- Prevented normal local development from silently targeting production through
+  an ignored `web/.env.local` file.
+- Replaced stale Anthropic deployment variables with the implemented Groq
+  provider contract.
+
 ### Status
 
-- Phase 10 implementation and remediation validation complete, subject to final PR review and merge. Not deployed.
+- Phase 10 remediation is merged. Production remains at migration `0032` until
+  the documented backend-first deployment gate is executed.
 
 ## [0.1.0] — 2026-08-02
 

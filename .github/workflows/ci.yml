@@ -7,9 +7,25 @@ on:
     branches: [master, main]
 
 jobs:
+  deployment-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate deployment preflight contract
+        run: |
+          node --test scripts/deployment-preflight.test.mjs
+          node scripts/deployment-preflight.mjs --local-only
+
   # ─── Web: typecheck + Vitest unit tests + production build ───────────────
   unit:
     runs-on: ubuntu-latest
+    env:
+      # Non-secret placeholders satisfy the Supabase client during tests and builds.
+      VITE_SUPABASE_URL: https://placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder
     defaults:
       run:
         working-directory: web
@@ -18,7 +34,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -32,10 +48,6 @@ jobs:
 
       - name: Production build
         run: npm run build
-        env:
-          # Placeholder values satisfy Vite's env requirements at build time.
-          VITE_SUPABASE_URL: https://placeholder.supabase.co
-          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder
 
   # ─── DB + RLS integration tests (requires local Supabase) ────────────────
   db:
@@ -49,7 +61,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: supabase/tests/package-lock.json
 
@@ -61,7 +73,7 @@ jobs:
         run: supabase start
 
       - name: Export Supabase connection vars
-        run: supabase status --output env >> $GITHUB_ENV
+        run: supabase status --output json | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> "$GITHUB_ENV"
 
       - name: Run DB + RLS integration tests
         run: npm test
@@ -75,7 +87,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -100,8 +112,8 @@ jobs:
           retention-days: 7
 
   # ─── Playwright integration E2E (real Supabase + real edge functions) ────
-  # Requires GROQ_API_KEY and optionally FATSECRET_* secrets to be set in the
-  # repo's GitHub Actions secrets. CI fails when the full meal flow fails.
+  # Uses GROQ_API_KEY and optional FATSECRET_* repository secrets when present.
+  # The external parse flow is explicitly skipped when GROQ_API_KEY is absent.
   e2e-integration:
     runs-on: ubuntu-latest
     steps:
@@ -113,7 +125,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -125,21 +137,27 @@ jobs:
         run: npx playwright install chromium --with-deps
         working-directory: web
 
+      - name: Inject edge function secrets
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          FATSECRET_CONSUMER_KEY: ${{ secrets.FATSECRET_CONSUMER_KEY }}
+          FATSECRET_CONSUMER_SECRET: ${{ secrets.FATSECRET_CONSUMER_SECRET }}
+        run: |
+          echo "GROQ_API_KEY=$GROQ_API_KEY" >> supabase/.env
+          echo "FATSECRET_CONSUMER_KEY=$FATSECRET_CONSUMER_KEY" >> supabase/.env
+          echo "FATSECRET_CONSUMER_SECRET=$FATSECRET_CONSUMER_SECRET" >> supabase/.env
+
       - name: Start local Supabase
         run: supabase start
 
       - name: Export Supabase connection vars
-        run: supabase status --output env >> $GITHUB_ENV
-
-      - name: Inject edge function secrets
-        run: |
-          echo "GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}" >> supabase/.env
-          echo "FATSECRET_CONSUMER_KEY=${{ secrets.FATSECRET_CONSUMER_KEY }}" >> supabase/.env
-          echo "FATSECRET_CONSUMER_SECRET=${{ secrets.FATSECRET_CONSUMER_SECRET }}" >> supabase/.env
+        run: supabase status --output json | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> "$GITHUB_ENV"
 
       - name: Run integration Playwright tests
         run: npm run test:e2e:integration
         working-directory: web
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
       - name: Upload Playwright report on failure
         uses: actions/upload-artifact@v4

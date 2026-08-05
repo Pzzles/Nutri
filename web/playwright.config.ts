@@ -1,11 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// In CI, SUPABASE_URL and SUPABASE_ANON_KEY are set after `supabase start`.
-// Pass them through so the Vite dev server picks them up as VITE_* vars.
-// Locally, .env.local already has the values — no override needed.
-const supabaseEnv: Record<string, string> = {};
-if (process.env.SUPABASE_URL) supabaseEnv.VITE_SUPABASE_URL = process.env.SUPABASE_URL;
-if (process.env.SUPABASE_ANON_KEY) supabaseEnv.VITE_SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+// Supabase CLI JSON uses API_URL/ANON_KEY, while some local shells expose the
+// SUPABASE_* aliases. Always override .env.local: mocked tests get inert
+// placeholders and integration tests get the explicitly exported local values.
+const supabaseEnv: Record<string, string> = {
+  VITE_SUPABASE_URL:
+    process.env.SUPABASE_URL ?? process.env.API_URL ?? "http://127.0.0.1:54421",
+  VITE_SUPABASE_ANON_KEY:
+    process.env.SUPABASE_ANON_KEY ?? process.env.ANON_KEY ??
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0",
+};
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:5173";
 const vitePort = new URL(baseURL).port || "5173";
 const viteMode = process.env.E2E_VITE_MODE;
@@ -46,10 +50,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run dev -- --port ${vitePort}${viteModeArgument}`,
+    command: `npm run dev:test -- --port ${vitePort}${viteModeArgument}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
-    ...(Object.keys(supabaseEnv).length > 0 && { env: supabaseEnv }),
+    env: supabaseEnv,
   },
 });

@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:personas": "vite --mode personas",
+    "dev": "node scripts/start-local-dev.mjs",
+    "dev:personas": "node scripts/start-local-dev.mjs --mode personas",
+    "dev:test": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
