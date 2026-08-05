@@ -54,7 +54,8 @@ async function callApi(params: Record<string, string>): Promise<any> {
   const consumerKey = Deno.env.get("FATSECRET_CONSUMER_KEY");
   const consumerSecret = Deno.env.get("FATSECRET_CONSUMER_SECRET");
   if (!consumerKey || !consumerSecret) {
-    throw new Error("FATSECRET_CONSUMER_KEY / FATSECRET_CONSUMER_SECRET not set");
+    console.warn("[FatSecret] FATSECRET_CONSUMER_KEY / FATSECRET_CONSUMER_SECRET not set — skipping FatSecret tier");
+    return null;
   }
 
   const bodyParams = { ...params, format: "json" };

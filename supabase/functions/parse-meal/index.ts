@@ -101,7 +101,7 @@ async function callClaude(text: string): Promise<{
           "Authorization": `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "llama-3.1-8b-instant",
+          model: Deno.env.get("GROQ_MODEL") ?? "llama-3.3-70b-versatile",
           max_tokens: 1024,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
