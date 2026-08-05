@@ -131,6 +131,7 @@ function makeChickenItem(phrase: string) {
 test(
   "full meal flow: authenticate → type → parse → resolve → review → confirm → history → dashboard",
   async ({ page }) => {
+    test.skip(!process.env.GROQ_API_KEY, "GROQ_API_KEY is required for the external parse step.");
     await injectSession(page, sessionA);
 
     // Step 1 — authenticate with userA's real stored session.
