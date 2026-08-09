@@ -65,7 +65,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="min-h-screen">
-        <NavBar darkMode={darkMode} onToggleTheme={() => setDarkMode((value) => !value)} />
+        <NavBar darkMode={darkMode} onToggleTheme={() => setDarkMode((value) => !value)} onSignOut={() => supabase.auth.signOut()} />
         <Routes>
           {/* Primary nav routes */}
           <Route path="/" element={<Dashboard />} />
@@ -88,7 +88,7 @@ export default function App() {
   );
 }
 
-function NavBar({ darkMode, onToggleTheme }: { darkMode: boolean; onToggleTheme: () => void }) {
+function NavBar({ darkMode, onToggleTheme, onSignOut }: { darkMode: boolean; onToggleTheme: () => void; onSignOut: () => void }) {
   const location = useLocation();
   const isActive = (path: string) => location.pathname === path;
 
@@ -120,6 +120,19 @@ function NavBar({ darkMode, onToggleTheme }: { darkMode: boolean; onToggleTheme:
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
             </svg>
           )}
+        </button>
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="ml-1 grid h-8 w-8 place-items-center rounded-full border border-border text-muted transition-colors hover:border-red-500 hover:text-red-500"
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
         </button>
       </div>
     </nav>
