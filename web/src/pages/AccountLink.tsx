@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 
-type Phase = "idle" | "done";
 type DeletePhase = "idle" | "confirming" | "deleting" | "deleted";
 type EquationSex = "male" | "female" | "";
 
@@ -22,10 +21,8 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 export default function AccountLink({ onAccountDeleted }: { onAccountDeleted?: () => void }) {
   // ── Account flow ───────────────────────────────────────────────────────────
-  const [phase, setPhase] = useState<Phase>("idle");
   const [accountUser, setAccountUser] = useState<User | null>(null);
   const [accountLoading, setAccountLoading] = useState(true);
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -143,33 +140,6 @@ export default function AccountLink({ onAccountDeleted }: { onAccountDeleted?: (
   const [deletePhase, setDeletePhase] = useState<DeletePhase>("idle");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  async function handleCreateAccount(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { data, error: updateError } = await supabase.auth.updateUser({
-        email: email.trim(),
-        password,
-      });
-      if (updateError) throw updateError;
-      setAccountUser(data.user);
-      setPhase("done");
-      setPassword("");
-      setConfirmPassword("");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Could not save your account.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleSignOut() {
     setError(null);
@@ -375,75 +345,8 @@ export default function AccountLink({ onAccountDeleted }: { onAccountDeleted?: (
 
         {accountLoading ? (
           <p className="mt-4 text-sm text-muted">Loading account…</p>
-        ) : accountUser?.is_anonymous ? (
-          <>
-            <p className="mt-1 text-sm text-muted">
-              This is still a device-only account. Add an email and password to keep the same
-              meals, weights and goals when you sign in elsewhere.
-            </p>
-
-            {phase === "done" ? (
-              <div className="mt-6 rounded-lg bg-primary-light px-4 py-3 text-sm text-primary-dark">
-                Account saved. You can now sign in with <strong>{email}</strong> on another device.
-              </div>
-            ) : (
-              <form onSubmit={handleCreateAccount} className="mt-6 space-y-4">
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-ink">Email</span>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-ink">Password</span>
-                  <input
-                    type="password"
-                    required
-                    minLength={8}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="new-password"
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-ink">Confirm password</span>
-                  <input
-                    type="password"
-                    required
-                    minLength={8}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    autoComplete="new-password"
-                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </label>
-                <p className="text-xs text-muted">
-                  Email verification is temporarily disabled. No confirmation message will be sent.
-                </p>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
-                >
-                  {loading ? "Saving…" : "Create account"}
-                </button>
-              </form>
-            )}
-          </>
         ) : (
           <div className="mt-4">
-            {phase === "done" && (
-              <div className="mb-4 rounded-lg bg-primary-light px-4 py-3 text-sm text-primary-dark">
-                Account saved. Your existing meals, weights and goals stay with this account.
-              </div>
-            )}
             <p className="text-sm text-muted">Signed in as</p>
             <p className="mt-1 break-all text-sm font-medium text-ink">{accountUser?.email}</p>
 
@@ -512,10 +415,6 @@ export default function AccountLink({ onAccountDeleted }: { onAccountDeleted?: (
               </button>
             )}
 
-            <p className="mt-5 text-xs text-muted">
-              If you previously saved this account using an email code, set a password before
-              signing out for the first time.
-            </p>
             <button
               type="button"
               onClick={handleSignOut}
