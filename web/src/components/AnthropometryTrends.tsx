@@ -15,6 +15,8 @@ import {
   type AnthropometrySiteCode,
   type MeasurementUnit,
 } from "../lib/anthropometry";
+import { calculateWHtR } from "../lib/bodyComposition";
+import { supabase } from "../lib/supabase";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-ZA", {
@@ -90,12 +92,25 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
   const [deleteTarget, setDeleteTarget] = useState<AnthropometryProgressPoint | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [heightCm, setHeightCm] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      setData(await getAnthropometricProgress());
+      const [progress, { data: { user } }] = await Promise.all([
+        getAnthropometricProgress(),
+        supabase.auth.getUser(),
+      ]);
+      setData(progress);
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("height_cm")
+          .eq("id", user.id)
+          .maybeSingle();
+        setHeightCm(profile?.height_cm != null ? Number(profile.height_cm) : null);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load measurement history.");
     } finally {
@@ -133,6 +148,17 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
     () => data?.series.find((series) => series.site_code === selectedSite) ?? null,
     [data, selectedSite],
   );
+
+  // Must be before early returns to satisfy Rules of Hooks.
+  const whtrPoints = useMemo(() => {
+    if (!data || heightCm == null) return [];
+    const waistSer = data.series.find((s) => s.site_code === "waist") ?? null;
+    if (!waistSer) return [];
+    return waistSer.points
+      .filter((p) => p.eligible_for_interpretation !== false && p.quality !== "high_variability")
+      .map((p) => ({ ...p, whtr: calculateWHtR(p.representative_cm, heightCm) }));
+  }, [data, heightCm]);
+  const latestWHtR = whtrPoints[whtrPoints.length - 1]?.whtr ?? null;
 
   if (loading) {
     return (
@@ -172,6 +198,8 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
   ];
   const hasContextCaution = new Set(contextWarningCodes).size > 0;
   const hasProtocolMismatch = selectedSeries?.warning_codes?.includes("protocol_versions_not_comparable") ?? false;
+
+  const waistSeries = data.series.find((s) => s.site_code === "waist") ?? null;
 
   return (
     <div className="mt-6 space-y-5">
@@ -232,6 +260,62 @@ export function AnthropometryTrends({ unit }: { unit: MeasurementUnit }) {
           </>
         )}
       </section>
+
+      {latestWHtR != null && (
+        <section className="rounded-xl border border-border bg-surface p-4 sm:p-5" aria-labelledby="whtr-heading">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Central adiposity</p>
+          <h2 id="whtr-heading" className="mt-1 font-display text-xl font-semibold text-ink">Waist-to-height ratio</h2>
+          <p className="mt-1 text-sm text-muted">Waist size relative to your height. Used as a general indicator of central adiposity.</p>
+
+          <div className="mt-4 flex items-baseline gap-2">
+            <span className="font-display text-3xl font-semibold text-ink">
+              {latestWHtR.value != null ? latestWHtR.value.toFixed(3) : "—"}
+            </span>
+            <span className="rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-muted">
+              Calculated
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            Waist {waistSeries?.points[waistSeries.points.length - 1] ? formatDate(waistSeries.points[waistSeries.points.length - 1].measured_at) : ""}
+            {heightCm != null ? ` · height ${heightCm} cm (profile)` : ""}
+          </p>
+
+          {whtrPoints.length > 1 && (
+            <ol className="mt-4 divide-y divide-border">
+              {[...whtrPoints].reverse().map((point) => (
+                <li key={point.session_id} className="flex items-center justify-between py-2">
+                  <span className="text-sm text-muted">{formatDate(point.measured_at)}</span>
+                  <span className="text-sm font-semibold text-ink">
+                    {point.whtr.value != null ? point.whtr.value.toFixed(3) : "—"}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          <details className="mt-4 text-sm">
+            <summary className="min-h-11 cursor-pointer font-medium text-ink">What is this?</summary>
+            <dl className="mt-3 space-y-3 text-muted">
+              <div>
+                <dt className="font-medium text-ink">Formula</dt>
+                <dd>WHtR = waist circumference ÷ height. Both in centimetres.</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-ink">What Nutri uses</dt>
+                <dd>Your WHO midpoint waist measurement and the height recorded in your profile.</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-ink">Is it measured?</dt>
+                <dd>No. It is calculated from two direct measurements.</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-ink">What to use it for</dt>
+                <dd>Tracking relative change over time alongside your waist and weight trends. Specific cut-off values vary by population and are not shown here.</dd>
+              </div>
+            </dl>
+          </details>
+        </section>
+      )}
 
       {comparison && (
         <section className="rounded-xl border border-border bg-surface p-4 sm:p-5" aria-labelledby="cross-signal-heading">
